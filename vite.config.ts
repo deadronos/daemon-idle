@@ -24,6 +24,8 @@ const fmtConfig = {
 };
 
 export default defineConfig({
+  // Relative base so the build resolves assets under the GitHub Pages project subpath.
+  base: "./",
   fmt: fmtConfig,
   lint: lintConfig,
   test: {

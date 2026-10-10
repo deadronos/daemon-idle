@@ -1,0 +1,64 @@
+name: Deploy to GitHub Pages
+
+on:
+  # Deploy on release tags; a release is a deliberate act, not every merge.
+  push:
+    tags:
+      - "v*"
+  # Allow a manual run for testing.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; let an in-progress production deploy finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: "22"
+          cache: false
+          run-install: false
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Typecheck
+        run: vp run typecheck
+
+      - name: Lint and format
+        run: vp check
+
+      - name: Tests
+        run: vp test run
+
+      - name: Build
+        run: vp build
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: ./dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

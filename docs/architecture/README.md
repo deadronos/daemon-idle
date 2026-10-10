@@ -33,6 +33,7 @@ purpose per file.
 | [`004-prestige-and-legacy.md`](./004-prestige-and-legacy.md)             | `fork()`, lineage multiplier, legacy daemons                      |
 | [`005-tooling-and-tests.md`](./005-tooling-and-tests.md)                 | Vite+ toolchain, commands, tests, lint/format config              |
 | [`006-diagnostics-and-reporting.md`](./006-diagnostics-and-reporting.md) | Numeric watchdog: detection, alert routing, sinks                 |
+| [`007-deployment.md`](./007-deployment.md)                               | GitHub Pages deployment: pipeline, triggers, base path            |
 
 ## Conventions
 
