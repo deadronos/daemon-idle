@@ -45,3 +45,7 @@ swap in `break_infinity.js` if the late game needs the precision.
 ## Stack
 
 TypeScript + Vite. No runtime dependencies, no backend.
+
+## License
+
+MIT — see [LICENSE](./LICENSE).
