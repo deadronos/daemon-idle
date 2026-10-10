@@ -17,9 +17,9 @@ A change is not done until the docs match the code. See [`../../AGENTS.md`](../.
 ## What these are NOT
 
 These are **living docs**, not ADRs. An ADR is an immutable record of a single decision,
-frozen once accepted and superseded by a later ADR. If you want that audit trail, add a
-separate `docs/decisions/` series (`NNNN-title.md`, append-only) — do not try to make
-these files immutable, and do not try to make ADRs track the current state. Pick one
+frozen once accepted and superseded by a later ADR. That audit trail lives in
+[`../decisions/`](../decisions/README.md) (`NNNN-title.md`, append-only) — do not try to
+make these files immutable, and do not try to make ADRs track the current state. Pick one
 purpose per file.
 
 ## Index

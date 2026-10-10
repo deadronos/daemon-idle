@@ -7,7 +7,8 @@ architecture docs.
 
 `daemon` — an idle/incremental game in TypeScript + Vite. Design intent lives in
 [`IDEA.md`](./IDEA.md); current architecture lives in
-[`docs/architecture/`](./docs/architecture/README.md).
+[`docs/architecture/`](./docs/architecture/README.md); significant decisions are recorded
+in [`docs/decisions/`](./docs/decisions/README.md).
 
 ## Commands
 
@@ -29,10 +30,10 @@ npm run preview    # serve the built bundle
   and register it in the index in `docs/architecture/README.md`.
 - **Removing a subsystem?** Delete or rewrite its doc. Never leave a doc describing code
   that no longer exists.
-- **Design decision worth remembering?** If the repo has a `docs/decisions/` ADR series,
-  add an immutable, append-only `NNNN-title.md` there instead — do **not** edit the
-  numbered architecture docs to be immutable. Living docs describe *what is*; ADRs record
-  *what we chose and when*. Keep the two purposes in separate files.
+- **Design decision worth remembering?** Add an immutable, append-only record under
+  [`docs/decisions/`](./docs/decisions/README.md) (`NNNN-title.md`, four digits) — do
+  **not** edit the numbered architecture docs to be immutable. Living docs describe *what
+  is*; ADRs record *what we chose and when*. Keep the two purposes in separate files.
 
 If you touch game rules, the numbers in `001-simulation-core.md` must still be true when
 you are done. If you touch the loop, DOM, or meters, check `002-render-system.md`. If you
