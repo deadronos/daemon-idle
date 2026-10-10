@@ -9,6 +9,8 @@ footprint, survive the sweeps, and fork your way from stray process to `init`.
 
 Design intent: [`IDEA.md`](./IDEA.md). Architecture: [`docs/architecture/`](./docs/architecture/README.md).
 
+**Play:** https://deadronos.github.io/daemon-idle/ (deployed from `v*` tags).
+
 ## Development
 
 Toolchain is [Vite+](https://viteplus.dev) (`vp`): one CLI for the dev server, build,
