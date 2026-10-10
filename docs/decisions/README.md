@@ -10,8 +10,8 @@ of current state (that is [`../architecture/`](../architecture/README.md)).
 
 - If the decision changes, write a **new** ADR that supersedes the old one, and set the old
   one's status to `Superseded by ADR-NNNN`. Do not edit the old ADR's decision.
-- Update the **architecture doc** to describe the new state. Architecture = what *is*;
-  ADRs = what we *chose*.
+- Update the **architecture doc** to describe the new state. Architecture = what _is_;
+  ADRs = what we _chose_.
 
 ## What earns an ADR
 
@@ -29,9 +29,10 @@ the alternatives you rejected. Record the trade-off, not a story.
 
 ## Index
 
-| ADR | Title | Status |
-| --- | --- | --- |
-| [`0001`](./0001-root-baseline-income.md) | Root baseline income for bootstrap | Accepted |
+| ADR                                         | Title                              | Status   |
+| ------------------------------------------- | ---------------------------------- | -------- |
+| [`0001`](./0001-root-baseline-income.md)    | Root baseline income for bootstrap | Accepted |
+| [`0002`](./0002-lint-and-test-toolchain.md) | Lint and test toolchain (Vite+)    | Accepted |
 
 ## Naming
 

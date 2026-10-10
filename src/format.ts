@@ -1,29 +1,14 @@
-const SUFFIXES = [
-  '',
-  'K',
-  'M',
-  'B',
-  'T',
-  'Qa',
-  'Qi',
-  'Sx',
-  'Sp',
-  'Oc',
-  'No',
-  'Dc',
-  'UDc',
-  'DDc',
-];
+const SUFFIXES = ["", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc", "UDc", "DDc"];
 
 /**
  * Format a number for the terminal UI. Small numbers stay readable; large ones get
  * suffix notation and eventually scientific notation.
  */
 export function fmt(n: number, digits = 2): string {
-  if (!isFinite(n)) return n > 0 ? '∞' : '-∞';
-  if (n < 0) return '-' + fmt(-n, digits);
+  if (!isFinite(n)) return n > 0 ? "∞" : "-∞";
+  if (n < 0) return "-" + fmt(-n, digits);
   if (n < 1000) {
-    if (n === 0) return '0';
+    if (n === 0) return "0";
     if (n < 10 && n !== Math.floor(n)) return n.toFixed(Math.min(digits, 2));
     return Math.floor(n).toString();
   }

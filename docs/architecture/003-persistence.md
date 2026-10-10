@@ -11,11 +11,11 @@ How progress survives a reload or a closed tab. All of it lives in `src/main.ts`
 
 ## When it saves
 
-| Trigger | Cadence |
-| --- | --- |
-| Autosave | every `AUTOSAVE_MS = 10_000` ms in the frame loop |
-| `beforeunload` | on tab close / reload |
-| `visibilitychange` | when the tab is hidden |
+| Trigger            | Cadence                                           |
+| ------------------ | ------------------------------------------------- |
+| Autosave           | every `AUTOSAVE_MS = 10_000` ms in the frame loop |
+| `beforeunload`     | on tab close / reload                             |
+| `visibilitychange` | when the tab is hidden                            |
 
 Every save stamps `state.lastSave = Date.now()` first.
 

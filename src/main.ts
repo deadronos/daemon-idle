@@ -23,10 +23,10 @@ import {
   sweepVictimMult,
   tierCost,
   tick,
-} from './sim';
-import { fmt, fmtRate, fmtTime } from './format';
+} from "./sim";
+import { fmt, fmtRate, fmtTime } from "./format";
 
-const SAVE_KEY = 'daemon-idle-save-v1';
+const SAVE_KEY = "daemon-idle-save-v1";
 const TICK_MS = 50; // fixed sim step
 const OFFLINE_CAP_S = 8 * 3600;
 const AUTOSAVE_MS = 10_000;
@@ -55,10 +55,7 @@ function load(): GameState {
     if (!Array.isArray(s.legacy)) s.legacy = [];
     if (!Array.isArray(s.log)) s.log = [];
 
-    const elapsed = Math.min(
-      OFFLINE_CAP_S,
-      (Date.now() - (s.lastSave || Date.now())) / 1000,
-    );
+    const elapsed = Math.min(OFFLINE_CAP_S, (Date.now() - (s.lastSave || Date.now())) / 1000);
     if (elapsed > 5) applyOffline(s, elapsed);
     return s;
   } catch {
@@ -86,20 +83,20 @@ const $ = <T extends HTMLElement>(id: string): T => {
 };
 
 const el = {
-  cycles: $('cycles'),
-  cps: $('cps'),
-  lineage: $('lineage'),
-  forks: $('forks'),
-  sweeps: $('sweeps'),
-  ramText: $('ramText'),
-  ramBar: $('ramBar'),
-  leakBar: $('leakBar'),
-  sweepText: $('sweepText'),
-  sweepBar: $('sweepBar'),
-  spawnPanel: $('spawnPanel'),
-  upgradePanel: $('upgradePanel'),
-  legacyPanel: $('legacyPanel'),
-  log: $('log'),
+  cycles: $("cycles"),
+  cps: $("cps"),
+  lineage: $("lineage"),
+  forks: $("forks"),
+  sweeps: $("sweeps"),
+  ramText: $("ramText"),
+  ramBar: $("ramBar"),
+  leakBar: $("leakBar"),
+  sweepText: $("sweepText"),
+  sweepBar: $("sweepBar"),
+  spawnPanel: $("spawnPanel"),
+  upgradePanel: $("upgradePanel"),
+  legacyPanel: $("legacyPanel"),
+  log: $("log"),
 };
 
 // --- buttons ---------------------------------------------------------------
@@ -113,12 +110,12 @@ interface ActionButton {
 }
 
 const spawnButtons: ActionButton[] = TIERS.map((tier, i) => {
-  const b = document.createElement('button');
-  b.className = 'act';
+  const b = document.createElement("button");
+  b.className = "act";
   b.innerHTML =
     `<span class="name">${tier.name} <small>${tier.desc}</small></span>` +
     `<span class="cost"></span>`;
-  b.addEventListener('click', () => {
+  b.addEventListener("click", () => {
     spawn(state, i);
     render(true);
   });
@@ -140,10 +137,10 @@ function addUpgrade(
   enabled: () => boolean,
   run: () => void,
 ): void {
-  const b = document.createElement('button');
-  b.className = 'act';
+  const b = document.createElement("button");
+  b.className = "act";
   b.innerHTML = `<span class="name"></span><span class="cost"></span>`;
-  b.addEventListener('click', () => {
+  b.addEventListener("click", () => {
     run();
     render(true);
   });
@@ -152,13 +149,14 @@ function addUpgrade(
 }
 
 addUpgrade(
-  () => 'free()',
+  () => "free()",
   () => 0,
   () => state.leak > 0,
   () => freeMemory(state),
 );
 addUpgrade(
-  () => `nice(+1)  ·  reap ${Math.round((1 - sweepVictimMult(state)) * 100)}% fewer  ·  lvl ${state.nice}`,
+  () =>
+    `nice(+1)  ·  reap ${Math.round((1 - sweepVictimMult(state)) * 100)}% fewer  ·  lvl ${state.nice}`,
   () => niceCost(state),
   () => state.cycles >= niceCost(state),
   () => buyNice(state),
@@ -170,7 +168,7 @@ addUpgrade(
   () => buyMalloc(state),
 );
 addUpgrade(
-  () => (state.gc === 0 ? 'gc  ·  auto-flush the leak' : `gc  ·  auto-flush lvl ${state.gc}`),
+  () => (state.gc === 0 ? "gc  ·  auto-flush the leak" : `gc  ·  auto-flush lvl ${state.gc}`),
   () => gcCost(state),
   () => state.cycles >= gcCost(state),
   () => buyGc(state),
@@ -184,7 +182,7 @@ addUpgrade(
 
 // --- render ----------------------------------------------------------------
 
-let lastLogSig = '';
+let lastLogSig = "";
 
 function render(force = false): void {
   el.cycles.textContent = fmt(state.cycles);
@@ -199,11 +197,11 @@ function render(force = false): void {
   const child = childRam(state);
   el.ramText.textContent =
     `${Math.ceil(used)} / ${cap} MB` +
-    (state.leak > 0.5 ? `  (leak ${Math.ceil(state.leak)}MB)` : '');
+    (state.leak > 0.5 ? `  (leak ${Math.ceil(state.leak)}MB)` : "");
   const childPct = Math.min(100, (child / cap) * 100);
   const leakPct = Math.max(0, Math.min(100 - childPct, (state.leak / cap) * 100));
   el.ramBar.style.width = `${childPct}%`;
-  el.ramBar.style.background = used > cap * 0.9 ? 'var(--danger)' : '';
+  el.ramBar.style.background = used > cap * 0.9 ? "var(--danger)" : "";
   el.leakBar.style.left = `${childPct}%`;
   el.leakBar.style.width = `${leakPct}%`;
 
@@ -221,19 +219,19 @@ function render(force = false): void {
     const ok = b.enabled();
     const ramFull = ramUsed(state) + TIERS[i].ram > state.ramCap;
     b.el.disabled = !ok;
-    const costEl = b.el.querySelector('.cost') as HTMLElement;
-    costEl.textContent = `${state.counts[i]}  ·  ${fmt(b.cost())}${ramFull ? '  ⚠ ram' : ''}`;
-    costEl.classList.toggle('ok', ok);
+    const costEl = b.el.querySelector(".cost") as HTMLElement;
+    costEl.textContent = `${state.counts[i]}  ·  ${fmt(b.cost())}${ramFull ? "  ⚠ ram" : ""}`;
+    costEl.classList.toggle("ok", ok);
   }
 
   for (const b of upgradeButtons) {
     const ok = b.enabled();
     b.el.disabled = !ok;
     const cost = b.cost();
-    (b.el.querySelector('.name') as HTMLElement).textContent = b.name();
-    const costEl = b.el.querySelector('.cost') as HTMLElement;
-    costEl.textContent = cost > 0 ? fmt(cost) : '';
-    costEl.classList.toggle('ok', ok);
+    (b.el.querySelector(".name") as HTMLElement).textContent = b.name();
+    const costEl = b.el.querySelector(".cost") as HTMLElement;
+    costEl.textContent = cost > 0 ? fmt(cost) : "";
+    costEl.classList.toggle("ok", ok);
   }
 
   renderLegacy();
@@ -242,23 +240,23 @@ function render(force = false): void {
 
 function renderLegacy(): void {
   if (state.legacy.length === 0) {
-    if (el.legacyPanel.dataset.sig !== 'none') {
-      el.legacyPanel.dataset.sig = 'none';
+    if (el.legacyPanel.dataset.sig !== "none") {
+      el.legacyPanel.dataset.sig = "none";
       el.legacyPanel.innerHTML = `<div class="none">none yet — fork to leave one behind</div>`;
     }
     return;
   }
-  const sig = state.legacy.map((d) => `${d.name}:${d.crashed}`).join('|');
+  const sig = state.legacy.map((d) => `${d.name}:${d.crashed}`).join("|");
   if (el.legacyPanel.dataset.sig !== sig) {
     el.legacyPanel.dataset.sig = sig;
-    el.legacyPanel.innerHTML = '';
+    el.legacyPanel.innerHTML = "";
     state.legacy.forEach((d, i) => {
-      const div = document.createElement('div');
-      div.className = `daemon${d.crashed ? ' crashed' : ''}`;
+      const div = document.createElement("div");
+      div.className = `daemon${d.crashed ? " crashed" : ""}`;
       div.innerHTML = d.crashed
         ? `<span>${d.name} — crashed</span><span class="rate">click to restart</span>`
         : `<span>${d.name}</span><span class="rate"></span>`;
-      div.addEventListener('click', () => {
+      div.addEventListener("click", () => {
         nudgeDaemon(state, i);
         render(true);
       });
@@ -268,18 +266,18 @@ function renderLegacy(): void {
   // refresh live rates cheaply
   state.legacy.forEach((d, i) => {
     const row = el.legacyPanel.children[i];
-    const rateEl = row?.querySelector('.rate');
+    const rateEl = row?.querySelector(".rate");
     if (rateEl && !d.crashed) rateEl.textContent = fmtRate(d.rate * lineageMult(state));
   });
 }
 
 function renderLog(force: boolean): void {
-  const sig = state.log.join('\n');
+  const sig = state.log.join("\n");
   if (!force && sig === lastLogSig) return;
   lastLogSig = sig;
-  el.log.innerHTML = '';
+  el.log.innerHTML = "";
   for (const line of state.log) {
-    const d = document.createElement('div');
+    const d = document.createElement("div");
     d.textContent = `> ${line}`;
     el.log.appendChild(d);
   }
@@ -315,8 +313,8 @@ function frame(now: number): void {
   requestAnimationFrame(frame);
 }
 
-window.addEventListener('beforeunload', () => save(state));
-document.addEventListener('visibilitychange', () => {
+window.addEventListener("beforeunload", () => save(state));
+document.addEventListener("visibilitychange", () => {
   if (document.hidden) save(state);
 });
 

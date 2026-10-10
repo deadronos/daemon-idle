@@ -21,7 +21,7 @@ live in `src/sim.ts`; the panel is rendered in `src/main.ts`.
 lineageMult = 1 + forks * 0.1
 ```
 
-Applied to *all* income — children, the root baseline, and legacy daemons. Shown in the
+Applied to _all_ income — children, the root baseline, and legacy daemons. Shown in the
 HUD as `×N.N`. This is the only permanent numeric carry-over.
 
 ## Legacy daemons
@@ -39,7 +39,7 @@ have to click a crashed row in the panel to bring it back.
 
 ## Design notes
 
-- The legacy `rate` is a snapshot of peak income at fork time, so forking *earlier* with
+- The legacy `rate` is a snapshot of peak income at fork time, so forking _earlier_ with
   less income leaves a weaker permanent daemon — an intentional "build before you fork"
   pressure.
 - `rate` is floored at 0.1 so a very early fork still yields a (tiny) producer.

@@ -7,19 +7,22 @@ You are a background process nobody meant to keep running. Spawn children to far
 **cleanup sweep** that reaps your lowest-priority processes. Balance growth against
 footprint, survive the sweeps, and fork your way from stray process to `init`.
 
-Full design doc: [`IDEA.md`](./IDEA.md).
+Design intent: [`IDEA.md`](./IDEA.md). Architecture: [`docs/architecture/`](./docs/architecture/README.md).
 
-## Run it
+## Development
+
+Toolchain is [Vite+](https://viteplus.dev) (`vp`): one CLI for the dev server, build,
+Vitest tests, and oxlint/oxfmt lint+format. Dependencies are managed with npm.
 
 ```bash
 npm install
-npm run dev      # http://localhost:5173
-```
-
-Build:
-
-```bash
-npm run build    # typecheck + bundle to dist/
+npm run dev       # dev server → http://127.0.0.1:5173
+npm run test      # Vitest (src/sim.test.ts)
+npm run test:watch
+npm run lint      # oxlint (type-aware)
+npm run format    # oxfmt
+npm run check     # typecheck + lint + test
+npm run build     # production bundle → dist/
 npm run preview
 ```
 
@@ -39,12 +42,14 @@ Progress autosaves to `localStorage` and applies offline gains on return (capped
 ## Status
 
 v0 — playable loop: cycles, tiers, sweeps, RAM leak + OOM killer, one prestige layer,
-offline progress, terminal log. Numbers are plain JS doubles with suffix formatting;
-swap in `break_infinity.js` if the late game needs the precision.
+offline progress, terminal log. Covered by a Vitest suite over the pure simulation.
+Numbers are plain JS doubles with suffix formatting; swap in `break_infinity.js` if the
+late game needs the precision.
 
 ## Stack
 
-TypeScript + Vite. No runtime dependencies, no backend.
+TypeScript 7 + Vite+ (`vp`: Vite, Vitest, oxlint, oxfmt). No runtime dependencies, no
+backend.
 
 ## License
 

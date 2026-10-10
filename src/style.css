@@ -177,7 +177,9 @@ button.act {
   font-family: var(--font);
   font-size: 13px;
   cursor: pointer;
-  transition: border-color 0.1s, background 0.1s;
+  transition:
+    border-color 0.1s,
+    background 0.1s;
 }
 
 button.act:hover:not(:disabled) {

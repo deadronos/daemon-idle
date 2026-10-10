@@ -7,8 +7,8 @@
 An incremental/idle game where you spawn child processes to farm **cycles** while you
 idle — and then have to keep them alive. Scaling is not free: every child eats RAM, and
 the system periodically runs a **cleanup sweep** that kills your lowest-priority
-processes. The whole game is the tension between *growing the herd* and *not getting
-reaped*.
+processes. The whole game is the tension between _growing the herd_ and _not getting
+reaped_.
 
 Classic number-go-up at the surface, survival-management underneath. The theme is IT
 ops, the humor is in the log lines, and the arc has a real payoff: you start as a
@@ -34,8 +34,8 @@ stray process and end as `init`.
 4. **Survive.** RAM is finite. Over-allocate and you invite the sweep (and eventually
    the OOM killer). Balance growth against footprint.
 
-The decision every player faces on a loop: *do I spawn one more child, or save RAM for
-the next sweep?*
+The decision every player faces on a loop: _do I spawn one more child, or save RAM for
+the next sweep?_
 
 ## The Twist — Cleanup Sweeps
 
@@ -54,7 +54,7 @@ the next sweep?*
 - When you're reaped (or when you choose to), you **fork**: start a new instance with a
   small **permanent multiplier** based on how far you got.
 - Your previous instances stay alive as **legacy daemons** in the background. They keep
-  producing a fraction of their old output — and they *occasionally crash*, needing a
+  producing a fraction of their old output — and they _occasionally crash_, needing a
   manual nudge (or an automation upgrade) to restart. Gentle active-play flavor.
 - Multiple forks stack; the multiplier compounds.
 
@@ -65,19 +65,21 @@ the next sweep?*
 - **Process:** fragile, reaped constantly. Learn the loop.
 - **Service:** stable enough to ignore for minutes at a time. Real idle territory.
 - **Daemon:** detached, resilient, running for hours. Prestige layers kick in.
-- **init:** endgame. *You* are the supervisor. You set the sweep rules and decide what
+- **init:** endgame. _You_ are the supervisor. You set the sweep rules and decide what
   lives and dies — the thing that used to hunt you.
 
 ## Mechanics Detail
 
 ### Resources
+
 - **Cycles** — primary currency (spend on children & upgrades).
 - **RAM** — capacity constraint (spawn cost + upkeep).
 - **Priority** — sweep resistance (upgradeable).
 - **Lineage** — prestige points; permanent multipliers.
 
 ### Numbers (first pass)
-- Root: `1 cycle/s`. Child tier *n*: cost and output scale ~`1.15^n` (classic idle curve).
+
+- Root: `1 cycle/s`. Child tier _n_: cost and output scale ~`1.15^n` (classic idle curve).
 - Sweep interval: starts at 60s, shrinks toward ~10s as tier rises, then a hard floor
   softened by priority upgrades.
 - Sweep budget: `k` victims where `k` grows with tier; victims = lowest priority, ties
@@ -85,6 +87,7 @@ the next sweep?*
 - OOM trigger: footprint > RAM → kills the top-3 output children + 10% cycle penalty.
 
 ### Upgrades (examples)
+
 - `fork() +1` — spawn a basic child.
 - `nice(5)` — +priority to all children.
 - `malloc(+64MB)` — raise RAM ceiling.
@@ -117,7 +120,7 @@ Ship this and it's playable:
 ## Milestones
 
 1. **M1 — Loop:** cycles tick, one child type, one upgrade. Feels like something.
-2. **M2 — Threat:** sweeps + priority + RAM/OOM. Now it's a *game*.
+2. **M2 — Threat:** sweeps + priority + RAM/OOM. Now it's a _game_.
 3. **M3 — Meta:** prestige, legacy daemons, offline progress.
 4. **M4 — Arc:** init endgame, flavor pass, balancing.
 5. **M5 — Polish:** sound, achievements, export/import saves.
@@ -127,9 +130,9 @@ Ship this and it's playable:
 - Should the sweep be **deterministic** (plan around it) or **randomized** (panic)?
   Lean deterministic with a visible countdown — readable tension beats surprise.
 - Active-play ceiling: how much manual nudging is fun before `cron()` automates it?
-- Do legacy daemons give *cycles* or a *separate* passive resource that feeds upgrades?
+- Do legacy daemons give _cycles_ or a _separate_ passive resource that feeds upgrades?
 - Balancing the risk dial so "greedy" is viable but never dominant.
 
 ---
 
-*Started: 2026-10-10. Status: idea. Next step: v0 tick loop + sweep math.*
+_Started: 2026-10-10. Status: idea. Next step: v0 tick loop + sweep math._

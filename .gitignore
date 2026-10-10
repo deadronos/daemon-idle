@@ -38,3 +38,4 @@ Thumbs.db
 
 # typescript incremental
 *.tsbuildinfo
+.vitest/

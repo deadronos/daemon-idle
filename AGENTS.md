@@ -12,12 +12,18 @@ in [`docs/decisions/`](./docs/decisions/README.md).
 
 ## Commands
 
+Vite+ (`vp`) is the unified toolchain: dev server, build, Vitest tests, and
+oxlint/oxfmt lint+format. Dependencies are managed with npm.
+
 ```bash
 npm install
-npm run dev        # dev server on http://127.0.0.1:5173
-npm run build      # tsc --noEmit + vite build
-npm run typecheck  # types only
-npm run preview    # serve the built bundle
+npm run dev        # vp dev — dev server on http://127.0.0.1:5173
+npm run build      # vp run typecheck && vp build
+npm run test       # vp test run
+npm run lint       # vp lint (type-aware via oxlint-tsgolint)
+npm run lint:fix   # vp lint --fix
+npm run format     # vp fmt . --write
+npm run check      # typecheck + lint + test
 ```
 
 ## The docs lockstep rule (important)
@@ -32,8 +38,8 @@ npm run preview    # serve the built bundle
   that no longer exists.
 - **Design decision worth remembering?** Add an immutable, append-only record under
   [`docs/decisions/`](./docs/decisions/README.md) (`NNNN-title.md`, four digits) — do
-  **not** edit the numbered architecture docs to be immutable. Living docs describe *what
-  is*; ADRs record *what we chose and when*. Keep the two purposes in separate files.
+  **not** edit the numbered architecture docs to be immutable. Living docs describe _what
+  is_; ADRs record _what we chose and when_. Keep the two purposes in separate files.
 
 If you touch game rules, the numbers in `001-simulation-core.md` must still be true when
 you are done. If you touch the loop, DOM, or meters, check `002-render-system.md`. If you
@@ -47,9 +53,9 @@ shell (loop, DOM, storage). Put rules in `sim.ts`, plumbing in `main.ts`. Detail
 
 ## Verify before claiming done
 
-1. `npm run build` — must pass typecheck.
-2. For rule changes, exercise them headlessly (bundle `sim.ts` with esbuild and run a
-   script that ticks and asserts), then confirm in the browser.
+1. `npm run check` — typecheck + lint + tests must all pass.
+2. For rule changes, add or update a test in `src/sim.test.ts` (the sim is pure, so cover
+   it there), then confirm in the browser.
 3. For UI changes, drive the dev server in a real browser and screenshot; report the
    values the UI shows. Localhost works with the browser tool
    (`browser.ssrfPolicy.allowedHostnames` includes `127.0.0.1`).

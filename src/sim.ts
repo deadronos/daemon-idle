@@ -13,40 +13,40 @@ export interface TierDef {
 
 export const TIERS: TierDef[] = [
   {
-    name: 'noop loop',
-    desc: 'a flat while(true){} — cheap, dumb, keeps ticking',
+    name: "noop loop",
+    desc: "a flat while(true){} — cheap, dumb, keeps ticking",
     baseCost: 10,
     baseOutput: 0.1,
     ram: 1,
     priority: 0,
   },
   {
-    name: 'fork()',
-    desc: 'a real worker child',
+    name: "fork()",
+    desc: "a real worker child",
     baseCost: 100,
     baseOutput: 1,
     ram: 2,
     priority: 1,
   },
   {
-    name: 'worker thread',
-    desc: 'threads are cheaper than processes',
+    name: "worker thread",
+    desc: "threads are cheaper than processes",
     baseCost: 1_000,
     baseOutput: 8,
     ram: 4,
     priority: 2,
   },
   {
-    name: 'microservice',
-    desc: 'it has its own Dockerfile, of course',
+    name: "microservice",
+    desc: "it has its own Dockerfile, of course",
     baseCost: 10_000,
     baseOutput: 60,
     ram: 8,
     priority: 3,
   },
   {
-    name: 'cron daemon',
-    desc: 'fires every night; nobody knows what it does',
+    name: "cron daemon",
+    desc: "fires every night; nobody knows what it does",
     baseCost: 100_000,
     baseOutput: 400,
     ram: 16,
@@ -111,7 +111,7 @@ export function newGame(): GameState {
     oomCount: 0,
     ramWarned: false,
     legacy: [],
-    log: ['boot: daemon pid 1 started (unattended)'],
+    log: ["boot: daemon pid 1 started (unattended)"],
     playtime: 0,
     lastSave: Date.now(),
   };
@@ -308,7 +308,7 @@ export function tick(s: GameState, dt: number): void {
 function runSweep(s: GameState): void {
   const total = s.counts.reduce((a, b) => a + b, 0);
   if (total === 0) {
-    log(s, 'cleanup sweep: nothing to reap');
+    log(s, "cleanup sweep: nothing to reap");
     s.sweepsSurvived++;
     return;
   }
@@ -316,9 +316,7 @@ function runSweep(s: GameState): void {
   let budget = Math.max(1, Math.round(total * severity * sweepVictimMult(s)));
 
   // reap lowest priority first
-  const order = TIERS.map((_, i) => i).sort(
-    (a, b) => TIERS[a].priority - TIERS[b].priority,
-  );
+  const order = TIERS.map((_, i) => i).sort((a, b) => TIERS[a].priority - TIERS[b].priority);
   let killed = 0;
   for (const i of order) {
     while (budget > 0 && s.counts[i] > 0) {
@@ -329,14 +327,12 @@ function runSweep(s: GameState): void {
     if (budget <= 0) break;
   }
   s.sweepsSurvived++;
-  log(s, `cleanup sweep: reaped ${killed} process${killed === 1 ? '' : 'es'}`);
+  log(s, `cleanup sweep: reaped ${killed} process${killed === 1 ? "" : "es"}`);
 }
 
 function runOom(s: GameState): void {
   // kill the most valuable children first — the OOM killer does not care
-  const order = TIERS.map((_, i) => i).sort(
-    (a, b) => TIERS[b].baseOutput - TIERS[a].baseOutput,
-  );
+  const order = TIERS.map((_, i) => i).sort((a, b) => TIERS[b].baseOutput - TIERS[a].baseOutput);
   let killed = 0;
   while (ramUsed(s) > s.ramCap) {
     const i = order.find((idx) => s.counts[idx] > 0);
@@ -352,7 +348,7 @@ function runOom(s: GameState): void {
   s.oomCount++;
   log(
     s,
-    `OOM killer: out of memory — killed ${killed} process${killed === 1 ? '' : 'es'}, cycles -10%`,
+    `OOM killer: out of memory — killed ${killed} process${killed === 1 ? "" : "es"}, cycles -10%`,
   );
 }
 

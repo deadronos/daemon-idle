@@ -6,25 +6,25 @@ cosmetics, which use `Math.random`).
 
 ## State — `GameState`
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `cycles` | number | Current spendable currency. |
-| `totalEarned` | number | Lifetime earned; gates prestige. |
-| `counts` | number[] | Owned children per tier (index = tier). |
-| `ramCap` | number | RAM ceiling in MB. |
-| `leak` | number | Leaked RAM on top of the footprint. |
-| `nice` | number | Upgrade level reducing sweep victims. |
-| `gc` | number | Upgrade level of automatic leak flushing. |
-| `forks` | number | Prestige count; drives the lineage multiplier. |
-| `sweepTimer` | number | Seconds until the next cleanup sweep. |
-| `sweepInterval` | number | Seconds between sweeps. |
-| `sweepsSurvived` | number | Sweeps run so far; raises severity. |
-| `oomCount` | number | Times the OOM killer has fired. |
-| `ramWarned` | boolean | Latches the ≥90% memory-pressure warning. |
-| `legacy` | LegacyDaemon[] | Background producers left by forks. |
-| `log` | string[] | Terminal feed, newest first, capped at 40. |
-| `playtime` | number | Seconds simulated (includes offline). |
-| `lastSave` | number | Epoch ms of last save; drives offline progress. |
+| Field            | Type           | Meaning                                         |
+| ---------------- | -------------- | ----------------------------------------------- |
+| `cycles`         | number         | Current spendable currency.                     |
+| `totalEarned`    | number         | Lifetime earned; gates prestige.                |
+| `counts`         | number[]       | Owned children per tier (index = tier).         |
+| `ramCap`         | number         | RAM ceiling in MB.                              |
+| `leak`           | number         | Leaked RAM on top of the footprint.             |
+| `nice`           | number         | Upgrade level reducing sweep victims.           |
+| `gc`             | number         | Upgrade level of automatic leak flushing.       |
+| `forks`          | number         | Prestige count; drives the lineage multiplier.  |
+| `sweepTimer`     | number         | Seconds until the next cleanup sweep.           |
+| `sweepInterval`  | number         | Seconds between sweeps.                         |
+| `sweepsSurvived` | number         | Sweeps run so far; raises severity.             |
+| `oomCount`       | number         | Times the OOM killer has fired.                 |
+| `ramWarned`      | boolean        | Latches the ≥90% memory-pressure warning.       |
+| `legacy`         | LegacyDaemon[] | Background producers left by forks.             |
+| `log`            | string[]       | Terminal feed, newest first, capped at 40.      |
+| `playtime`       | number         | Seconds simulated (includes offline).           |
+| `lastSave`       | number         | Epoch ms of last save; drives offline progress. |
 
 `newGame()` returns a fresh state with one child-tier array of zeros and the log seeded
 with a boot line. `BASE` holds the tunable constants shared across the file.
@@ -35,13 +35,13 @@ Five child types, defined in the `TIERS` array. `cost` grows per purchase by
 `COST_GROWTH = 1.15`; `baseOutput` is cycles/s at lineage ×1; `priority` decides sweep
 order (lower dies first).
 
-| # | name | baseCost | baseOutput | ram | priority |
-| --- | --- | --- | --- | --- | --- |
-| 0 | noop loop | 10 | 0.1 | 1 | 0 |
-| 1 | fork() | 100 | 1 | 2 | 1 |
-| 2 | worker thread | 1,000 | 8 | 4 | 2 |
-| 3 | microservice | 10,000 | 60 | 8 | 3 |
-| 4 | cron daemon | 100,000 | 400 | 16 | 4 |
+| #   | name          | baseCost | baseOutput | ram | priority |
+| --- | ------------- | -------- | ---------- | --- | -------- |
+| 0   | noop loop     | 10       | 0.1        | 1   | 0        |
+| 1   | fork()        | 100      | 1          | 2   | 1        |
+| 2   | worker thread | 1,000    | 8          | 4   | 2        |
+| 3   | microservice  | 10,000   | 60         | 8   | 3        |
+| 4   | cron daemon   | 100,000  | 400        | 16  | 4        |
 
 Cost of the next unit of tier `i`: `baseCost[i] * 1.15^counts[i]`.
 
@@ -54,7 +54,7 @@ childOutput  = Σ counts[i] * baseOutput[i]
 
 - `BASE.rootOutput = 1` — the root process itself yields 1 cycle/s. **This is the
   bootstrap:** without it a fresh game earns nothing and can never afford the first child.
-- `lineageMult = 1 + forks * 0.1` multiplies *all* income (children, root, legacy).
+- `lineageMult = 1 + forks * 0.1` multiplies _all_ income (children, root, legacy).
 
 ## RAM
 
@@ -68,7 +68,7 @@ A spawn is allowed only if `cycles >= cost` **and** `ramUsed + ram[i] <= ramCap`
 
 ## The leak
 
-Every tick, the leak grows at `LEAK_RATE = 0.01` (1% of the *footprint* per second):
+Every tick, the leak grows at `LEAK_RATE = 0.01` (1% of the _footprint_ per second):
 
 ```
 growth = childRam * 0.01 * dt
@@ -109,13 +109,13 @@ the leak alone is still over the cap, it is reclaimed. Then `cycles *= 0.9` and
 
 ## Upgrade costs
 
-| Upgrade | Cost | Effect |
-| --- | --- | --- |
-| `nice(+1)` | `250 * 2.5^n` | −3% sweep victims per level (floor 30%). |
-| `malloc(+1)` | `150 * 1.9^((ramCap-8)/8)` | +8 MB ceiling. |
-| `gc(+1)` | `400 * 3^n` | Faster automatic leak flushing. |
-| `free()` | 0 | Zero the leak. |
-| `fork()` | `1e6 * 10^forks` | Prestige — see doc 004. |
+| Upgrade      | Cost                       | Effect                                   |
+| ------------ | -------------------------- | ---------------------------------------- |
+| `nice(+1)`   | `250 * 2.5^n`              | −3% sweep victims per level (floor 30%). |
+| `malloc(+1)` | `150 * 1.9^((ramCap-8)/8)` | +8 MB ceiling.                           |
+| `gc(+1)`     | `400 * 3^n`                | Faster automatic leak flushing.          |
+| `free()`     | 0                          | Zero the leak.                           |
+| `fork()`     | `1e6 * 10^forks`           | Prestige — see doc 004.                  |
 
 ## Invariants
 
