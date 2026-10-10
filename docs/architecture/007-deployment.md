@@ -32,6 +32,21 @@ portable and matches the sibling project.)
 The repository's Pages source is **GitHub Actions** (`build_type: workflow`), set via the
 API. No `gh-pages` branch is used.
 
+### Environment policy (required for tag deploys)
+
+The `github-pages` environment must permit the refs that deploy. Its deployment branch
+policy starts with only the default branch (`main`), which **blocks tag deploys** — a
+tag-triggered run fails in seconds with:
+
+> Tag "vX.Y.Z" is not allowed to deploy to github-pages due to environment protection rules.
+
+Add a tag policy (custom policy, type `tag`, name `v*`) so release tags can deploy:
+
+```bash
+gh api --method POST repos/<owner>/<repo>/environments/github-pages/deployment-branch-policies \
+  -f name='v*' -f type=tag
+```
+
 ## Verifying a deploy
 
 - Manual: `gh workflow run deploy-pages.yml`, then watch the run.
