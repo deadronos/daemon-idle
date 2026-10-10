@@ -1,5 +1,10 @@
 // Core simulation for `daemon` — pure state + functions, no DOM.
 // Keep this deterministic and DOM-free so it stays testable.
+//
+// Unbounded values (cycles, costs, output, legacy rates) are Decimals from
+// ./bignum. Bounded values (counts, RAM, timers) stay plain numbers.
+
+import { d, Decimal } from "./bignum";
 
 export interface TierDef {
   name: string;
@@ -61,14 +66,14 @@ const LEGACY_SHARE = 0.1; // legacy daemon produces 10% of peak cps
 
 export interface LegacyDaemon {
   name: string;
-  rate: number;
+  rate: Decimal;
   crashed: boolean;
   respawn: number;
 }
 
 export interface GameState {
-  cycles: number;
-  totalEarned: number;
+  cycles: Decimal;
+  totalEarned: Decimal;
   counts: number[];
   ramCap: number;
   leak: number;
@@ -97,8 +102,8 @@ const LOG_LIMIT = 40;
 
 export function newGame(): GameState {
   return {
-    cycles: 0,
-    totalEarned: 0,
+    cycles: d(0),
+    totalEarned: d(0),
     counts: TIERS.map(() => 0),
     ramCap: BASE.ramCap,
     leak: 0,
@@ -117,8 +122,8 @@ export function newGame(): GameState {
   };
 }
 
-export function lineageMult(s: GameState): number {
-  return 1 + s.forks * 0.1;
+export function lineageMult(s: GameState): Decimal {
+  return d(1 + s.forks * 0.1);
 }
 
 export function childRam(s: GameState): number {
@@ -129,16 +134,20 @@ export function ramUsed(s: GameState): number {
   return childRam(s) + s.leak;
 }
 
-export function tierCost(s: GameState, i: number): number {
-  return TIERS[i].baseCost * Math.pow(COST_GROWTH, s.counts[i]);
+export function tierCost(s: GameState, i: number): Decimal {
+  return d(TIERS[i].baseCost).mul(d(COST_GROWTH).pow(s.counts[i]));
 }
 
-export function childOutput(s: GameState): number {
-  return s.counts.reduce((sum, n, i) => sum + n * TIERS[i].baseOutput, 0);
+export function childOutput(s: GameState): Decimal {
+  let sum = d(0);
+  for (let i = 0; i < TIERS.length; i++) {
+    sum = sum.add(d(TIERS[i].baseOutput).mul(s.counts[i]));
+  }
+  return sum;
 }
 
-export function cyclesPerSec(s: GameState): number {
-  return (childOutput(s) + BASE.rootOutput) * lineageMult(s);
+export function cyclesPerSec(s: GameState): Decimal {
+  return childOutput(s).add(BASE.rootOutput).mul(lineageMult(s));
 }
 
 export function sweepVictimMult(s: GameState): number {
@@ -147,20 +156,20 @@ export function sweepVictimMult(s: GameState): number {
 
 // --- upgrade costs ---------------------------------------------------------
 
-export function niceCost(s: GameState): number {
-  return 250 * Math.pow(2.5, s.nice);
+export function niceCost(s: GameState): Decimal {
+  return d(250).mul(d(2.5).pow(s.nice));
 }
 
-export function mallocCost(s: GameState): number {
-  return 150 * Math.pow(1.9, (s.ramCap - BASE.ramCap) / 8);
+export function mallocCost(s: GameState): Decimal {
+  return d(150).mul(d(1.9).pow((s.ramCap - BASE.ramCap) / 8));
 }
 
-export function gcCost(s: GameState): number {
-  return 400 * Math.pow(3, s.gc);
+export function gcCost(s: GameState): Decimal {
+  return d(400).mul(d(3).pow(s.gc));
 }
 
-export function forkCost(s: GameState): number {
-  return 1e6 * Math.pow(10, s.forks);
+export function forkCost(s: GameState): Decimal {
+  return d(1e6).mul(d(10).pow(s.forks));
 }
 
 export const MALLOC_STEP = 8;
@@ -168,22 +177,21 @@ export const MALLOC_STEP = 8;
 // --- actions ---------------------------------------------------------------
 
 export function canSpawn(s: GameState, i: number): boolean {
-  const cost = tierCost(s, i);
   const ramOk = ramUsed(s) + TIERS[i].ram <= s.ramCap;
-  return s.cycles >= cost && ramOk;
+  return s.cycles.gte(tierCost(s, i)) && ramOk;
 }
 
 export function spawn(s: GameState, i: number): boolean {
   if (!canSpawn(s, i)) return false;
-  s.cycles -= tierCost(s, i);
+  s.cycles = s.cycles.sub(tierCost(s, i));
   s.counts[i]++;
   return true;
 }
 
 export function buyNice(s: GameState): boolean {
   const cost = niceCost(s);
-  if (s.cycles < cost) return false;
-  s.cycles -= cost;
+  if (s.cycles.lt(cost)) return false;
+  s.cycles = s.cycles.sub(cost);
   s.nice++;
   log(s, `nice(+1): sweep will reap ${Math.round((1 - sweepVictimMult(s)) * 100)}% fewer`);
   return true;
@@ -191,8 +199,8 @@ export function buyNice(s: GameState): boolean {
 
 export function buyMalloc(s: GameState): boolean {
   const cost = mallocCost(s);
-  if (s.cycles < cost) return false;
-  s.cycles -= cost;
+  if (s.cycles.lt(cost)) return false;
+  s.cycles = s.cycles.sub(cost);
   s.ramCap += MALLOC_STEP;
   log(s, `malloc(+${MALLOC_STEP}MB): ceiling is now ${s.ramCap}MB`);
   return true;
@@ -200,8 +208,8 @@ export function buyMalloc(s: GameState): boolean {
 
 export function buyGc(s: GameState): boolean {
   const cost = gcCost(s);
-  if (s.cycles < cost) return false;
-  s.cycles -= cost;
+  if (s.cycles.lt(cost)) return false;
+  s.cycles = s.cycles.sub(cost);
   s.gc++;
   log(s, `gc level ${s.gc}: leak flushed automatically`);
   return true;
@@ -216,22 +224,22 @@ export function freeMemory(s: GameState): boolean {
 }
 
 export function nudgeDaemon(s: GameState, index: number): boolean {
-  const d = s.legacy[index];
-  if (!d || !d.crashed) return false;
-  d.crashed = false;
-  d.respawn = 0;
-  log(s, `${d.name} restarted by hand`);
+  const dm = s.legacy[index];
+  if (!dm || !dm.crashed) return false;
+  dm.crashed = false;
+  dm.respawn = 0;
+  log(s, `${dm.name} restarted by hand`);
   return true;
 }
 
 export function canFork(s: GameState): boolean {
-  return s.totalEarned >= forkCost(s);
+  return s.totalEarned.gte(forkCost(s));
 }
 
 export function doFork(s: GameState): boolean {
   if (!canFork(s)) return false;
   const peak = cyclesPerSec(s);
-  const rate = Math.max(0.1, peak * LEGACY_SHARE);
+  const rate = Decimal.max(0.1, peak.mul(LEGACY_SHARE));
   s.forks++;
   s.legacy.push({
     name: `legacy-${s.forks}`,
@@ -240,14 +248,14 @@ export function doFork(s: GameState): boolean {
     respawn: 0,
   });
   // reset the working set, keep lineage + legacy
-  s.cycles = 0;
+  s.cycles = d(0);
   s.counts = TIERS.map(() => 0);
   s.leak = 0;
   s.ramCap = BASE.ramCap;
   s.nice = 0;
   s.gc = 0;
   s.sweepTimer = BASE.sweepInterval;
-  log(s, `fork(): new instance spawned — lineage ×${lineageMult(s).toFixed(1)}`);
+  log(s, `fork(): new instance spawned — lineage ×${lineageMult(s).toNumber().toFixed(1)}`);
   return true;
 }
 
@@ -256,9 +264,9 @@ export function doFork(s: GameState): boolean {
 export function tick(s: GameState, dt: number): void {
   s.playtime += dt;
 
-  const cps = cyclesPerSec(s);
-  s.cycles += cps * dt;
-  s.totalEarned += cps * dt;
+  const gain = cyclesPerSec(s).mul(dt);
+  s.cycles = s.cycles.add(gain);
+  s.totalEarned = s.totalEarned.add(gain);
 
   // memory leak grows with footprint; gc flushes it back down
   const footprint = childRam(s);
@@ -269,20 +277,22 @@ export function tick(s: GameState, dt: number): void {
   }
 
   // legacy daemons: produce, occasionally crash, maybe auto-respawn
-  for (const d of s.legacy) {
-    if (d.crashed) {
-      d.respawn -= dt;
-      if (d.respawn <= 0 && s.gc > 0) {
-        d.crashed = false;
-        log(s, `${d.name} respawned by gc`);
+  const mult = lineageMult(s);
+  for (const dm of s.legacy) {
+    if (dm.crashed) {
+      dm.respawn -= dt;
+      if (dm.respawn <= 0 && s.gc > 0) {
+        dm.crashed = false;
+        log(s, `${dm.name} respawned by gc`);
       }
     } else {
-      s.cycles += d.rate * dt * lineageMult(s);
-      s.totalEarned += d.rate * dt * lineageMult(s);
+      const legacyGain = dm.rate.mul(dt).mul(mult);
+      s.cycles = s.cycles.add(legacyGain);
+      s.totalEarned = s.totalEarned.add(legacyGain);
       if (Math.random() < 1 - Math.exp(-LEGACY_CRASH_CHANCE * dt)) {
-        d.crashed = true;
-        d.respawn = 10;
-        log(s, `${d.name} segfaulted (PID ${randPid()})`);
+        dm.crashed = true;
+        dm.respawn = 10;
+        log(s, `${dm.name} segfaulted (PID ${randPid()})`);
       }
     }
   }
@@ -344,7 +354,7 @@ function runOom(s: GameState): void {
   if (ramUsed(s) > s.ramCap) {
     s.leak = Math.max(0, s.ramCap - childRam(s));
   }
-  s.cycles *= 0.9;
+  s.cycles = s.cycles.mul(0.9);
   s.oomCount++;
   log(
     s,

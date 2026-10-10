@@ -48,13 +48,16 @@ touch saves, check `003-persistence.md`.
 ## Architecture in one line
 
 `src/sim.ts` is pure game logic (no DOM, no timers, deterministic); `src/main.ts` is the
-shell (loop, DOM, storage). Put rules in `sim.ts`, plumbing in `main.ts`. Details in
+shell (loop, DOM, storage, watchdog cadence). Unbounded values are `Decimal`s from
+`src/bignum.ts` — never import the big-number library directly. `src/diagnostics.ts` is
+pure numeric health checks; route its alerts through `src/report.ts` sinks. Put rules in
+`sim.ts`, plumbing in `main.ts`. Details in
 [`docs/architecture/000-base-game-architecture.md`](./docs/architecture/000-base-game-architecture.md).
 
 ## Verify before claiming done
 
 1. `npm run check` — typecheck + lint + tests must all pass.
-2. For rule changes, add or update a test in `src/sim.test.ts` (the sim is pure, so cover
+2. For rule changes, add or update a test in `src/*.test.ts` (the sim is pure, so cover
    it there), then confirm in the browser.
 3. For UI changes, drive the dev server in a real browser and screenshot; report the
    values the UI shows. Localhost works with the browser tool

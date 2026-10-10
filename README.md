@@ -17,7 +17,7 @@ Vitest tests, and oxlint/oxfmt lint+format. Dependencies are managed with npm.
 ```bash
 npm install
 npm run dev       # dev server → http://127.0.0.1:5173
-npm run test      # Vitest (src/sim.test.ts)
+npm run test      # Vitest (src/*.test.ts)
 npm run test:watch
 npm run lint      # oxlint (type-aware)
 npm run format    # oxfmt
@@ -42,14 +42,14 @@ Progress autosaves to `localStorage` and applies offline gains on return (capped
 ## Status
 
 v0 — playable loop: cycles, tiers, sweeps, RAM leak + OOM killer, one prestige layer,
-offline progress, terminal log. Covered by a Vitest suite over the pure simulation.
-Numbers are plain JS doubles with suffix formatting; swap in `break_infinity.js` if the
-late game needs the precision.
+offline progress, terminal log. Unbounded values use `break_eternity.js`. Covered by a
+Vitest suite (sim + diagnostics) and a numeric watchdog that surfaces NaN/Infinity and
+runaway growth.
 
 ## Stack
 
-TypeScript 7 + Vite+ (`vp`: Vite, Vitest, oxlint, oxfmt). No runtime dependencies, no
-backend.
+TypeScript 7 + Vite+ (`vp`: Vite, Vitest, oxlint, oxfmt). One runtime dependency:
+`break_eternity.js` for unbounded numbers (behind `src/bignum.ts`). No backend.
 
 ## License
 

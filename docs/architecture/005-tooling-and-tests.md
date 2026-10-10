@@ -37,7 +37,8 @@ Tests are colocated as `src/*.test.ts` and import from **`vite-plus/test`** (not
 
 `src/sim.test.ts` covers the pure simulation: bootstrap income, the cost curve, spawn
 gating (cycles + RAM), the cleanup sweep (priority order and `nice`), the memory leak and
-`gc`, the OOM killer, and prestige.
+`gc`, the OOM killer, prestige, and big-number range. `src/diagnostics.test.ts` covers the
+watchdog rules.
 
 ### Writing a sim test
 

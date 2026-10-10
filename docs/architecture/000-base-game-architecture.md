@@ -16,18 +16,21 @@ and **memory pressure**. See [`../../IDEA.md`](../../IDEA.md) for the design int
 - **Vite+** (`vp`: Vite, Vitest, oxlint, oxfmt) for dev, build, test, lint, and format.
   No runtime dependencies, no backend.
 - **Plain DOM + CSS** for rendering (no framework). Terminal aesthetic in `src/style.css`.
-- Numbers are plain JS `number` (double). Late-game precision is a known limitation; a
-  big-number library is the intended upgrade path.
+- Unbounded values are `Decimal` from `break_eternity.js` via `src/bignum.ts`; bounded
+  values stay plain `number`. See [ADR 0003](../decisions/0003-bignum-break-eternity.md).
 
 ## Module map
 
-| File            | Responsibility                                                                |
-| --------------- | ----------------------------------------------------------------------------- |
-| `src/sim.ts`    | **The simulation.** Pure state + functions. No DOM, no timers, deterministic. |
-| `src/main.ts`   | **The shell.** Boot, tick loop, persistence, DOM wiring, rendering.           |
-| `src/format.ts` | Number/time formatting for display only.                                      |
-| `index.html`    | Static structure with fixed element ids that `main.ts` binds to.              |
-| `src/style.css` | All styling.                                                                  |
+| File                 | Responsibility                                                                |
+| -------------------- | ----------------------------------------------------------------------------- |
+| `src/sim.ts`         | **The simulation.** Pure state + functions. No DOM, no timers, deterministic. |
+| `src/bignum.ts`      | **Numeric boundary.** Re-exports the big-number library (break_eternity.js).  |
+| `src/diagnostics.ts` | **Numeric watchdog.** Pure `checkNumericHealth(state)` → alerts.              |
+| `src/report.ts`      | **Alert routing.** Reporter + pluggable sinks (console, log feed).            |
+| `src/main.ts`        | **The shell.** Boot, loop, persistence, DOM, rendering, watchdog cadence.     |
+| `src/format.ts`      | Value/time formatting for display only.                                       |
+| `index.html`         | Static structure with fixed element ids that `main.ts` binds to.              |
+| `src/style.css`      | All styling.                                                                  |
 
 ## The one architectural rule
 

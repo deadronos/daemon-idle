@@ -1,5 +1,6 @@
 import {
-  GameState,
+  type GameState,
+  MALLOC_STEP,
   TIERS,
   buyGc,
   buyMalloc,
@@ -21,22 +22,65 @@ import {
   ramUsed,
   spawn,
   sweepVictimMult,
-  tierCost,
   tick,
+  tierCost,
 } from "./sim";
+import { d } from "./bignum";
+import { type Alert, checkNumericHealth } from "./diagnostics";
+import { consoleSink, logFeedSink, makeReporter } from "./report";
 import { fmt, fmtRate, fmtTime } from "./format";
 
 const SAVE_KEY = "daemon-idle-save-v1";
 const TICK_MS = 50; // fixed sim step
 const OFFLINE_CAP_S = 8 * 3600;
 const AUTOSAVE_MS = 10_000;
+const WATCHDOG_MS = 1000;
 
 // --- persistence -----------------------------------------------------------
+
+interface StoredState {
+  cycles: string;
+  totalEarned: string;
+  legacy: Array<{ name: string; rate: string; crashed: boolean; respawn: number }>;
+}
+
+function encode(s: GameState): string {
+  return JSON.stringify({
+    ...s,
+    cycles: s.cycles.toString(),
+    totalEarned: s.totalEarned.toString(),
+    legacy: s.legacy.map((l) => ({ ...l, rate: l.rate.toString() })),
+  });
+}
+
+function decode(raw: string): GameState {
+  const parsed = JSON.parse(raw) as Partial<StoredState>;
+  const s: GameState = {
+    ...newGame(),
+    ...(parsed as unknown as Partial<GameState>),
+    cycles: d((parsed.cycles as string | number | undefined) ?? 0),
+    totalEarned: d((parsed.totalEarned as string | number | undefined) ?? 0),
+    legacy: Array.isArray(parsed.legacy)
+      ? parsed.legacy.map((l) => ({
+          name: String(l.name ?? "legacy"),
+          rate: d((l.rate as string | number | undefined) ?? 0),
+          crashed: Boolean(l.crashed),
+          respawn: Number(l.respawn ?? 0),
+        }))
+      : [],
+  };
+  // guard against shape drift
+  if (!Array.isArray(s.counts) || s.counts.length !== TIERS.length) {
+    s.counts = TIERS.map(() => 0);
+  }
+  if (!Array.isArray(s.log)) s.log = [];
+  return s;
+}
 
 function save(s: GameState): void {
   s.lastSave = Date.now();
   try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify(s));
+    localStorage.setItem(SAVE_KEY, encode(s));
   } catch {
     /* storage unavailable — ignore */
   }
@@ -46,15 +90,7 @@ function load(): GameState {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return newGame();
-    const parsed = JSON.parse(raw) as Partial<GameState>;
-    const s: GameState = { ...newGame(), ...parsed };
-    // guard against shape drift
-    if (!Array.isArray(s.counts) || s.counts.length !== TIERS.length) {
-      s.counts = TIERS.map(() => 0);
-    }
-    if (!Array.isArray(s.legacy)) s.legacy = [];
-    if (!Array.isArray(s.log)) s.log = [];
-
+    const s = decode(raw);
     const elapsed = Math.min(OFFLINE_CAP_S, (Date.now() - (s.lastSave || Date.now())) / 1000);
     if (elapsed > 5) applyOffline(s, elapsed);
     return s;
@@ -71,7 +107,7 @@ function applyOffline(s: GameState, seconds: number): void {
     tick(s, dt);
     remaining -= dt;
   }
-  log(s, `offline ${fmtTime(seconds)}: +${fmt(s.cycles - before)} cycles`);
+  log(s, `offline ${fmtTime(seconds)}: +${fmt(s.cycles.sub(before))} cycles`);
 }
 
 // --- dom refs --------------------------------------------------------------
@@ -93,6 +129,7 @@ const el = {
   leakBar: $("leakBar"),
   sweepText: $("sweepText"),
   sweepBar: $("sweepBar"),
+  alertBanner: $("alertBanner"),
   spawnPanel: $("spawnPanel"),
   upgradePanel: $("upgradePanel"),
   legacyPanel: $("legacyPanel"),
@@ -104,7 +141,7 @@ const el = {
 interface ActionButton {
   el: HTMLButtonElement;
   name: () => string;
-  cost: () => number;
+  cost: () => ReturnType<typeof niceCost>;
   enabled: () => boolean;
   run: () => void;
 }
@@ -133,7 +170,7 @@ const upgradeButtons: ActionButton[] = [];
 
 function addUpgrade(
   name: () => string,
-  cost: () => number,
+  cost: () => ReturnType<typeof niceCost>,
   enabled: () => boolean,
   run: () => void,
 ): void {
@@ -150,7 +187,7 @@ function addUpgrade(
 
 addUpgrade(
   () => "free()",
-  () => 0,
+  () => d(0),
   () => state.leak > 0,
   () => freeMemory(state),
 );
@@ -158,19 +195,19 @@ addUpgrade(
   () =>
     `nice(+1)  ·  reap ${Math.round((1 - sweepVictimMult(state)) * 100)}% fewer  ·  lvl ${state.nice}`,
   () => niceCost(state),
-  () => state.cycles >= niceCost(state),
+  () => state.cycles.gte(niceCost(state)),
   () => buyNice(state),
 );
 addUpgrade(
-  () => `malloc(+8MB)  ·  ceiling ${state.ramCap}MB`,
+  () => `malloc(+${MALLOC_STEP}MB)  ·  ceiling ${state.ramCap}MB`,
   () => mallocCost(state),
-  () => state.cycles >= mallocCost(state),
+  () => state.cycles.gte(mallocCost(state)),
   () => buyMalloc(state),
 );
 addUpgrade(
   () => (state.gc === 0 ? "gc  ·  auto-flush the leak" : `gc  ·  auto-flush lvl ${state.gc}`),
   () => gcCost(state),
-  () => state.cycles >= gcCost(state),
+  () => state.cycles.gte(gcCost(state)),
   () => buyGc(state),
 );
 addUpgrade(
@@ -187,7 +224,7 @@ let lastLogSig = "";
 function render(force = false): void {
   el.cycles.textContent = fmt(state.cycles);
   el.cps.textContent = fmt(cyclesPerSec(state));
-  el.lineage.textContent = `×${lineageMult(state).toFixed(1)}`;
+  el.lineage.textContent = `×${lineageMult(state).toNumber().toFixed(1)}`;
   el.forks.textContent = String(state.forks);
   el.sweeps.textContent = String(state.sweepsSurvived);
 
@@ -230,7 +267,7 @@ function render(force = false): void {
     const cost = b.cost();
     (b.el.querySelector(".name") as HTMLElement).textContent = b.name();
     const costEl = b.el.querySelector(".cost") as HTMLElement;
-    costEl.textContent = cost > 0 ? fmt(cost) : "";
+    costEl.textContent = cost.gt(0) ? fmt(cost) : "";
     costEl.classList.toggle("ok", ok);
   }
 
@@ -246,16 +283,16 @@ function renderLegacy(): void {
     }
     return;
   }
-  const sig = state.legacy.map((d) => `${d.name}:${d.crashed}`).join("|");
+  const sig = state.legacy.map((dm) => `${dm.name}:${dm.crashed}`).join("|");
   if (el.legacyPanel.dataset.sig !== sig) {
     el.legacyPanel.dataset.sig = sig;
     el.legacyPanel.innerHTML = "";
-    state.legacy.forEach((d, i) => {
+    state.legacy.forEach((dm, i) => {
       const div = document.createElement("div");
-      div.className = `daemon${d.crashed ? " crashed" : ""}`;
-      div.innerHTML = d.crashed
-        ? `<span>${d.name} — crashed</span><span class="rate">click to restart</span>`
-        : `<span>${d.name}</span><span class="rate"></span>`;
+      div.className = `daemon${dm.crashed ? " crashed" : ""}`;
+      div.innerHTML = dm.crashed
+        ? `<span>${dm.name} — crashed</span><span class="rate">click to restart</span>`
+        : `<span>${dm.name}</span><span class="rate"></span>`;
       div.addEventListener("click", () => {
         nudgeDaemon(state, i);
         render(true);
@@ -264,10 +301,10 @@ function renderLegacy(): void {
     });
   }
   // refresh live rates cheaply
-  state.legacy.forEach((d, i) => {
+  state.legacy.forEach((dm, i) => {
     const row = el.legacyPanel.children[i];
     const rateEl = row?.querySelector(".rate");
-    if (rateEl && !d.crashed) rateEl.textContent = fmtRate(d.rate * lineageMult(state));
+    if (rateEl && !dm.crashed) rateEl.textContent = fmtRate(dm.rate.mul(lineageMult(state)));
   });
 }
 
@@ -277,9 +314,9 @@ function renderLog(force: boolean): void {
   lastLogSig = sig;
   el.log.innerHTML = "";
   for (const line of state.log) {
-    const d = document.createElement("div");
-    d.textContent = `> ${line}`;
-    el.log.appendChild(d);
+    const div = document.createElement("div");
+    div.textContent = `> ${line}`;
+    el.log.appendChild(div);
   }
 }
 
@@ -290,11 +327,41 @@ function totalChildren(): number {
 // --- boot ------------------------------------------------------------------
 
 const state = load();
+
+// --- numeric watchdog ------------------------------------------------------
+
+const report = makeReporter([consoleSink, logFeedSink((message) => log(state, message))]);
+
+let activeAlertCodes = new Set<string>();
+
+function renderBanner(alerts: Alert[]): void {
+  const playerAlerts = alerts.filter((a) => a.audience === "player");
+  if (playerAlerts.length === 0) {
+    el.alertBanner.hidden = true;
+    el.alertBanner.textContent = "";
+    el.alertBanner.className = "banner";
+    return;
+  }
+  const worst = playerAlerts.find((a) => a.level === "error") ?? playerAlerts[0];
+  el.alertBanner.hidden = false;
+  el.alertBanner.className = `banner ${worst.level}`;
+  el.alertBanner.textContent = `⚠ ${worst.message}`;
+}
+
+function runWatchdog(): void {
+  const alerts = checkNumericHealth(state);
+  const fresh = alerts.filter((a) => !activeAlertCodes.has(a.code));
+  if (fresh.length > 0) report(fresh);
+  activeAlertCodes = new Set(alerts.map((a) => a.code));
+  renderBanner(alerts);
+}
+
 log(state, `welcome back — uptime ${fmtTime(state.playtime)}`);
 
 let acc = 0;
 let last = performance.now();
 let lastSaveAt = performance.now();
+let lastWatchdogAt = performance.now();
 
 function frame(now: number): void {
   const dtMs = Math.min(1000, now - last);
@@ -310,6 +377,10 @@ function frame(now: number): void {
     save(state);
     lastSaveAt = now;
   }
+  if (now - lastWatchdogAt > WATCHDOG_MS) {
+    runWatchdog();
+    lastWatchdogAt = now;
+  }
   requestAnimationFrame(frame);
 }
 
@@ -318,6 +389,7 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) save(state);
 });
 
+runWatchdog();
 render(true);
 requestAnimationFrame(frame);
 

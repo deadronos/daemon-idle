@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
+import { d } from "./bignum";
+import { fmt } from "./format";
 import {
   BASE,
   COST_GROWTH,
@@ -20,9 +22,9 @@ import {
 describe("bootstrap", () => {
   it("earns 1 cycle/s from the root process with no children", () => {
     const s = newGame();
-    expect(cyclesPerSec(s)).toBe(1);
+    expect(cyclesPerSec(s).toNumber()).toBe(1);
     tick(s, 10);
-    expect(s.cycles).toBeCloseTo(10, 5);
+    expect(s.cycles.toNumber()).toBeCloseTo(10, 5);
   });
 
   it("can afford the first child after ~10s from a fresh save", () => {
@@ -38,17 +40,17 @@ describe("bootstrap", () => {
 describe("cost curve", () => {
   it("grows a tier cost by COST_GROWTH per purchase", () => {
     const s = newGame();
-    s.cycles = 1e6;
+    s.cycles = d(1e6);
     const first = tierCost(s, 0);
     spawn(s, 0);
-    expect(tierCost(s, 0)).toBeCloseTo(first * COST_GROWTH, 5);
+    expect(tierCost(s, 0).div(first).toNumber()).toBeCloseTo(COST_GROWTH, 5);
   });
 });
 
 describe("spawn gating", () => {
   it("refuses a spawn that would exceed the RAM cap", () => {
     const s = newGame();
-    s.cycles = 1e9;
+    s.cycles = d(1e9);
     s.ramCap = TIERS[0].ram; // room for exactly one
     expect(spawn(s, 0)).toBe(true);
     expect(ramUsed(s)).toBe(TIERS[0].ram);
@@ -139,12 +141,12 @@ describe("OOM killer", () => {
 
   it("applies a ~10% cycle penalty", () => {
     const s = newGame();
-    s.cycles = 1000;
+    s.cycles = d(1000);
     s.counts = [0, 0, 0, 0, 2];
     s.ramCap = 16;
     tick(s, 0.01);
-    expect(s.cycles).toBeGreaterThan(890);
-    expect(s.cycles).toBeLessThan(915);
+    expect(s.cycles.toNumber()).toBeGreaterThan(890);
+    expect(s.cycles.toNumber()).toBeLessThan(915);
   });
 });
 
@@ -159,15 +161,35 @@ describe("prestige", () => {
 
   it("resets the working set and grants lineage plus a legacy daemon", () => {
     const s = newGame();
-    s.totalEarned = 2e6;
+    s.totalEarned = d(2e6);
     s.counts = [5, 5, 0, 0, 0];
     expect(doFork(s)).toBe(true);
     expect(s.forks).toBe(1);
-    expect(lineageMult(s)).toBeCloseTo(1.1, 5);
+    expect(lineageMult(s).toNumber()).toBeCloseTo(1.1, 5);
     expect(s.counts).toEqual([0, 0, 0, 0, 0]);
-    expect(s.cycles).toBe(0);
+    expect(s.cycles.eq(0)).toBe(true);
     expect(s.ramCap).toBe(BASE.ramCap);
     expect(s.legacy).toHaveLength(1);
-    expect(s.legacy[0].rate).toBeGreaterThan(0);
+    expect(s.legacy[0].rate.toNumber()).toBeGreaterThan(0);
+  });
+});
+
+// --- big-number range ------------------------------------------------------
+
+describe("big-number range", () => {
+  it("represents magnitudes far beyond a double", () => {
+    const v = d("1e400");
+    expect(v.isFinite()).toBe(true);
+    expect(v.gt(d(Number.MAX_VALUE))).toBe(true);
+  });
+
+  it("multiplies past the double ceiling", () => {
+    const v = d("1e300").mul(d("1e300"));
+    expect(v.isFinite()).toBe(true);
+    expect(v.log10().toNumber()).toBeCloseTo(600, 0);
+  });
+
+  it("formats astronomically large values in exponent notation", () => {
+    expect(fmt(d("1e60"))).toBe("1.00e60");
   });
 });

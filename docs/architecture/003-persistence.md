@@ -5,7 +5,9 @@ How progress survives a reload or a closed tab. All of it lives in `src/main.ts`
 ## Storage
 
 - **Key:** `daemon-idle-save-v1` in `localStorage`.
-- **Value:** `JSON.stringify(state)` — the whole `GameState`.
+- **Value:** the whole `GameState`, JSON-encoded by `encode()`. `Decimal` fields
+  (`cycles`, `totalEarned`, and each legacy `rate`) are serialized as strings; `decode()`
+  coerces them back with `d(...)`. Older saves that stored raw numbers still load.
 - Bump the key's suffix (`-v2`, …) only if the shape changes incompatibly; prefer the
   additive guards below so existing saves keep working.
 

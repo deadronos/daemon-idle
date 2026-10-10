@@ -29,10 +29,12 @@ the alternatives you rejected. Record the trade-off, not a story.
 
 ## Index
 
-| ADR                                         | Title                              | Status   |
-| ------------------------------------------- | ---------------------------------- | -------- |
-| [`0001`](./0001-root-baseline-income.md)    | Root baseline income for bootstrap | Accepted |
-| [`0002`](./0002-lint-and-test-toolchain.md) | Lint and test toolchain (Vite+)    | Accepted |
+| ADR                                                  | Title                                    | Status   |
+| ---------------------------------------------------- | ---------------------------------------- | -------- |
+| [`0001`](./0001-root-baseline-income.md)             | Root baseline income for bootstrap       | Accepted |
+| [`0002`](./0002-lint-and-test-toolchain.md)          | Lint and test toolchain (Vite+)          | Accepted |
+| [`0003`](./0003-bignum-break-eternity.md)            | Big-number core (break_eternity.js)      | Accepted |
+| [`0004`](./0004-numeric-watchdog-and-diagnostics.md) | Numeric watchdog and diagnostics routing | Accepted |
 
 ## Naming
 

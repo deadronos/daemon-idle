@@ -8,8 +8,8 @@ cosmetics, which use `Math.random`).
 
 | Field            | Type           | Meaning                                         |
 | ---------------- | -------------- | ----------------------------------------------- |
-| `cycles`         | number         | Current spendable currency.                     |
-| `totalEarned`    | number         | Lifetime earned; gates prestige.                |
+| `cycles`         | Decimal        | Current spendable currency.                     |
+| `totalEarned`    | Decimal        | Lifetime earned; gates prestige.                |
 | `counts`         | number[]       | Owned children per tier (index = tier).         |
 | `ramCap`         | number         | RAM ceiling in MB.                              |
 | `leak`           | number         | Leaked RAM on top of the footprint.             |
@@ -28,6 +28,13 @@ cosmetics, which use `Math.random`).
 
 `newGame()` returns a fresh state with one child-tier array of zeros and the log seeded
 with a boot line. `BASE` holds the tunable constants shared across the file.
+
+### Numeric types
+
+Unbounded values (`cycles`, `totalEarned`, tier/upgrade costs, child output, legacy rates,
+the lineage multiplier) are `Decimal` from `src/bignum.ts`. Bounded values (`counts`,
+`ramCap`, `leak`, `nice`, `gc`, timers, `playtime`) stay plain `number`. See
+[ADR 0003](../decisions/0003-bignum-break-eternity.md).
 
 ## Tiers
 

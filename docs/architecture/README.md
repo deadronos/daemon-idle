@@ -24,14 +24,15 @@ purpose per file.
 
 ## Index
 
-| Doc                                                                | Covers                                                            |
-| ------------------------------------------------------------------ | ----------------------------------------------------------------- |
-| [`000-base-game-architecture.md`](./000-base-game-architecture.md) | Whole-game overview, stack, module map, data flow, glossary       |
-| [`001-simulation-core.md`](./001-simulation-core.md)               | `src/sim.ts` — state, tick order, tiers, income, sweeps, leak/OOM |
-| [`002-render-system.md`](./002-render-system.md)                   | `src/main.ts` — loop, render cadence, DOM, buttons, meters        |
-| [`003-persistence.md`](./003-persistence.md)                       | Save/load, autosave, offline progress, save-shape guards          |
-| [`004-prestige-and-legacy.md`](./004-prestige-and-legacy.md)       | `fork()`, lineage multiplier, legacy daemons                      |
-| [`005-tooling-and-tests.md`](./005-tooling-and-tests.md)           | Vite+ toolchain, commands, tests, lint/format config              |
+| Doc                                                                      | Covers                                                            |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| [`000-base-game-architecture.md`](./000-base-game-architecture.md)       | Whole-game overview, stack, module map, data flow, glossary       |
+| [`001-simulation-core.md`](./001-simulation-core.md)                     | `src/sim.ts` — state, tick order, tiers, income, sweeps, leak/OOM |
+| [`002-render-system.md`](./002-render-system.md)                         | `src/main.ts` — loop, render cadence, DOM, buttons, meters        |
+| [`003-persistence.md`](./003-persistence.md)                             | Save/load, autosave, offline progress, save-shape guards          |
+| [`004-prestige-and-legacy.md`](./004-prestige-and-legacy.md)             | `fork()`, lineage multiplier, legacy daemons                      |
+| [`005-tooling-and-tests.md`](./005-tooling-and-tests.md)                 | Vite+ toolchain, commands, tests, lint/format config              |
+| [`006-diagnostics-and-reporting.md`](./006-diagnostics-and-reporting.md) | Numeric watchdog: detection, alert routing, sinks                 |
 
 ## Conventions
 

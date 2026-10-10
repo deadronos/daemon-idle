@@ -115,6 +115,22 @@ body {
   overflow: hidden;
 }
 
+.banner {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--amber);
+  border-radius: 6px;
+  background: #1d1a10;
+  color: var(--amber);
+  font-size: 12px;
+}
+
+.banner.error {
+  border-color: var(--danger);
+  background: #1f1113;
+  color: var(--danger);
+}
+
 .fill {
   position: absolute;
   left: 0;
