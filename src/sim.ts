@@ -79,6 +79,7 @@ export interface GameState {
   sweepInterval: number;
   sweepsSurvived: number;
   oomCount: number;
+  ramWarned: boolean;
   legacy: LegacyDaemon[];
   log: string[];
   playtime: number;
@@ -88,6 +89,8 @@ export interface GameState {
 export const BASE = {
   ramCap: 8,
   sweepInterval: 60,
+  /** Baseline cycles/s from the root process itself, before any children. */
+  rootOutput: 1,
 };
 
 const LOG_LIMIT = 40;
@@ -106,6 +109,7 @@ export function newGame(): GameState {
     sweepInterval: BASE.sweepInterval,
     sweepsSurvived: 0,
     oomCount: 0,
+    ramWarned: false,
     legacy: [],
     log: ['boot: daemon pid 1 started (unattended)'],
     playtime: 0,
@@ -134,7 +138,7 @@ export function childOutput(s: GameState): number {
 }
 
 export function cyclesPerSec(s: GameState): number {
-  return childOutput(s) * lineageMult(s);
+  return (childOutput(s) + BASE.rootOutput) * lineageMult(s);
 }
 
 export function sweepVictimMult(s: GameState): number {
@@ -290,8 +294,15 @@ export function tick(s: GameState, dt: number): void {
     s.sweepTimer = s.sweepInterval;
   }
 
-  // out of memory
-  if (ramUsed(s) > s.ramCap) runOom(s);
+  // memory pressure warning, then out of memory
+  const used = ramUsed(s);
+  if (!s.ramWarned && used > s.ramCap * 0.9) {
+    s.ramWarned = true;
+    log(s, `memory pressure: ${Math.ceil(used)}/${s.ramCap}MB — OOM killer imminent`);
+  } else if (s.ramWarned && used < s.ramCap * 0.8) {
+    s.ramWarned = false;
+  }
+  if (used > s.ramCap) runOom(s);
 }
 
 function runSweep(s: GameState): void {
