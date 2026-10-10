@@ -26,6 +26,18 @@ npm run format     # vp fmt . --write
 npm run check      # typecheck + lint + test
 ```
 
+## Workflow
+
+**Issues → branch → PR.** `main` is the integration branch; changes land through a pull
+request, not a direct push.
+
+1. **Issue** — open or find the issue that describes the change.
+2. **Branch** — a short-lived branch off `main` (`feat/…`, `fix/…`, `docs/…`, `chore/…`).
+3. **PR** — open a PR into `main`, reference the issue, run `npm run check`, then
+   squash-merge to keep `main` linear.
+
+Mark baseline states with tags (e.g. `v0.0.1-initial-scaffold`).
+
 ## The docs lockstep rule (important)
 
 **Code and architecture docs change together. A change is not done until they match.**
