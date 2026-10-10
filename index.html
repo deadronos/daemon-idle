@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>daemon</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="hud">
+        <div class="title">
+          <h1>daemon<span class="blink">_</span></h1>
+          <p class="tagline">you are a background process nobody meant to keep running</p>
+        </div>
+
+        <div class="stats">
+          <div class="stat"><label>cycles</label><span id="cycles">0</span></div>
+          <div class="stat"><label>cycles/s</label><span id="cps">0</span></div>
+          <div class="stat"><label>lineage</label><span id="lineage">&times;1.0</span></div>
+          <div class="stat"><label>forks</label><span id="forks">0</span></div>
+          <div class="stat"><label>sweeps survived</label><span id="sweeps">0</span></div>
+        </div>
+
+        <div class="meter">
+          <label>RAM <span id="ramText">0 / 8 MB</span></label>
+          <div class="bar">
+            <div id="ramBar" class="fill"></div>
+            <div id="leakBar" class="fill leak"></div>
+          </div>
+        </div>
+
+        <div class="meter">
+          <label>next cleanup sweep <span id="sweepText"></span></label>
+          <div class="bar">
+            <div id="sweepBar" class="fill danger"></div>
+          </div>
+        </div>
+      </header>
+
+      <main>
+        <section class="panel">
+          <h2>spawn</h2>
+          <div id="spawnPanel" class="buttons"></div>
+        </section>
+
+        <section class="panel">
+          <h2>upgrades</h2>
+          <div id="upgradePanel" class="buttons"></div>
+        </section>
+
+        <section class="panel">
+          <h2>legacy daemons</h2>
+          <div id="legacyPanel" class="legacy"></div>
+        </section>
+      </main>
+
+      <footer class="logwrap">
+        <div class="log-head">/var/log/daemon.log</div>
+        <div id="log" class="log"></div>
+      </footer>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

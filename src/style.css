@@ -1,0 +1,280 @@
+:root {
+  --bg: #0b0f0d;
+  --panel: #10161a;
+  --panel-2: #0d1316;
+  --line: #1e2b2a;
+  --fg: #c8f0dd;
+  --dim: #6f8f83;
+  --accent: #4ee39b;
+  --amber: #e3b341;
+  --danger: #ff5d5d;
+  --leak: #b06cff;
+  --font: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+#app {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 20px 20px 48px;
+}
+
+.blink {
+  animation: blink 1.1s steps(1) infinite;
+  color: var(--accent);
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.hud {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 8px;
+  padding: 16px 18px;
+  margin-bottom: 18px;
+}
+
+.title h1 {
+  margin: 0;
+  font-size: 26px;
+  letter-spacing: 1px;
+}
+
+.tagline {
+  margin: 2px 0 14px;
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 26px;
+  margin-bottom: 14px;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  min-width: 96px;
+}
+
+.stat label {
+  color: var(--dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stat span {
+  font-size: 18px;
+  color: var(--accent);
+}
+
+.meter {
+  margin-top: 10px;
+}
+
+.meter label {
+  display: flex;
+  justify-content: space-between;
+  color: var(--dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.bar {
+  position: relative;
+  height: 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0%;
+  background: var(--accent);
+  transition: width 0.12s linear;
+}
+
+.fill.leak {
+  background: var(--leak);
+  opacity: 0.85;
+}
+
+.fill.danger {
+  background: var(--danger);
+}
+
+main {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 18px;
+}
+
+.panel {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.panel h2 {
+  margin: 0 0 12px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--dim);
+  font-weight: 600;
+}
+
+.buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+button.act {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--panel-2);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-family: var(--font);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.1s, background 0.1s;
+}
+
+button.act:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: #12201b;
+}
+
+button.act:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+button.act .name {
+  display: flex;
+  flex-direction: column;
+}
+
+button.act .name small {
+  color: var(--dim);
+  font-size: 11px;
+}
+
+button.act .cost {
+  color: var(--amber);
+  white-space: nowrap;
+}
+
+button.act .cost.ok {
+  color: var(--accent);
+}
+
+.legacy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.legacy .none {
+  color: var(--dim);
+}
+
+.daemon {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+}
+
+.daemon.crashed {
+  border-color: var(--danger);
+  cursor: pointer;
+  color: var(--danger);
+}
+
+.daemon .rate {
+  color: var(--dim);
+}
+
+.logwrap {
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  background: #070a09;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.log-head {
+  color: var(--dim);
+  font-size: 11px;
+  margin-bottom: 8px;
+  letter-spacing: 0.5px;
+}
+
+.log {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 2px;
+  max-height: 200px;
+  overflow-y: auto;
+  font-size: 12px;
+}
+
+.log div {
+  color: var(--dim);
+  white-space: pre-wrap;
+}
+
+.log div:first-child {
+  color: var(--fg);
+}
+
+@media (max-width: 760px) {
+  main {
+    grid-template-columns: 1fr;
+  }
+}
