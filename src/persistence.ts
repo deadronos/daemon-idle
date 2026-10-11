@@ -42,10 +42,16 @@ export function coerceDecimal(v: unknown, fallback: Decimal): Decimal {
   return fallback;
 }
 
+/**
+ * Upper bound on a sanitized tier count. Far above anything reachable in play, but
+ * finite — a hand-edited count like `1e9` would otherwise let `runOom` churn.
+ */
+export const MAX_SANE_COUNT = 1_000_000;
+
 /** One sanitized count per tier; a non-array (or short array) becomes zeros. */
 export function sanitizeCounts(raw: unknown): number[] {
   const arr = Array.isArray(raw) ? raw : [];
-  return TIERS.map((_, i) => coerceCount(arr[i]));
+  return TIERS.map((_, i) => Math.min(MAX_SANE_COUNT, coerceCount(arr[i])));
 }
 
 /** Legacy daemons: drop non-objects, coerce name/rate/crashed/respawn. */

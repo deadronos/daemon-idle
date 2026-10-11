@@ -35,7 +35,8 @@ Every save stamps `state.lastSave = Date.now()` first.
    - `cycles` / `totalEarned` / each legacy `rate` → `coerceDecimal` (finite number,
      numeric string, or `Decimal`; else the fallback). `d("abc")` is lenient and yields
      `0`; `NaN`/`Infinity` coerce to the fallback.
-   - `counts` → `sanitizeCounts`: one `coerceCount` per tier, a non-array becomes zeros.
+   - `counts` → `sanitizeCounts`: one `coerceCount` per tier (capped at
+     `MAX_SANE_COUNT = 1_000_000`), a non-array becomes zeros.
    - `legacy` → `sanitizeLegacy`: non-object entries are dropped; `name` defaults to
      `"legacy"`, `rate`/`respawn` coerced.
    - `log` → mapped to strings if it is an array, else `[]`.
@@ -55,6 +56,7 @@ Every save stamps `state.lastSave = Date.now()` first.
    | `rngState` | `(finite \| 0) \|\| 1` (nonzero int32) |
    | `ramWarned` | `Boolean(…)` |
    | `lastSave` | finite, else `Date.now()` |
+   | `counts[i]` | `coerceCount`, capped at `MAX_SANE_COUNT` |
 
 5. If more than `OFFLINE_MIN_S = 5` seconds elapsed since `lastSave`, apply offline
    progress (capped at `OFFLINE_CAP_S`).

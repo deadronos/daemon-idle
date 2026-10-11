@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
-import { decode, encode } from "./persistence";
+import { MAX_SANE_COUNT, decode, encode } from "./persistence";
 import { BASE, newGame } from "./sim";
 
 describe("decode — save hardening", () => {
   it("round-trips a healthy save", () => {
     const s = decode(encode(newGame()));
     expect(s.cycles.eq(0)).toBe(true);
+    expect(s.totalEarned.eq(0)).toBe(true);
     expect(s.counts).toEqual([0, 0, 0, 0, 0]);
   });
 
@@ -36,6 +37,11 @@ describe("decode — save hardening", () => {
 
   it("resets a non-array counts to zeros", () => {
     expect(decode('{"counts":"nope"}').counts).toEqual([0, 0, 0, 0, 0]);
+  });
+
+  it("caps a huge finite count to MAX_SANE_COUNT", () => {
+    const s = decode('{"counts":[1e9,0,0,0,0]}');
+    expect(s.counts[0]).toBe(MAX_SANE_COUNT);
   });
 
   it("drops a null legacy entry and rejects a NaN rate", () => {

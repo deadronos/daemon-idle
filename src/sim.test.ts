@@ -648,6 +648,15 @@ describe("OOM killer", () => {
     expect(s.cycles.toNumber()).toBeGreaterThan(890);
     expect(s.cycles.toNumber()).toBeLessThan(915);
   });
+
+  it("bulk-drains a huge count without stalling", () => {
+    const s = newGame();
+    s.counts = [1e9, 0, 0, 0, 0]; // noop loop, 1 MB each
+    s.ramCap = 8;
+    tick(s, 0.01);
+    expect(s.oomCount).toBe(1);
+    expect(ramUsed(s)).toBeLessThanOrEqual(s.ramCap);
+  });
 });
 
 // --- heat ------------------------------------------------------------------

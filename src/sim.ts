@@ -676,11 +676,15 @@ function runOom(s: GameState): void {
   // kill the most valuable children first — the OOM killer does not care
   const order = TIERS.map((_, i) => i).sort((a, b) => TIERS[b].baseOutput - TIERS[a].baseOutput);
   let killed = 0;
-  while (ramUsed(s) > s.ramCap) {
-    const i = order.find((idx) => s.counts[idx] > 0);
-    if (i === undefined) break;
-    s.counts[i]--;
-    killed++;
+  // Drain in bulk: remove as many of the current tier as needed to fit under the cap.
+  // A per-iteration `counts[i]--` loop would stall for a huge (but finite) count.
+  for (const i of order) {
+    if (ramUsed(s) <= s.ramCap) break;
+    const need = Math.ceil((ramUsed(s) - s.ramCap) / TIERS[i].ram);
+    const take = Math.min(s.counts[i], need);
+    if (take <= 0) continue;
+    s.counts[i] -= take;
+    killed += take;
   }
   // if the leak alone is over the ceiling, reclaim it
   if (ramUsed(s) > s.ramCap) {
