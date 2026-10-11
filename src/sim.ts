@@ -10,10 +10,14 @@ export interface TierDef {
   name: string;
   desc: string;
   baseCost: number;
+  /** Per-tier cost multiplier applied on each purchase (cost curve). */
+  costGrowth: number;
   baseOutput: number;
   ram: number;
   /** Sweep order: lower priority gets reaped first. */
   priority: number;
+  /** Identity tag; `"leak-immune"` tiers consume RAM but never feed the leak. */
+  trait: "none" | "leak-immune";
 }
 
 export const TIERS: TierDef[] = [
@@ -21,41 +25,51 @@ export const TIERS: TierDef[] = [
     name: "noop loop",
     desc: "a flat while(true){} — cheap, dumb, keeps ticking",
     baseCost: 10,
+    costGrowth: 1.12,
     baseOutput: 0.1,
     ram: 1,
     priority: 0,
+    trait: "leak-immune",
   },
   {
     name: "fork()",
     desc: "a real worker child",
     baseCost: 100,
+    costGrowth: 1.15,
     baseOutput: 1,
     ram: 2,
     priority: 1,
+    trait: "none",
   },
   {
     name: "worker thread",
     desc: "threads are cheaper than processes",
     baseCost: 1_000,
+    costGrowth: 1.15,
     baseOutput: 8,
     ram: 4,
     priority: 2,
+    trait: "none",
   },
   {
     name: "microservice",
     desc: "it has its own Dockerfile, of course",
     baseCost: 10_000,
+    costGrowth: 1.18,
     baseOutput: 60,
     ram: 8,
     priority: 3,
+    trait: "none",
   },
   {
     name: "cron daemon",
     desc: "fires every night; nobody knows what it does",
     baseCost: 100_000,
+    costGrowth: 1.22,
     baseOutput: 400,
     ram: 16,
     priority: 4,
+    trait: "none",
   },
 ];
 
@@ -68,7 +82,6 @@ export const DEFAULT_SACRIFICE_ORDER: readonly number[] = Object.freeze(
   TIERS.map((_, i) => i).sort((a, b) => TIERS[a].priority - TIERS[b].priority),
 );
 
-export const COST_GROWTH = 1.15;
 const LEAK_RATE = 0.01; // fraction of footprint leaked per second
 const LEGACY_CRASH_CHANCE = 0.002; // per second, per daemon
 const LEGACY_SHARE = 0.1; // legacy daemon produces 10% of peak cps
@@ -150,8 +163,19 @@ export function ramUsed(s: GameState): number {
   return childRam(s) + s.leak;
 }
 
+/**
+ * RAM that feeds the leak: like `childRam`, but skips `"leak-immune"` tiers.
+ * Immune tiers still count toward `childRam`/`ramUsed` and spawn gating.
+ */
+function leakFootprint(s: GameState): number {
+  return s.counts.reduce(
+    (sum, n, i) => (TIERS[i].trait === "leak-immune" ? sum : sum + n * TIERS[i].ram),
+    0,
+  );
+}
+
 export function tierCost(s: GameState, i: number): Decimal {
-  return d(TIERS[i].baseCost).mul(d(COST_GROWTH).pow(s.counts[i]));
+  return d(TIERS[i].baseCost).mul(d(TIERS[i].costGrowth).pow(s.counts[i]));
 }
 
 export function childOutput(s: GameState): Decimal {
@@ -460,8 +484,8 @@ export function tick(s: GameState, dt: number): void {
   s.cycles = s.cycles.add(gain);
   s.totalEarned = s.totalEarned.add(gain);
 
-  // memory leak grows with footprint; gc flushes it back down
-  const footprint = childRam(s);
+  // memory leak grows with the non-immune footprint; gc flushes it back down
+  const footprint = leakFootprint(s);
   const growth = footprint * LEAK_RATE * dt;
   s.leak += growth;
   if (s.gc > 0) {

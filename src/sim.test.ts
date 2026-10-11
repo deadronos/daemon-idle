@@ -3,10 +3,10 @@ import { d } from "./bignum";
 import { fmt } from "./format";
 import {
   BASE,
-  COST_GROWTH,
   DEFAULT_SACRIFICE_ORDER,
   TIERS,
   canSpawn,
+  childRam,
   cyclesPerSec,
   directiveById,
   doFork,
@@ -46,12 +46,47 @@ describe("bootstrap", () => {
 // --- economy ---------------------------------------------------------------
 
 describe("cost curve", () => {
-  it("grows a tier cost by COST_GROWTH per purchase", () => {
-    const s = newGame();
-    s.cycles = d(1e6);
-    const first = tierCost(s, 0);
-    spawn(s, 0);
-    expect(tierCost(s, 0).div(first).toNumber()).toBeCloseTo(COST_GROWTH, 5);
+  it("grows a tier cost by that tier's own costGrowth per purchase", () => {
+    for (let i = 0; i < TIERS.length; i++) {
+      const s = newGame();
+      s.cycles = d(1e12);
+      s.ramCap = 10_000;
+      const first = tierCost(s, i);
+      expect(spawn(s, i)).toBe(true);
+      expect(tierCost(s, i).div(first).toNumber()).toBeCloseTo(TIERS[i].costGrowth, 5);
+    }
+  });
+
+  it("gives tiers distinct curves (1.12 for noop loop, 1.22 for cron daemon)", () => {
+    expect(TIERS[0].costGrowth).toBe(1.12);
+    expect(TIERS[4].costGrowth).toBe(1.22);
+
+    const cheap = newGame();
+    cheap.cycles = d(1e12);
+    cheap.ramCap = 10_000;
+    const cheapFirst = tierCost(cheap, 0);
+    spawn(cheap, 0);
+    expect(tierCost(cheap, 0).div(cheapFirst).toNumber()).toBeCloseTo(1.12, 5);
+
+    const pricy = newGame();
+    pricy.cycles = d(1e12);
+    pricy.ramCap = 10_000;
+    const pricyFirst = tierCost(pricy, 4);
+    spawn(pricy, 4);
+    expect(tierCost(pricy, 4).div(pricyFirst).toNumber()).toBeCloseTo(1.22, 5);
+  });
+});
+
+describe("tier identity", () => {
+  it("gives every tier an explicit costGrowth and trait", () => {
+    expect(TIERS.map((t) => t.costGrowth)).toEqual([1.12, 1.15, 1.15, 1.18, 1.22]);
+    expect(TIERS.map((t) => t.trait)).toEqual([
+      "leak-immune",
+      "none",
+      "none",
+      "none",
+      "none",
+    ]);
   });
 });
 
@@ -328,12 +363,30 @@ describe("directive scheduling", () => {
 // --- memory ----------------------------------------------------------------
 
 describe("memory leak and gc", () => {
-  it("grows the leak at 1% of footprint per second", () => {
+  it("grows the leak at 1% of the non-immune footprint per second", () => {
     const s = newGame();
-    s.counts = [10, 0, 0, 0, 0]; // 10 MB footprint
+    s.counts = [0, 10, 0, 0, 0]; // 10 fork()s = 20 MB, all leak-prone
     s.ramCap = 100;
     tick(s, 10);
-    expect(s.leak).toBeCloseTo(10 * 0.01 * 10, 3);
+    expect(s.leak).toBeCloseTo(20 * 0.01 * 10, 3);
+  });
+
+  it("a leak-immune tier consumes RAM but never feeds the leak", () => {
+    const s = newGame();
+    s.counts = [10, 0, 0, 0, 0]; // 10 noop loops = 10 MB, leak-immune
+    s.ramCap = 100;
+    expect(childRam(s)).toBe(10);
+    tick(s, 30); // under the sweep interval, so the counts are stable
+    expect(s.leak).toBe(0);
+    expect(ramUsed(s)).toBe(10); // still counted against the RAM ceiling
+  });
+
+  it("only the non-immune share of a mixed footprint leaks", () => {
+    const s = newGame();
+    s.counts = [10, 10, 0, 0, 0]; // 10 MB immune + 20 MB leak-prone
+    s.ramCap = 1000;
+    tick(s, 10);
+    expect(s.leak).toBeCloseTo(20 * 0.01 * 10, 3); // immune 10 MB contributes nothing
   });
 
   it("free() zeroes the leak", () => {
@@ -346,7 +399,7 @@ describe("memory leak and gc", () => {
 
   it("gc keeps the leak near zero", () => {
     const s = newGame();
-    s.counts = [10, 0, 0, 0, 0];
+    s.counts = [0, 10, 0, 0, 0];
     s.ramCap = 100;
     s.gc = 2;
     tick(s, 10);

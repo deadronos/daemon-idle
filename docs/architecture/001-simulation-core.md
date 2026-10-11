@@ -41,20 +41,22 @@ the lineage multiplier) are `Decimal` from `src/bignum.ts`. Bounded values (`cou
 
 ## Tiers
 
-Five child types, defined in the `TIERS` array. `cost` grows per purchase by
-`COST_GROWTH = 1.15`; `baseOutput` is cycles/s at lineage ×1; `priority` is only the source
-of the **default** sacrifice order (`DEFAULT_SACRIFICE_ORDER`, see below) — the live sweep
-order is the player-controlled `sacrificeOrder`.
+Five child types, defined in the `TIERS` array. Each tier has its own `costGrowth`: the
+cost of the next unit multiplies by that factor per purchase, so tiers have distinct cost
+curves. `baseOutput` is cycles/s at lineage ×1; `priority` is only the source of the
+**default** sacrifice order (`DEFAULT_SACRIFICE_ORDER`, see below) — the live sweep order is
+the player-controlled `sacrificeOrder`. `trait` tags a tier's identity; `"leak-immune"`
+tiers (currently only the noop loop) consume RAM but never feed the leak.
 
-| #   | name          | baseCost | baseOutput | ram | priority |
-| --- | ------------- | -------- | ---------- | --- | -------- |
-| 0   | noop loop     | 10       | 0.1        | 1   | 0        |
-| 1   | fork()        | 100      | 1          | 2   | 1        |
-| 2   | worker thread | 1,000    | 8          | 4   | 2        |
-| 3   | microservice  | 10,000   | 60         | 8   | 3        |
-| 4   | cron daemon   | 100,000  | 400        | 16  | 4        |
+| #   | name          | baseCost | costGrowth | baseOutput | ram | priority | trait         |
+| --- | ------------- | -------- | ---------- | ---------- | --- | -------- | ------------- |
+| 0   | noop loop     | 10       | 1.12       | 0.1        | 1   | 0        | leak-immune   |
+| 1   | fork()        | 100      | 1.15       | 1          | 2   | 1        | none          |
+| 2   | worker thread | 1,000    | 1.15       | 8          | 4   | 2        | none          |
+| 3   | microservice  | 10,000   | 1.18       | 60         | 8   | 3        | none          |
+| 4   | cron daemon   | 100,000  | 1.22       | 400        | 16  | 4        | none          |
 
-Cost of the next unit of tier `i`: `baseCost[i] * 1.15^counts[i]`.
+Cost of the next unit of tier `i`: `baseCost[i] * costGrowth[i]^counts[i]`.
 
 ## Income
 
@@ -79,16 +81,22 @@ A spawn is allowed only if `cycles >= cost` **and** `ramUsed + ram[i] <= ramCap`
 
 ## The leak
 
-Every tick, the leak grows at `LEAK_RATE = 0.01` (1% of the _footprint_ per second):
+Every tick, the leak grows at `LEAK_RATE = 0.01` (1% of the _leak footprint_ per second) —
+the footprint being `childRam` minus `"leak-immune"` tiers:
 
 ```
-growth = childRam * 0.01 * dt
+leakFootprint = Σ counts[i] * ram[i]  for tiers where trait != "leak-immune"
+growth = leakFootprint * 0.01 * dt
 leak  += growth
 if gc > 0: leak -= growth * gc * 0.9   // clamped at 0
 ```
 
 So `gc` level 1 removes 90% of new growth (net +10%); level 2+ keeps the leak near zero.
 `free()` zeroes the leak outright and is free to press.
+
+Immune tiers still consume RAM (they count in `childRam`, `ramUsed`, and spawn gating);
+they simply never contribute to leak growth. So a board of noop loops leaks nothing,
+while the same footprint of fork()s leaks at the usual rate.
 
 ## Tick order (`tick(s, dt)`)
 
