@@ -4,6 +4,7 @@ import { fmt } from "./format";
 import {
   BASE,
   COST_GROWTH,
+  DEFAULT_SACRIFICE_ORDER,
   TIERS,
   canSpawn,
   cyclesPerSec,
@@ -11,9 +12,13 @@ import {
   doFork,
   freeMemory,
   lineageMult,
+  movePriority,
   newGame,
   pickNextDirective,
+  priorityOf,
+  priorityOrder,
   ramUsed,
+  sanitizeSacrificeOrder,
   spawn,
   tick,
   tierCost,
@@ -171,6 +176,58 @@ describe("sweep directives", () => {
     tick(s, 0.01);
     expect(s.sweepsSurvived).toBe(16); // empty-table sweep still counts
     expect(s.leak).toBe(0); // `pre` runs before the empty-table branch
+  });
+});
+
+// --- sacrifice order -------------------------------------------------------
+
+describe("sacrifice order", () => {
+  it("defaults to the current tier priority order", () => {
+    const s = newGame();
+    expect(s.sacrificeOrder).toEqual([0, 1, 2, 3, 4]);
+    expect(priorityOf(s, 0)).toBe(0);
+  });
+
+  it("standard reaps in the player's order", () => {
+    const s = newGame();
+    s.counts = [10, 10, 0, 0, 0];
+    expect(movePriority(s, 1, -1)).toBe(true); // tier 1 to the front
+    expect(s.sacrificeOrder).toEqual([1, 0, 2, 3, 4]);
+    expect(directiveById.get("standard")!.victims(s, 5)).toEqual([1, 1, 1, 1, 1]);
+  });
+
+  it("refuses to move past either end", () => {
+    const s = newGame();
+    expect(movePriority(s, 0, -1)).toBe(false);
+    expect(movePriority(s, 4, 1)).toBe(false);
+    expect(s.sacrificeOrder).toEqual([0, 1, 2, 3, 4]); // unchanged
+  });
+
+  it("priorityOrder reflects priorityOf", () => {
+    const s = newGame();
+    movePriority(s, 4, -1); // [0, 1, 2, 4, 3]
+    expect(priorityOrder(s)).toEqual([0, 1, 2, 4, 3]);
+  });
+
+  it("scavenger and group-kill ignore the sacrifice order", () => {
+    const s = newGame();
+    s.counts = [5, 5, 5, 5, 5];
+    for (let i = 0; i < 4; i++) movePriority(s, 4, -1); // tier 4 first in the player's order
+    expect(s.sacrificeOrder[0]).toBe(4);
+    expect(directiveById.get("scavenger")!.victims(s, 3)).toEqual([4, 4, 4]); // by output, not order
+    expect(directiveById.get("group-kill")!.victims(s, 3)).toEqual([0, 0, 0]); // densest tie-break
+  });
+});
+
+describe("sanitizeSacrificeOrder", () => {
+  it("keeps a valid permutation", () => {
+    expect(sanitizeSacrificeOrder([2, 0, 1, 3, 4])).toEqual([2, 0, 1, 3, 4]);
+  });
+  it("falls back to the default for invalid input", () => {
+    expect(sanitizeSacrificeOrder([0, 0, 1, 2, 3])).toEqual(DEFAULT_SACRIFICE_ORDER); // duplicate
+    expect(sanitizeSacrificeOrder([0, 1, 2])).toEqual(DEFAULT_SACRIFICE_ORDER); // wrong length
+    expect(sanitizeSacrificeOrder([0, 1, 2, 3, 9])).toEqual(DEFAULT_SACRIFICE_ORDER); // out of range
+    expect(sanitizeSacrificeOrder(undefined)).toEqual(DEFAULT_SACRIFICE_ORDER);
   });
 });
 
