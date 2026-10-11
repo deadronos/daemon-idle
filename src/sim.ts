@@ -83,6 +83,8 @@ export interface GameState {
   sweepTimer: number;
   sweepInterval: number;
   sweepsSurvived: number;
+  rngState: number;
+  nextDirective: DirectiveId;
   oomCount: number;
   ramWarned: boolean;
   legacy: LegacyDaemon[];
@@ -113,6 +115,8 @@ export function newGame(): GameState {
     sweepTimer: BASE.sweepInterval,
     sweepInterval: BASE.sweepInterval,
     sweepsSurvived: 0,
+    rngState: (Date.now() | 0) || 1,
+    nextDirective: "standard",
     oomCount: 0,
     ramWarned: false,
     legacy: [],
@@ -265,6 +269,27 @@ export const DIRECTIVES: SweepDirective[] = [standard, sigkill, scavenger, group
 export const directiveById: Map<DirectiveId, SweepDirective> = new Map(
   DIRECTIVES.map((d) => [d.id, d]),
 );
+
+/** Mulberry32-style step: advances `s.rngState` and returns a float in [0, 1). */
+export function nextRng(s: GameState): number {
+  s.rngState = (s.rngState + 0x6d2b79f5) | 0;
+  let t = s.rngState;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
+/** Directives drawable at the current sweep count (inclusive of the threshold). */
+export function unlockedDirectives(s: GameState): SweepDirective[] {
+  return DIRECTIVES.filter((d) => d.unlockAt <= s.sweepsSurvived);
+}
+
+/** Draw the next directive, never repeating the just-fired one when avoidable. */
+export function pickNextDirective(s: GameState): DirectiveId {
+  const pool = unlockedDirectives(s);
+  const choices = pool.length > 1 ? pool.filter((d) => d.id !== s.nextDirective) : pool;
+  return choices[Math.floor(nextRng(s) * choices.length)].id;
+}
 
 // --- upgrade costs ---------------------------------------------------------
 
@@ -429,20 +454,20 @@ export function tick(s: GameState, dt: number): void {
 
 function runSweep(s: GameState): void {
   const total = s.counts.reduce((a, b) => a + b, 0);
+  const d = directiveById.get(s.nextDirective) ?? directiveById.get("standard")!;
   if (total === 0) {
     log(s, "cleanup sweep: nothing to reap");
-    s.sweepsSurvived++;
-    return;
+  } else {
+    d.pre?.(s);
+    const victims = d.victims(s, d.budget(s, total));
+    for (const i of victims) s.counts[i]--;
+    log(
+      s,
+      `cleanup sweep [${d.name}]: reaped ${victims.length} process${victims.length === 1 ? "" : "es"}`,
+    );
   }
-  const d = directiveById.get("standard")!; // Task 3 replaces this with s.nextDirective
-  d.pre?.(s);
-  const victims = d.victims(s, d.budget(s, total));
-  for (const i of victims) s.counts[i]--;
   s.sweepsSurvived++;
-  log(
-    s,
-    `cleanup sweep [${d.name}]: reaped ${victims.length} process${victims.length === 1 ? "" : "es"}`,
-  );
+  s.nextDirective = pickNextDirective(s);
 }
 
 function runOom(s: GameState): void {

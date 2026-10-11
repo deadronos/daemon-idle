@@ -12,10 +12,12 @@ import {
   freeMemory,
   lineageMult,
   newGame,
+  pickNextDirective,
   ramUsed,
   spawn,
   tick,
   tierCost,
+  unlockedDirectives,
 } from "./sim";
 
 // --- bootstrap -------------------------------------------------------------
@@ -157,6 +159,64 @@ describe("sweep directives", () => {
     d.pre?.(s);
     expect(s.leak).toBe(0);
     expect(d.budget(s, 100)).toBe(8); // round(100 * 0.15 * 0.5) = 8
+  });
+});
+
+// --- directive scheduling --------------------------------------------------
+
+describe("directive scheduling", () => {
+  it("starts on the standard directive", () => {
+    expect(newGame().nextDirective).toBe("standard");
+  });
+
+  it("only draws from directives unlocked at the current sweep count", () => {
+    const s = newGame();
+    s.sweepsSurvived = 0;
+    expect(unlockedDirectives(s).map((d) => d.id)).toEqual(["standard"]);
+    s.sweepsSurvived = 3; // boundary: sigkill unlocks exactly here
+    expect(unlockedDirectives(s).map((d) => d.id)).toEqual(["standard", "sigkill"]);
+    for (let i = 0; i < 50; i++) {
+      s.rngState = (i + 1) * 2654435761;
+      expect(["standard", "sigkill"]).toContain(pickNextDirective(s));
+    }
+  });
+
+  it("is deterministic for a fixed rngState", () => {
+    const a = newGame(); a.rngState = 12345; a.sweepsSurvived = 20;
+    const b = newGame(); b.rngState = 12345; b.sweepsSurvived = 20;
+    expect(pickNextDirective(a)).toBe(pickNextDirective(b));
+  });
+
+  it("never immediately repeats a directive when more than one is unlocked", () => {
+    const s = newGame();
+    s.sweepsSurvived = 20;
+    s.rngState = 999;
+    s.nextDirective = "scavenger";
+    for (let i = 0; i < 50; i++) expect(pickNextDirective(s)).not.toBe("scavenger");
+  });
+
+  it("advances the next directive after a sweep", () => {
+    const s = newGame();
+    s.sweepsSurvived = 20;
+    s.counts = [10, 0, 0, 0, 0]; s.ramCap = 1000; s.sweepTimer = 0.001;
+    tick(s, 0.01);
+    expect(s.sweepsSurvived).toBe(21);
+    expect(["standard", "sigkill", "scavenger", "group-kill", "backpressure"]).toContain(s.nextDirective);
+  });
+
+  it("still advances with no children to reap", () => {
+    const s = newGame();
+    s.sweepsSurvived = 20; s.sweepTimer = 0.001;
+    tick(s, 0.01);
+    expect(s.sweepsSurvived).toBe(21);
+    expect(["standard", "sigkill", "scavenger", "group-kill", "backpressure"]).toContain(s.nextDirective);
+  });
+
+  it("falls back to standard for an unknown loaded directive id", () => {
+    const s = newGame();
+    (s as unknown as { nextDirective: string }).nextDirective = "bogus";
+    s.counts = [10, 0, 0, 0, 0]; s.ramCap = 1000; s.sweepTimer = 0.001;
+    expect(() => tick(s, 0.01)).not.toThrow();
   });
 });
 
