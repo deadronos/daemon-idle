@@ -15,7 +15,7 @@ cosmetics, which use `Math.random`).
 | `ramCap`         | number         | RAM ceiling in MB.                              |
 | `leak`           | number         | Leaked RAM on top of the footprint.             |
 | `heat`           | number         | 0..100; throttles income above the threshold.   |
-| `cooling`        | number         | Upgrade level; sheds heat 50% faster per level. |
+| `cooling`        | number         | Upgrade level; sheds heat faster, lower eq.     |
 | `nice`           | number         | Upgrade level reducing sweep victims.           |
 | `shields`        | number         | SIGTERM charges; each absorbs one sweep victim. |
 | `gc`             | number         | Upgrade level of automatic leak flushing.       |
@@ -138,24 +138,30 @@ while the same footprint of fork()s leaks at the usual rate.
 
 ## Heat
 
-A second pressure axis alongside RAM: children run hot, and heat throttles income. Every
-tick, heat rises with the **child footprint** and is shed by decay (sped up by `cooling`),
-then clamped to `[0, 100]`:
+A second pressure axis alongside RAM: children run hot, and heat throttles income. Decay is
+**proportional to heat**, so heat has an interior equilibrium rather than a bang-bang
+saturation. `tick` integrates the exponential exactly, so it is correct for any `dt`:
 
 ```
-heat += childRam * HEAT_PER_RAM * dt            // HEAT_PER_RAM = 0.02
-heat -= HEAT_DECAY * (1 + cooling * 0.5) * dt   // HEAT_DECAY = 1.0
+eq    = heatEquilibrium(s) = childRam * HEAT_PER_RAM / (HEAT_DECAY_RATE * (1 + cooling * 0.5))
+rate  = HEAT_DECAY_RATE * (1 + cooling * 0.5)   // HEAT_DECAY_RATE = 0.02 /s
+heat  = eq + (heat - eq) * exp(-rate * dt)
 heat  = clamp(heat, 0, 100)
 ```
+
+Because `HEAT_PER_RAM === HEAT_DECAY_RATE`, the equilibrium simplifies to
+`heat_eq = childRam / (1 + cooling * 0.5)` MB — roughly **1 heat per MB of child RAM**,
+halved per two cooling levels. The time constant is τ = 50 s at `cooling = 0`. The
+60 → 100 throttle ramp is therefore an **interior equilibrium**: a board can settle partway
+up it, and a footprint above ~100 MB saturates at the cap.
 
 `heatMult` stays `1` up to `HEAT_THROTTLE_AT = 60`, then falls linearly to
 `1 - MAX_THROTTLE = 0.5` at heat 100 — so a hot board loses up to half its children + root
 income. Legacy daemons are exempt on both counts: their per-tick income ignores `heatMult`,
 and `doFork` seeds a new legacy daemon's rate from the unthrottled, lineage-free
 `baseCyclesPerSec`, so a throttled board does not permanently cripple the daemons it forks
-off. `cooling` is the
-counter-upgrade: each level sheds heat 50% faster, buying back headroom for a bigger
-footprint.
+off. `cooling` is the counter-upgrade: each level both sheds heat 50% faster **and lowers the
+equilibrium**, buying back headroom for a bigger footprint.
 
 ## Tick order (`tick(s, dt, opts)`)
 
@@ -216,15 +222,15 @@ re-crosses `+2%`, so the `*0.9` penalty no longer compounds tick-over-tick.
 
 ## Upgrade costs
 
-| Upgrade           | Cost                        | Effect                                    |
-| ----------------- | --------------------------- | ----------------------------------------- |
-| `nice(+1)`        | `250 * 2.2^n`               | −3% sweep victims per level (floor 30%).  |
-| `malloc(+1)`      | `150 * 1.85^((ramCap-8)/8)` | +8 MB ceiling.                            |
-| `gc(+1)`          | `400 * 3^n`                 | Faster automatic leak flushing.           |
-| `cooling(+1)`     | `1000 * 2.5^n`              | Heat sheds 50% faster per level.          |
-| `free()`          | 0                           | Zero the leak.                            |
-| `SIGTERM handler` | `500 * 2^shields`           | +1 charge; each absorbs one sweep victim. |
-| `fork()`          | `1e6 * 10^forks`            | Prestige — see doc 004.                   |
+| Upgrade           | Cost                        | Effect                                       |
+| ----------------- | --------------------------- | -------------------------------------------- |
+| `nice(+1)`        | `250 * 2.2^n`               | −3% sweep victims per level (floor 30%).     |
+| `malloc(+1)`      | `150 * 1.85^((ramCap-8)/8)` | +8 MB ceiling.                               |
+| `gc(+1)`          | `400 * 3^n`                 | Faster automatic leak flushing.              |
+| `cooling(+1)`     | `1000 * 2.5^n`              | Heat sheds faster and its equilibrium drops. |
+| `free()`          | 0                           | Zero the leak.                               |
+| `SIGTERM handler` | `500 * 2^shields`           | +1 charge; each absorbs one sweep victim.    |
+| `fork()`          | `1e6 * 10^forks`            | Prestige — see doc 004.                      |
 
 The sweep now has more pressure axes (directives, sacrifice order, shields, heat throttling,
 cross-tier synergy), so `nice` and `malloc` grow slightly slower to keep the early game playable.

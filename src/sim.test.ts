@@ -20,6 +20,7 @@ import {
   doFork,
   estimateVictims,
   freeMemory,
+  heatEquilibrium,
   heatMult,
   lineageMult,
   mallocCost,
@@ -721,35 +722,80 @@ describe("OOM killer", () => {
 // --- heat ------------------------------------------------------------------
 
 describe("heat", () => {
-  it("rises with a non-zero footprint", () => {
+  it("heatEquilibrium is footprint / (1 + cooling/2)", () => {
     const s = newGame();
     s.ramCap = 1000;
-    s.counts = [0, 0, 0, 0, 10]; // 10 cron daemons = 160 MB
-    expect(s.heat).toBe(0);
-    tick(s, 10);
-    // gain 160 * 0.02 * 10 = 32; decay 1 * (1 + 0) * 10 = 10
-    expect(s.heat).toBeCloseTo(22, 5);
+    s.counts = [0, 0, 0, 0, 5]; // 5 cron daemons = 80 MB
+    expect(heatEquilibrium(s)).toBe(80);
+
+    s.cooling = 2; // 1 + 2 * 0.5 = 2 -> half the equilibrium
+    expect(heatEquilibrium(s)).toBe(40);
+  });
+
+  it("settles at an interior equilibrium and shows a partial throttle", () => {
+    const s = newGame();
+    s.ramCap = 1000;
+    s.counts = [0, 0, 0, 0, 5]; // 80 MB -> equilibrium 80
+    s.sweepTimer = 1e9; // freeze the sweep so the footprint is stable
+    tick(s, 600); // residual 80 * e^-12
+    expect(s.heat).toBeCloseTo(80, 0);
+    expect(heatMult(s)).toBeCloseTo(0.75, 4);
+  });
+
+  it("a large footprint approaches saturation", () => {
+    const s = newGame();
+    s.ramCap = 1000;
+    s.counts = [0, 0, 0, 0, 8]; // 128 MB -> equilibrium 128, above the cap
+    s.sweepTimer = 1e9;
+    tick(s, 600);
+    expect(s.heat).toBe(100);
+    expect(heatMult(s)).toBe(0.5);
   });
 
   it("decays toward 0 with no footprint", () => {
     const s = newGame();
     s.heat = 50;
-    tick(s, 10);
-    expect(s.heat).toBeCloseTo(40, 5);
+    s.sweepTimer = 1e9;
+    tick(s, 10); // 50 * e^-0.2
+    expect(s.heat).toBeCloseTo(40.94, 2);
+  });
+
+  it("cooling lowers the equilibrium", () => {
+    const s = newGame();
+    s.ramCap = 1000;
+    s.counts = [0, 0, 0, 0, 5]; // 80 MB
+    s.cooling = 1; // 1 + 0.5 = 1.5 -> equilibrium 53.33
+    s.sweepTimer = 1e9;
+    expect(heatEquilibrium(s)).toBeCloseTo(53.33, 2);
+    tick(s, 600);
+    expect(s.heat).toBeCloseTo(53.33, 2);
+    expect(heatMult(s)).toBe(1); // equilibrium sits below the throttle
+  });
+
+  it("rises from 0 toward equilibrium", () => {
+    const s = newGame();
+    s.ramCap = 1000;
+    s.counts = [0, 0, 0, 0, 5]; // 80 MB -> equilibrium 80
+    s.heat = 0;
+    s.sweepTimer = 1e9;
+    tick(s, 10); // 80 * (1 - e^-0.2)
+    expect(s.heat).toBeCloseTo(14.5, 1);
   });
 
   it("clamps to [0, 100]", () => {
     const hot = newGame();
     hot.ramCap = 1000;
-    hot.counts = [0, 0, 0, 0, 10];
+    hot.counts = [0, 0, 0, 0, 10]; // 160 MB -> equilibrium above the cap
     hot.heat = 99;
+    hot.sweepTimer = 1e9;
     tick(hot, 100);
     expect(hot.heat).toBe(100);
 
     const cold = newGame();
     cold.heat = 5;
-    tick(cold, 100);
-    expect(cold.heat).toBe(0);
+    cold.sweepTimer = 1e9;
+    tick(cold, 1000); // no footprint -> equilibrium 0, decays to ~0
+    expect(cold.heat).toBeCloseTo(0, 5);
   });
 
   it("does not throttle cycles below HEAT_THROTTLE_AT", () => {
@@ -769,29 +815,6 @@ describe("heat", () => {
     );
     expect(heatMult(s)).toBe(0.75);
     expect(cyclesPerSec(s).toNumber()).toBeCloseTo(0.75, 10);
-  });
-
-  it("buyCooling raises the decay rate for the same footprint", () => {
-    const hot = newGame();
-    hot.ramCap = 1000;
-    hot.counts = [0, 0, 0, 0, 1]; // 16 MB footprint
-    hot.heat = 50;
-    hot.sweepTimer = 999; // keep the board stable for the comparison
-
-    const cooled = newGame();
-    cooled.ramCap = 1000;
-    cooled.counts = [0, 0, 0, 0, 1];
-    cooled.heat = 50;
-    cooled.sweepTimer = 999;
-    cooled.cooling = 1;
-
-    tick(hot, 10);
-    tick(cooled, 10);
-    expect(cooled.heat).toBeLessThan(hot.heat);
-    // hot:   50 + 16*0.02*10 - 1*(1 + 0)  *10 = 43.2
-    // cooled:50 + 16*0.02*10 - 1*(1 + 0.5)*10 = 38.2
-    expect(hot.heat).toBeCloseTo(43.2, 5);
-    expect(cooled.heat).toBeCloseTo(38.2, 5);
   });
 
   it("buyCooling spends cycles and refuses when unaffordable", () => {

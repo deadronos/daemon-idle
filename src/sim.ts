@@ -98,7 +98,7 @@ const LEGACY_CRASH_CHANCE = 0.002; // per second, per daemon
 const LEGACY_SHARE = 0.1; // legacy daemon produces 10% of peak cps
 
 export const HEAT_PER_RAM = 0.02; // heat gained per second per MB of childRam
-export const HEAT_DECAY = 1.0; // heat shed per second, before cooling
+export const HEAT_DECAY_RATE = 0.02; // proportional heat shed rate, 1/s, before cooling
 export const HEAT_THROTTLE_AT = 60; // heat at which throttling begins
 export const MAX_THROTTLE = 0.5; // most cycles/s that heat can strip
 
@@ -228,6 +228,15 @@ export function synergyMult(s: GameState, i: number): number {
     if (link.tier === i) mult *= 1 + link.pct * s.counts[link.from];
   }
   return mult;
+}
+
+/**
+ * Heat the current footprint drives toward, before the `[0, 100]` clamp. Because
+ * `HEAT_PER_RAM === HEAT_DECAY_RATE`, this is `childRam / (1 + cooling * 0.5)` MB —
+ * roughly 1 heat per MB of child RAM, halved per two cooling levels.
+ */
+export function heatEquilibrium(s: GameState): number {
+  return (childRam(s) * HEAT_PER_RAM) / (HEAT_DECAY_RATE * (1 + s.cooling * 0.5));
 }
 
 /**
@@ -594,9 +603,11 @@ export function tick(s: GameState, dt: number, opts: TickOptions = {}): void {
   s.cycles = s.cycles.add(gain);
   s.totalEarned = s.totalEarned.add(gain);
 
-  // heat: children generate it, cooling sheds it; throttles next tick's income
-  s.heat += childRam(s) * HEAT_PER_RAM * dt;
-  s.heat -= HEAT_DECAY * (1 + s.cooling * 0.5) * dt;
+  // heat: children generate it, cooling sheds it proportionally; throttles next tick's income
+  const coolingFactor = 1 + s.cooling * 0.5;
+  const rate = HEAT_DECAY_RATE * coolingFactor;
+  const eq = heatEquilibrium(s);
+  s.heat = eq + (s.heat - eq) * Math.exp(-rate * dt);
   s.heat = clamp(s.heat, 0, 100);
 
   // memory leak grows with the non-immune footprint; gc flushes it back down
