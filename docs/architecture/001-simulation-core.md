@@ -15,6 +15,7 @@ cosmetics, which use `Math.random`).
 | `ramCap`         | number         | RAM ceiling in MB.                              |
 | `leak`           | number         | Leaked RAM on top of the footprint.             |
 | `nice`           | number         | Upgrade level reducing sweep victims.           |
+| `shields`        | number         | SIGTERM charges; each absorbs one sweep victim. |
 | `gc`             | number         | Upgrade level of automatic leak flushing.       |
 | `forks`          | number         | Prestige count; drives the lineage multiplier.  |
 | `sweepTimer`     | number         | Seconds until the next cleanup sweep.           |
@@ -48,13 +49,13 @@ curves. `baseOutput` is cycles/s at lineage ×1; `priority` is only the source o
 the player-controlled `sacrificeOrder`. `trait` tags a tier's identity; `"leak-immune"`
 tiers (currently only the noop loop) consume RAM but never feed the leak.
 
-| #   | name          | baseCost | costGrowth | baseOutput | ram | priority | trait         |
-| --- | ------------- | -------- | ---------- | ---------- | --- | -------- | ------------- |
-| 0   | noop loop     | 10       | 1.12       | 0.1        | 1   | 0        | leak-immune   |
-| 1   | fork()        | 100      | 1.15       | 1          | 2   | 1        | none          |
-| 2   | worker thread | 1,000    | 1.15       | 8          | 4   | 2        | none          |
-| 3   | microservice  | 10,000   | 1.18       | 60         | 8   | 3        | none          |
-| 4   | cron daemon   | 100,000  | 1.22       | 400        | 16  | 4        | none          |
+| #   | name          | baseCost | costGrowth | baseOutput | ram | priority | trait       |
+| --- | ------------- | -------- | ---------- | ---------- | --- | -------- | ----------- |
+| 0   | noop loop     | 10       | 1.12       | 0.1        | 1   | 0        | leak-immune |
+| 1   | fork()        | 100      | 1.15       | 1          | 2   | 1        | none        |
+| 2   | worker thread | 1,000    | 1.15       | 8          | 4   | 2        | none        |
+| 3   | microservice  | 10,000   | 1.18       | 60         | 8   | 3        | none        |
+| 4   | cron daemon   | 100,000  | 1.22       | 400        | 16  | 4        | none        |
 
 Cost of the next unit of tier `i`: `baseCost[i] * costGrowth[i]^counts[i]`.
 
@@ -145,13 +146,14 @@ the leak alone is still over the cap, it is reclaimed. Then `cycles *= 0.9` and
 
 ## Upgrade costs
 
-| Upgrade      | Cost                       | Effect                                   |
-| ------------ | -------------------------- | ---------------------------------------- |
-| `nice(+1)`   | `250 * 2.5^n`              | −3% sweep victims per level (floor 30%). |
-| `malloc(+1)` | `150 * 1.9^((ramCap-8)/8)` | +8 MB ceiling.                           |
-| `gc(+1)`     | `400 * 3^n`                | Faster automatic leak flushing.          |
-| `free()`     | 0                          | Zero the leak.                           |
-| `fork()`     | `1e6 * 10^forks`           | Prestige — see doc 004.                  |
+| Upgrade           | Cost                       | Effect                                    |
+| ----------------- | -------------------------- | ----------------------------------------- |
+| `nice(+1)`        | `250 * 2.5^n`              | −3% sweep victims per level (floor 30%).  |
+| `malloc(+1)`      | `150 * 1.9^((ramCap-8)/8)` | +8 MB ceiling.                            |
+| `gc(+1)`          | `400 * 3^n`                | Faster automatic leak flushing.           |
+| `free()`          | 0                          | Zero the leak.                            |
+| `SIGTERM handler` | `500 * 2^shields`          | +1 charge; each absorbs one sweep victim. |
+| `fork()`          | `1e6 * 10^forks`           | Prestige — see doc 004.                   |
 
 ## Invariants
 

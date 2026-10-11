@@ -5,6 +5,7 @@ import {
   buyGc,
   buyMalloc,
   buyNice,
+  buyShield,
   canFork,
   canSpawn,
   childRam,
@@ -23,6 +24,7 @@ import {
   nudgeDaemon,
   ramUsed,
   sanitizeSacrificeOrder,
+  shieldCost,
   spawn,
   sweepVictimMult,
   tick,
@@ -210,6 +212,13 @@ addUpgrade(
   () => buyMalloc(state),
 );
 addUpgrade(
+  () =>
+    `SIGTERM handler  ·  ${state.shields} charge${state.shields === 1 ? "" : "s"}  ·  absorb sweep victims`,
+  () => shieldCost(state),
+  () => state.cycles.gte(shieldCost(state)),
+  () => buyShield(state),
+);
+addUpgrade(
   () => (state.gc === 0 ? "gc  ·  auto-flush the leak" : `gc  ·  auto-flush lvl ${state.gc}`),
   () => gcCost(state),
   () => state.cycles.gte(gcCost(state)),
@@ -254,8 +263,7 @@ function render(force = false): void {
   const severity = Math.min(0.35, 0.15 + state.sweepsSurvived * 0.002);
   const est = total === 0 ? 0 : Math.max(1, Math.round(total * severity * sweepVictimMult(state)));
   const directiveName = directiveById.get(state.nextDirective)?.name ?? "standard";
-  el.sweepText.textContent =
-    `next ${directiveName} sweep: ${fmtTime(state.sweepTimer)}  ·  reaping ~${est}`;
+  el.sweepText.textContent = `next ${directiveName} sweep: ${fmtTime(state.sweepTimer)}  ·  reaping ~${est}`;
 
   // action buttons
   for (let i = 0; i < spawnButtons.length; i++) {

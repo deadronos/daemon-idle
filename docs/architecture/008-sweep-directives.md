@@ -48,13 +48,13 @@ pre-roster balance and tests carry over unchanged.
 
 ## Roster
 
-| id             | `unlockAt` | budget `frac` | victim selection                     | `nice` applies | `pre`          |
-| -------------- | ---------- | ------------- | ------------------------------------ | -------------- | -------------- |
-| `standard`     | 0          | `1`           | player sacrifice order               | yes            | —              |
-| `sigkill`      | 3          | `1`           | player sacrifice order               | **no**         | —              |
-| `scavenger`    | 6          | `0.6`         | highest `baseOutput` first           | yes            | —              |
-| `group-kill`   | 10         | `1`           | densest tier first, ties keep lower index | yes       | —              |
-| `backpressure` | 15         | `0.5`         | player sacrifice order               | yes            | zero the leak  |
+| id             | `unlockAt` | budget `frac` | victim selection                          | `nice` applies | `pre`         |
+| -------------- | ---------- | ------------- | ----------------------------------------- | -------------- | ------------- |
+| `standard`     | 0          | `1`           | player sacrifice order                    | yes            | —             |
+| `sigkill`      | 3          | `1`           | player sacrifice order                    | **no**         | —             |
+| `scavenger`    | 6          | `0.6`         | highest `baseOutput` first                | yes            | —             |
+| `group-kill`   | 10         | `1`           | densest tier first, ties keep lower index | yes            | —             |
+| `backpressure` | 15         | `0.5`         | player sacrifice order                    | yes            | zero the leak |
 
 Every directive selects through the shared
 `reapInOrder(s, order, budget)` helper, which takes up to `budget` from the ordering and
@@ -73,9 +73,10 @@ never more than are owned.
 - The unlocked pool is `DIRECTIVES.filter(d => d.unlockAt <= s.sweepsSurvived)`; thresholds
   are **inclusive**, so e.g. `sigkill` is drawable at exactly 3 sweeps survived.
 - `runSweep` resolves the stored `s.nextDirective` via `directiveById`, falling back to
-  `standard` for an unknown (e.g. stale-loaded) id. It applies `pre`, reaps via
-  `reapInOrder(s, order, budget)`, increments `s.sweepsSurvived`, then **always** redraws
-  `s.nextDirective` — even when the process table was empty and nothing was reaped.
+  `standard` for an unknown (e.g. stale-loaded) id. It applies `pre`, lets shields absorb
+  victims (see below), reaps via `reapInOrder(s, order, budget)`, increments
+  `s.sweepsSurvived`, then **always** redraws `s.nextDirective` — even when the process
+  table was empty and nothing was reaped.
 - With nothing owned it logs "nothing to reap"; the sweep is still counted and the directive
   is still redrawn.
 - The tick only calls a sweep when `sweepTimer <= 0`, then resets it to `sweepInterval`;
@@ -93,6 +94,24 @@ same pending directive and the same upcoming draw:
   repeats), then picks `choices[floor(nextRng(s) * choices.length)]`.
 - `newGame()` seeds `rngState` from `Date.now() | 0` (falling back to `1`) and starts
   `nextDirective` at `standard`.
+
+## SIGTERM handler shields
+
+`GameState.shields` is a pool of charges bought with cycles (`500 * 2^shields` each). In
+`runSweep`, after `pre` has run and the directive's budget is known, charges absorb victims
+**before any are selected**:
+
+```
+absorbed = min(s.shields, budget)
+s.shields -= absorbed
+budget   -= absorbed
+```
+
+The reduced budget is then passed to `d.victims(s, budget)`, so a charge cancels exactly one
+victim regardless of which directive is firing. Neither value can go negative: a sweep with
+`shields >= budget` reaps nothing and keeps the surplus charges. The sweep log notes the
+absorbed count. Shields are pure state (no timer, no `Math.random`); `buyShield(s)` returns
+`false` when the cost is unaffordable.
 
 ## Sacrifice order
 

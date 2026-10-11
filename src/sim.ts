@@ -102,6 +102,8 @@ export interface GameState {
   ramCap: number;
   leak: number;
   nice: number;
+  /** Sweep charges; each absorbs one victim before selection. */
+  shields: number;
   gc: number;
   forks: number;
   sweepTimer: number;
@@ -135,12 +137,13 @@ export function newGame(): GameState {
     ramCap: BASE.ramCap,
     leak: 0,
     nice: 0,
+    shields: 0,
     gc: 0,
     forks: 0,
     sweepTimer: BASE.sweepInterval,
     sweepInterval: BASE.sweepInterval,
     sweepsSurvived: 0,
-    rngState: (Date.now() | 0) || 1,
+    rngState: Date.now() | 0 || 1,
     nextDirective: "standard",
     oomCount: 0,
     ramWarned: false,
@@ -376,6 +379,11 @@ export function niceCost(s: GameState): Decimal {
   return d(250).mul(d(2.5).pow(s.nice));
 }
 
+/** Cost of the next SIGTERM handler charge; doubles with each charge owned. */
+export function shieldCost(s: GameState): Decimal {
+  return d(500).mul(d(2).pow(s.shields));
+}
+
 export function mallocCost(s: GameState): Decimal {
   return d(150).mul(d(1.9).pow((s.ramCap - BASE.ramCap) / 8));
 }
@@ -410,6 +418,15 @@ export function buyNice(s: GameState): boolean {
   s.cycles = s.cycles.sub(cost);
   s.nice++;
   log(s, `nice(+1): sweep will reap ${Math.round((1 - sweepVictimMult(s)) * 100)}% fewer`);
+  return true;
+}
+
+export function buyShield(s: GameState): boolean {
+  const cost = shieldCost(s);
+  if (s.cycles.lt(cost)) return false;
+  s.cycles = s.cycles.sub(cost);
+  s.shields++;
+  log(s, `SIGTERM handler: +1 shield charge (${s.shields} total)`);
   return true;
 }
 
@@ -538,11 +555,17 @@ function runSweep(s: GameState): void {
   if (total === 0) {
     log(s, "cleanup sweep: nothing to reap");
   } else {
-    const victims = d.victims(s, d.budget(s, total));
+    let budget = d.budget(s, total);
+    // SIGTERM handler charges absorb victims before any are selected.
+    const absorbed = Math.min(s.shields, budget);
+    s.shields -= absorbed;
+    budget -= absorbed;
+    const victims = d.victims(s, budget);
     for (const i of victims) s.counts[i]--;
     log(
       s,
-      `cleanup sweep [${d.name}]: reaped ${victims.length} process${victims.length === 1 ? "" : "es"}`,
+      `cleanup sweep [${d.name}]: reaped ${victims.length} process${victims.length === 1 ? "" : "es"}` +
+        (absorbed > 0 ? ` (${absorbed} absorbed)` : ""),
     );
   }
   s.sweepsSurvived++;

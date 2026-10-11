@@ -5,6 +5,7 @@ import {
   BASE,
   DEFAULT_SACRIFICE_ORDER,
   TIERS,
+  buyShield,
   canSpawn,
   childRam,
   cyclesPerSec,
@@ -19,6 +20,7 @@ import {
   priorityOrder,
   ramUsed,
   sanitizeSacrificeOrder,
+  shieldCost,
   spawn,
   tick,
   tierCost,
@@ -80,13 +82,7 @@ describe("cost curve", () => {
 describe("tier identity", () => {
   it("gives every tier an explicit costGrowth and trait", () => {
     expect(TIERS.map((t) => t.costGrowth)).toEqual([1.12, 1.15, 1.15, 1.18, 1.22]);
-    expect(TIERS.map((t) => t.trait)).toEqual([
-      "leak-immune",
-      "none",
-      "none",
-      "none",
-      "none",
-    ]);
+    expect(TIERS.map((t) => t.trait)).toEqual(["leak-immune", "none", "none", "none", "none"]);
   });
 });
 
@@ -214,6 +210,57 @@ describe("sweep directives", () => {
   });
 });
 
+// --- SIGTERM handler shields -----------------------------------------------
+
+describe("SIGTERM handler shields", () => {
+  it("buyShield spends cycles and adds a charge", () => {
+    const s = newGame();
+    expect(s.shields).toBe(0);
+    const cost = shieldCost(s);
+    s.cycles = cost.add(d(10));
+    expect(buyShield(s)).toBe(true);
+    expect(s.shields).toBe(1);
+    expect(s.cycles.eq(d(10))).toBe(true);
+    expect(s.log[0]).toMatch(/shield/i);
+  });
+
+  it("refuses to buy a shield without enough cycles", () => {
+    const s = newGame();
+    s.cycles = shieldCost(s).sub(1);
+    expect(buyShield(s)).toBe(false);
+    expect(s.shields).toBe(0);
+  });
+
+  it("absorbs one sweep victim per charge", () => {
+    const bare = newGame();
+    bare.ramCap = 1000;
+    bare.counts = [0, 20, 0, 0, 0];
+    bare.sweepTimer = 0.001;
+    tick(bare, 0.01);
+
+    const shielded = newGame();
+    shielded.ramCap = 1000;
+    shielded.counts = [0, 20, 0, 0, 0];
+    shielded.shields = 2;
+    shielded.sweepTimer = 0.001;
+    tick(shielded, 0.01);
+
+    expect(20 - bare.counts[1]).toBe(3); // standard budget at severity 0.15
+    expect(20 - shielded.counts[1]).toBe(1); // exactly two victims absorbed
+  });
+
+  it("consumes charges, floors at zero, and reaps nothing when it covers the budget", () => {
+    const s = newGame();
+    s.ramCap = 1000;
+    s.counts = [0, 20, 0, 0, 0];
+    s.shields = 5; // budget is 3, so the surplus must survive
+    s.sweepTimer = 0.001;
+    tick(s, 0.01);
+    expect(s.counts[1]).toBe(20); // nothing reaped
+    expect(s.shields).toBe(2); // only the budget was consumed, never negative
+  });
+});
+
 // --- sacrifice order -------------------------------------------------------
 
 describe("sacrifice order", () => {
@@ -307,8 +354,12 @@ describe("directive scheduling", () => {
   });
 
   it("is deterministic for a fixed rngState", () => {
-    const a = newGame(); a.rngState = 12345; a.sweepsSurvived = 20;
-    const b = newGame(); b.rngState = 12345; b.sweepsSurvived = 20;
+    const a = newGame();
+    a.rngState = 12345;
+    a.sweepsSurvived = 20;
+    const b = newGame();
+    b.rngState = 12345;
+    b.sweepsSurvived = 20;
     expect(pickNextDirective(a)).toBe(pickNextDirective(b));
   });
 
@@ -323,24 +374,33 @@ describe("directive scheduling", () => {
   it("advances the next directive after a sweep", () => {
     const s = newGame();
     s.sweepsSurvived = 20;
-    s.counts = [10, 0, 0, 0, 0]; s.ramCap = 1000; s.sweepTimer = 0.001;
+    s.counts = [10, 0, 0, 0, 0];
+    s.ramCap = 1000;
+    s.sweepTimer = 0.001;
     tick(s, 0.01);
     expect(s.sweepsSurvived).toBe(21);
-    expect(["standard", "sigkill", "scavenger", "group-kill", "backpressure"]).toContain(s.nextDirective);
+    expect(["standard", "sigkill", "scavenger", "group-kill", "backpressure"]).toContain(
+      s.nextDirective,
+    );
   });
 
   it("still advances with no children to reap", () => {
     const s = newGame();
-    s.sweepsSurvived = 20; s.sweepTimer = 0.001;
+    s.sweepsSurvived = 20;
+    s.sweepTimer = 0.001;
     tick(s, 0.01);
     expect(s.sweepsSurvived).toBe(21);
-    expect(["standard", "sigkill", "scavenger", "group-kill", "backpressure"]).toContain(s.nextDirective);
+    expect(["standard", "sigkill", "scavenger", "group-kill", "backpressure"]).toContain(
+      s.nextDirective,
+    );
   });
 
   it("falls back to standard for an unknown loaded directive id", () => {
     const s = newGame();
     (s as unknown as { nextDirective: string }).nextDirective = "bogus";
-    s.counts = [10, 0, 0, 0, 0]; s.ramCap = 1000; s.sweepTimer = 0.001;
+    s.counts = [10, 0, 0, 0, 0];
+    s.ramCap = 1000;
+    s.sweepTimer = 0.001;
     expect(() => tick(s, 0.01)).not.toThrow();
     // the fallback was actually applied: standard budget at severity 0.15, nice 0
     expect(s.counts[0]).toBe(8); // 10 - round(10 * 0.15 * 1) = 8
