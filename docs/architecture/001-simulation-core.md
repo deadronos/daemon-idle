@@ -176,8 +176,9 @@ Order matters — later steps observe the effects of earlier ones.
 `tick(s, dt, { offline: true })` is the offline catch-up path (see
 [doc 003](./003-persistence.md)): it runs steps 1–5 only, so an idle gap still earns
 (heat-throttled) income and runs legacy daemons but **never reaps the table (step 6) and
-never OOMs (steps 7–8)**. The default `opts` is `{}` (live play), so the non-offline path
-is unchanged.
+never OOMs (steps 7–8)**. The sweep timer is therefore **frozen, not decremented**, while
+offline: it resumes counting down from where it left off. The default `opts` is `{}` (live
+play), so the non-offline path is unchanged.
 
 ## Sacrifice order
 

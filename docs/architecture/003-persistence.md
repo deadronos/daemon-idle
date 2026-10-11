@@ -78,7 +78,9 @@ and, because `heatMult ≥ 0.5` and the root always produces, cycles are strictl
 `loadFrom` computes the elapsed window from `lastSave`, calls `applyOffline` when the gap
 exceeds `OFFLINE_MIN_S`, and then sets `s.lastSave = now`. That stamp is what makes the
 catch-up idempotent: re-loading the same save before a new one is written sees an elapsed
-gap of `0`, so the same offline window is never applied twice.
+gap of `0`, so the same offline window is never applied twice. To make that hold across a
+hard kill, `main.ts` persists the stamp **immediately** after `load()` — before the first
+autosave — so the on-disk stamp can never be left stale.
 
 ## Why the guards matter
 

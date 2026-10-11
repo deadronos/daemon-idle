@@ -120,8 +120,18 @@ describe("offline progress", () => {
   it("caps offline at OFFLINE_CAP_S", () => {
     const now = 10_000_000_000;
     const g = newGame();
-    g.lastSave = 0; // epoch — an arbitrarily long gap
+    g.lastSave = 1; // non-zero old stamp, so the gap is real (not masked by a `|| now`)
     const s = loadFrom(encode(g), now);
+    expect(s.playtime).toBeGreaterThan(0);
     expect(s.playtime).toBeLessThanOrEqual(OFFLINE_CAP_S + 1);
+  });
+
+  it("never runs the OOM killer while offline", () => {
+    const s = newGame();
+    s.counts = [0, 0, 0, 0, 10]; // 10 cron daemons = 160MB, far over the 16MB cap
+    s.ramCap = 16;
+    applyOffline(s, 10);
+    expect(s.oomCount).toBe(0);
+    expect(s.counts[4]).toBe(10);
   });
 });

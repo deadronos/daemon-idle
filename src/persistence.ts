@@ -144,7 +144,10 @@ export function applyOffline(s: GameState, seconds: number): void {
  */
 export function loadFrom(raw: string, now: number): GameState {
   const s = decode(raw);
-  const elapsed = Math.min(OFFLINE_CAP_S, (now - (s.lastSave || now)) / 1000);
+  // A legitimate epoch-0 stamp is still a real timestamp; only a missing/invalid one
+  // falls back to `now` (no gap). `s.lastSave || now` would treat 0 as missing.
+  const last = Number.isFinite(s.lastSave) && s.lastSave > 0 ? s.lastSave : now;
+  const elapsed = Math.min(OFFLINE_CAP_S, (now - last) / 1000);
   if (elapsed > OFFLINE_MIN_S) applyOffline(s, elapsed);
   s.lastSave = now;
   return s;

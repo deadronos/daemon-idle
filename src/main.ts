@@ -340,6 +340,9 @@ function renderLog(force: boolean): void {
 // --- boot ------------------------------------------------------------------
 
 const state = load();
+// Persist the load-time `lastSave` stamp immediately: without this, a hard kill before the
+// first autosave would leave the on-disk stamp unchanged and re-apply the offline window.
+save(state);
 
 // --- numeric watchdog ------------------------------------------------------
 
