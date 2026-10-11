@@ -84,7 +84,8 @@ itself; `main.ts` delegates the swap to `sim.ts`.
 
 All presentation lives in `src/style.css` (CSS custom properties for the palette). The
 layout is a two-column grid that collapses to one column under 760px. No inline styles
-except the meter widths and the RAM bar's danger color, which are set per frame.
+except the meter widths and the RAM and heat bars' danger color (the heat bar also tints
+its value text), which are set per frame.
 
 ## Contract
 

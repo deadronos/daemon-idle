@@ -439,6 +439,8 @@ export function shieldCost(s: GameState): Decimal {
   return d(500).mul(d(2).pow(s.shields));
 }
 
+export const MALLOC_STEP = 8;
+
 export function mallocCost(s: GameState): Decimal {
   return d(150).mul(d(1.85).pow((s.ramCap - BASE.ramCap) / MALLOC_STEP));
 }
@@ -454,8 +456,6 @@ export function coolCost(s: GameState): Decimal {
 export function forkCost(s: GameState): Decimal {
   return d(1e6).mul(d(10).pow(s.forks));
 }
-
-export const MALLOC_STEP = 8;
 
 // --- actions ---------------------------------------------------------------
 
@@ -553,6 +553,9 @@ export function doFork(s: GameState): boolean {
   s.counts = TIERS.map(() => 0);
   s.leak = 0;
   s.ramCap = BASE.ramCap;
+  s.heat = 0;
+  s.cooling = 0;
+  s.shields = 0;
   s.nice = 0;
   s.gc = 0;
   s.sweepTimer = BASE.sweepInterval;

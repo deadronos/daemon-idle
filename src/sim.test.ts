@@ -783,6 +783,21 @@ describe("prestige", () => {
     expect(s.legacy).toHaveLength(1);
     expect(s.legacy[0].rate.toNumber()).toBeGreaterThan(0);
   });
+
+  it("clears per-run heat, cooling, and shields on fork", () => {
+    const s = newGame();
+    s.totalEarned = d(2e6);
+    s.ramCap = 1000;
+    s.counts = [5, 5, 0, 0, 0];
+    s.heat = 75; // would otherwise throttle the fresh run
+    s.cooling = 3;
+    s.shields = 4;
+    expect(doFork(s)).toBe(true);
+    expect(s.heat).toBe(0);
+    expect(s.cooling).toBe(0);
+    expect(s.shields).toBe(0);
+    expect(s.counts).toEqual([0, 0, 0, 0, 0]);
+  });
 });
 
 // --- big-number range ------------------------------------------------------

@@ -39,7 +39,8 @@ with a boot line. `BASE` holds the tunable constants shared across the file.
 
 Unbounded values (`cycles`, `totalEarned`, tier/upgrade costs, child output, legacy rates,
 the lineage multiplier) are `Decimal` from `src/bignum.ts`. Bounded values (`counts`,
-`ramCap`, `leak`, `heat`, `cooling`, `nice`, `gc`, timers, `playtime`) stay plain `number`.
+`ramCap`, `leak`, `heat`, `cooling`, `nice`, `shields`, `gc`, timers, `playtime`) stay plain
+`number`.
 See [ADR 0003](../decisions/0003-bignum-break-eternity.md).
 
 ## Tiers
