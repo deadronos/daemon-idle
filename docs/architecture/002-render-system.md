@@ -30,6 +30,8 @@ Two cheap diffs avoid needless DOM churn:
 - **Log:** rebuilt only when the joined log string changes (`lastLogSig`).
 - **Legacy list:** rows rebuilt only when the `name:crashed` signature changes
   (`legacyPanel.dataset.sig`); live rates are refreshed in place each frame.
+- **Sacrifice order:** rows rebuilt only when the joined `sacrificeOrder` changes
+  (`priorityPanel.dataset.sig`).
 
 ## DOM binding
 
@@ -52,6 +54,16 @@ Both panels share an `ActionButton` shape:
 
 `enabled()` gates the button; `run()` performs the action; both call back into `sim.ts`.
 Cost text is tinted green (`.ok`) when affordable.
+
+## Sacrifice order panel
+
+The `sacrifice order` panel (`#priorityPanel`) lists `state.sacrificeOrder` top-to-bottom,
+where the top row is reaped first. Each row shows the tier name plus `▲`/`▼` buttons that
+call `movePriority(state, tier, -1 | 1)` and re-render; `▲` is disabled on the first row and
+`▼` on the last. Rows are rebuilt only when the joined order changes
+(`priorityPanel.dataset.sig`). A `.hint` caption explains that only priority-based sweeps
+honour this order — scavenger and group-kill ignore it. The panel never reorders state
+itself; `main.ts` delegates the swap to `sim.ts`.
 
 ## Meters
 

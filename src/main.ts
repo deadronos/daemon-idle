@@ -17,10 +17,12 @@ import {
   lineageMult,
   log,
   mallocCost,
+  movePriority,
   newGame,
   niceCost,
   nudgeDaemon,
   ramUsed,
+  sanitizeSacrificeOrder,
   spawn,
   sweepVictimMult,
   tick,
@@ -75,6 +77,7 @@ function decode(raw: string): GameState {
     s.counts = TIERS.map(() => 0);
   }
   if (!Array.isArray(s.log)) s.log = [];
+  s.sacrificeOrder = sanitizeSacrificeOrder(s.sacrificeOrder);
   return s;
 }
 
@@ -134,6 +137,7 @@ const el = {
   spawnPanel: $("spawnPanel"),
   upgradePanel: $("upgradePanel"),
   legacyPanel: $("legacyPanel"),
+  priorityPanel: $("priorityPanel"),
   log: $("log"),
 };
 
@@ -275,6 +279,7 @@ function render(force = false): void {
   }
 
   renderLegacy();
+  renderPriority();
   renderLog(force);
 }
 
@@ -309,6 +314,46 @@ function renderLegacy(): void {
     const rateEl = row?.querySelector(".rate");
     if (rateEl && !dm.crashed) rateEl.textContent = fmtRate(dm.rate.mul(lineageMult(state)));
   });
+}
+
+function renderPriority(): void {
+  const order = state.sacrificeOrder;
+  const sig = order.join(",");
+  if (el.priorityPanel.dataset.sig !== sig) {
+    el.priorityPanel.dataset.sig = sig;
+    el.priorityPanel.innerHTML = "";
+    order.forEach((tier, i) => {
+      const row = document.createElement("div");
+      row.className = "priority-row";
+
+      const name = document.createElement("span");
+      name.className = "tier";
+      name.textContent = TIERS[tier].name;
+
+      const up = document.createElement("button");
+      up.className = "move";
+      up.textContent = "▲";
+      up.title = "reap sooner";
+      up.disabled = i === 0;
+      up.addEventListener("click", () => {
+        movePriority(state, tier, -1);
+        render(true);
+      });
+
+      const down = document.createElement("button");
+      down.className = "move";
+      down.textContent = "▼";
+      down.title = "reap later";
+      down.disabled = i === order.length - 1;
+      down.addEventListener("click", () => {
+        movePriority(state, tier, 1);
+        render(true);
+      });
+
+      row.append(name, up, down);
+      el.priorityPanel.appendChild(row);
+    });
+  }
 }
 
 function renderLog(force: boolean): void {
