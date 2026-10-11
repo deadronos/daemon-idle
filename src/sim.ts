@@ -431,7 +431,7 @@ export function pickNextDirective(s: GameState): DirectiveId {
 // --- upgrade costs ---------------------------------------------------------
 
 export function niceCost(s: GameState): Decimal {
-  return d(250).mul(d(2.5).pow(s.nice));
+  return d(250).mul(d(2.2).pow(s.nice));
 }
 
 /** Cost of the next SIGTERM handler charge; doubles with each charge owned. */
@@ -440,7 +440,7 @@ export function shieldCost(s: GameState): Decimal {
 }
 
 export function mallocCost(s: GameState): Decimal {
-  return d(150).mul(d(1.9).pow((s.ramCap - BASE.ramCap) / 8));
+  return d(150).mul(d(1.85).pow((s.ramCap - BASE.ramCap) / MALLOC_STEP));
 }
 
 export function gcCost(s: GameState): Decimal {

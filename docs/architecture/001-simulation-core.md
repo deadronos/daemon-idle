@@ -85,10 +85,10 @@ Tiers reinforce each other, so the best board is a _composition_, not a stack of
 priciest tier. The links live in the data-driven `SYNERGY` table (`src/sim.ts`) and are
 applied per-tier by `synergyMult`:
 
-| boosted tier  | boosted by    | per-unit boost |
-| ------------- | ------------- | -------------- |
-| worker thread | microservice  | +2% output     |
-| microservice  | cron daemon   | +5% output     |
+| boosted tier  | boosted by   | per-unit boost |
+| ------------- | ------------ | -------------- |
+| worker thread | microservice | +2% output     |
+| microservice  | cron daemon  | +5% output     |
 
 So a worker's output is `baseOutput * (1 + 0.02 * counts[microservice])`, and a
 microservice's is `baseOutput * (1 + 0.05 * counts[cron daemon])`. Tiers with no incoming
@@ -97,7 +97,6 @@ link (noop loop, fork(), cron daemon) are exactly `1×`. The table is declared a
 branch.
 
 ## RAM
-
 
 ```
 childRam = Σ counts[i] * ram[i]
@@ -195,15 +194,18 @@ the leak alone is still over the cap, it is reclaimed. Then `cycles *= 0.9` and
 
 ## Upgrade costs
 
-| Upgrade           | Cost                       | Effect                                    |
-| ----------------- | -------------------------- | ----------------------------------------- |
-| `nice(+1)`        | `250 * 2.5^n`              | −3% sweep victims per level (floor 30%).  |
-| `malloc(+1)`      | `150 * 1.9^((ramCap-8)/8)` | +8 MB ceiling.                            |
-| `gc(+1)`          | `400 * 3^n`                | Faster automatic leak flushing.           |
-| `cooling(+1)`     | `1000 * 2.5^n`             | Heat sheds 50% faster per level.          |
-| `free()`          | 0                          | Zero the leak.                            |
-| `SIGTERM handler` | `500 * 2^shields`          | +1 charge; each absorbs one sweep victim. |
-| `fork()`          | `1e6 * 10^forks`           | Prestige — see doc 004.                   |
+| Upgrade           | Cost                        | Effect                                    |
+| ----------------- | --------------------------- | ----------------------------------------- |
+| `nice(+1)`        | `250 * 2.2^n`               | −3% sweep victims per level (floor 30%).  |
+| `malloc(+1)`      | `150 * 1.85^((ramCap-8)/8)` | +8 MB ceiling.                            |
+| `gc(+1)`          | `400 * 3^n`                 | Faster automatic leak flushing.           |
+| `cooling(+1)`     | `1000 * 2.5^n`              | Heat sheds 50% faster per level.          |
+| `free()`          | 0                           | Zero the leak.                            |
+| `SIGTERM handler` | `500 * 2^shields`           | +1 charge; each absorbs one sweep victim. |
+| `fork()`          | `1e6 * 10^forks`            | Prestige — see doc 004.                   |
+
+The sweep now has more pressure axes (directives, sacrifice order, shields, heat throttling,
+cross-tier synergy), so `nice` and `malloc` grow slightly slower to keep the early game playable.
 
 ## Invariants
 

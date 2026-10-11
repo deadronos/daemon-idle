@@ -5,6 +5,7 @@ import {
   BASE,
   DEFAULT_SACRIFICE_ORDER,
   HEAT_THROTTLE_AT,
+  MALLOC_STEP,
   MAX_THROTTLE,
   TIERS,
   buyCooling,
@@ -19,8 +20,10 @@ import {
   freeMemory,
   heatMult,
   lineageMult,
+  mallocCost,
   movePriority,
   newGame,
+  niceCost,
   pickNextDirective,
   priorityOf,
   priorityOrder,
@@ -87,6 +90,34 @@ describe("cost curve", () => {
   });
 });
 
+describe("upgrade cost curves", () => {
+  it("niceCost is 250 * 2.2^n and strictly increasing", () => {
+    const s = newGame();
+    const costs = [0, 1, 2].map((n) => {
+      s.nice = n;
+      return niceCost(s).toNumber();
+    });
+    expect(costs[0]).toBeCloseTo(250, 5);
+    expect(costs[1]).toBeCloseTo(550, 5);
+    expect(costs[2]).toBeCloseTo(1210, 5);
+    expect(costs[1]).toBeGreaterThan(costs[0]);
+    expect(costs[2]).toBeGreaterThan(costs[1]);
+  });
+
+  it("mallocCost is 150 * 1.85^step and strictly increasing", () => {
+    const s = newGame();
+    const costs = [0, 1, 2].map((step) => {
+      s.ramCap = BASE.ramCap + step * MALLOC_STEP;
+      return mallocCost(s).toNumber();
+    });
+    expect(costs[0]).toBeCloseTo(150, 5);
+    expect(costs[1]).toBeCloseTo(277.5, 5);
+    expect(costs[2]).toBeCloseTo(513.375, 5);
+    expect(costs[1]).toBeGreaterThan(costs[0]);
+    expect(costs[2]).toBeGreaterThan(costs[1]);
+  });
+});
+
 describe("tier identity", () => {
   it("gives every tier an explicit costGrowth and trait", () => {
     expect(TIERS.map((t) => t.costGrowth)).toEqual([1.12, 1.15, 1.15, 1.18, 1.22]);
@@ -143,10 +174,7 @@ describe("cross-tier synergy", () => {
 
     const microComponent = d(TIERS[3].baseOutput).mul(10).mul(synergyMult(s, 3));
     const cronComponent = d(TIERS[4].baseOutput).mul(4);
-    expect(childOutput(s).toNumber()).toBeCloseTo(
-      microComponent.add(cronComponent).toNumber(),
-      6,
-    );
+    expect(childOutput(s).toNumber()).toBeCloseTo(microComponent.add(cronComponent).toNumber(), 6);
   });
 
   it("leaves tiers without a booster at 1x regardless of unrelated counts", () => {
