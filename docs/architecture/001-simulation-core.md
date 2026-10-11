@@ -118,14 +118,9 @@ and load-time coercion (see [doc 003](./003-persistence.md)). `standard`, `sigki
 
 The sweep is a roster of named **directives** (`DIRECTIVES` in `src/sim.ts`), each with its
 own victim-selection rule, budget fraction (`frac`), and optional `pre` side effect. The
-shared budget is unchanged from the original model:
-
-```
-severity        = min(0.35, 0.15 + sweepsSurvived * 0.002)
-sweepVictimMult = max(0.3, 1 - nice * 0.03)   // nice cuts victims, floored at 30%
-budget          = max(1, round(totalChildren * severity * frac * niceMult))
-niceMult        = ignoresNice ? 1 : sweepVictimMult
-```
+shared budget is `max(1, round(totalChildren * severity * frac * niceMult))`; the exact
+`severity` and `sweepVictimMult` definitions live in
+[doc 008](./008-sweep-directives.md).
 
 `standard` (`frac = 1`, `nice` applies, player order) is exactly the original sweep, so the
 pre-roster balance and tests carry over. Directives unlock as `sweepsSurvived` rises, are
