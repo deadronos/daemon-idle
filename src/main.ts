@@ -25,7 +25,6 @@ import {
   niceCost,
   nudgeDaemon,
   ramUsed,
-  sanitizeSacrificeOrder,
   shieldCost,
   spawn,
   sweepVictimMult,
@@ -36,54 +35,14 @@ import { d } from "./bignum";
 import { type Alert, checkNumericHealth } from "./diagnostics";
 import { consoleSink, logFeedSink, makeReporter } from "./report";
 import { fmt, fmtRate, fmtTime } from "./format";
+import { encode, loadFrom } from "./persistence";
 
 const SAVE_KEY = "daemon-idle-save-v1";
 const TICK_MS = 50; // fixed sim step
-const OFFLINE_CAP_S = 8 * 3600;
 const AUTOSAVE_MS = 10_000;
 const WATCHDOG_MS = 1000;
 
 // --- persistence -----------------------------------------------------------
-
-interface StoredState {
-  cycles: string;
-  totalEarned: string;
-  legacy: Array<{ name: string; rate: string; crashed: boolean; respawn: number }>;
-}
-
-function encode(s: GameState): string {
-  return JSON.stringify({
-    ...s,
-    cycles: s.cycles.toString(),
-    totalEarned: s.totalEarned.toString(),
-    legacy: s.legacy.map((l) => ({ ...l, rate: l.rate.toString() })),
-  });
-}
-
-function decode(raw: string): GameState {
-  const parsed = JSON.parse(raw) as Partial<StoredState>;
-  const s: GameState = {
-    ...newGame(),
-    ...(parsed as unknown as Partial<GameState>),
-    cycles: d((parsed.cycles as string | number | undefined) ?? 0),
-    totalEarned: d((parsed.totalEarned as string | number | undefined) ?? 0),
-    legacy: Array.isArray(parsed.legacy)
-      ? parsed.legacy.map((l) => ({
-          name: String(l.name ?? "legacy"),
-          rate: d((l.rate as string | number | undefined) ?? 0),
-          crashed: Boolean(l.crashed),
-          respawn: Number(l.respawn ?? 0),
-        }))
-      : [],
-  };
-  // guard against shape drift
-  if (!Array.isArray(s.counts) || s.counts.length !== TIERS.length) {
-    s.counts = TIERS.map(() => 0);
-  }
-  if (!Array.isArray(s.log)) s.log = [];
-  s.sacrificeOrder = sanitizeSacrificeOrder(s.sacrificeOrder);
-  return s;
-}
 
 function save(s: GameState): void {
   s.lastSave = Date.now();
@@ -98,24 +57,10 @@ function load(): GameState {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return newGame();
-    const s = decode(raw);
-    const elapsed = Math.min(OFFLINE_CAP_S, (Date.now() - (s.lastSave || Date.now())) / 1000);
-    if (elapsed > 5) applyOffline(s, elapsed);
-    return s;
+    return loadFrom(raw, Date.now());
   } catch {
     return newGame();
   }
-}
-
-function applyOffline(s: GameState, seconds: number): void {
-  const before = s.cycles;
-  let remaining = seconds;
-  while (remaining > 0) {
-    const dt = Math.min(1, remaining);
-    tick(s, dt);
-    remaining -= dt;
-  }
-  log(s, `offline ${fmtTime(seconds)}: +${fmt(s.cycles.sub(before))} cycles`);
 }
 
 // --- dom refs --------------------------------------------------------------

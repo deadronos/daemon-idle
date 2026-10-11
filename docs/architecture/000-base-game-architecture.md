@@ -27,7 +27,8 @@ and **memory pressure**. See [`../../IDEA.md`](../../IDEA.md) for the design int
 | `src/bignum.ts`      | **Numeric boundary.** Re-exports the big-number library (break_eternity.js).  |
 | `src/diagnostics.ts` | **Numeric watchdog.** Pure `checkNumericHealth(state)` → alerts.              |
 | `src/report.ts`      | **Alert routing.** Reporter + pluggable sinks (console, log feed).            |
-| `src/main.ts`        | **The shell.** Boot, loop, persistence, DOM, rendering, watchdog cadence.     |
+| `src/main.ts`        | **The shell.** Boot, loop, DOM, rendering, watchdog cadence, `localStorage`.  |
+| `src/persistence.ts` | **Save boundary.** Pure `encode`/`decode`/`loadFrom` + offline catch-up.      |
 | `src/format.ts`      | Value/time formatting for display only.                                       |
 | `index.html`         | Static structure with fixed element ids that `main.ts` binds to.              |
 | `src/style.css`      | All styling.                                                                  |
