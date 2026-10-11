@@ -35,10 +35,14 @@ legacy rate):
 - non-finite → `error`, `player`.
 - `> RUNAWAY` (1e100) → `warn`, `dev`.
 
-Bounded **number** values (`ramUsed`, `leak`, `playtime`, `sweepTimer`):
+Bounded **number** values (`ramUsed`, `leak`, `playtime`, `sweepTimer`, `heat`, `cooling`,
+`shields`, `ramCap`, `forks`, and each `counts[i]`):
 
 - non-finite → `error`, `player`.
 - `> Number.MAX_SAFE_INTEGER` → `warn`, `dev`.
+
+Each `counts` entry is checked with its index in the code: `numeric.nan.counts.N` (for
+example `numeric.nan.counts.2`).
 
 After the bignum migration, "value exceeds double precision" is **not** an alert — large
 Decimals are expected. See ADR 0003.
