@@ -9,6 +9,7 @@ import {
   canSpawn,
   childRam,
   cyclesPerSec,
+  directiveById,
   doFork,
   forkCost,
   freeMemory,
@@ -248,7 +249,9 @@ function render(force = false): void {
   const total = totalChildren();
   const severity = Math.min(0.35, 0.15 + state.sweepsSurvived * 0.002);
   const est = total === 0 ? 0 : Math.max(1, Math.round(total * severity * sweepVictimMult(state)));
-  el.sweepText.textContent = `${fmtTime(state.sweepTimer)}  ·  reaping ~${est}`;
+  const directiveName = directiveById.get(state.nextDirective)?.name ?? "standard";
+  el.sweepText.textContent =
+    `next ${directiveName} sweep: ${fmtTime(state.sweepTimer)}  ·  reaping ~${est}`;
 
   // action buttons
   for (let i = 0; i < spawnButtons.length; i++) {

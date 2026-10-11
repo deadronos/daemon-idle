@@ -57,8 +57,9 @@ Cost text is tinted green (`.ok`) when affordable.
 
 - **RAM bar:** two segments — the child footprint (`ramBar`, green, turns red at >90% of
   cap) and the leak (`leakBar`, purple, offset to start where the footprint ends).
-- **Sweep bar:** fill = `1 - sweepTimer / sweepInterval`; the label shows the countdown and
-  an estimate of victims for the next sweep (mirrors the severity math from doc 001).
+- **Sweep bar:** fill = `1 - sweepTimer / sweepInterval`; the label names the incoming
+  sweep directive (`nextDirective`), the countdown, and an estimate of victims for the next
+  sweep (mirrors the severity math from doc 001).
 
 ## Style
 
