@@ -334,6 +334,7 @@ function renderPriority(): void {
       up.className = "move";
       up.textContent = "▲";
       up.title = "reap sooner";
+      up.setAttribute("aria-label", `reap ${TIERS[tier].name} sooner`);
       up.disabled = i === 0;
       up.addEventListener("click", () => {
         movePriority(state, tier, -1);
@@ -344,6 +345,7 @@ function renderPriority(): void {
       down.className = "move";
       down.textContent = "▼";
       down.title = "reap later";
+      down.setAttribute("aria-label", `reap ${TIERS[tier].name} later`);
       down.disabled = i === order.length - 1;
       down.addEventListener("click", () => {
         movePriority(state, tier, 1);

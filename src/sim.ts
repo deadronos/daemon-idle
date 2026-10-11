@@ -64,8 +64,8 @@ export const TIERS: TierDef[] = [
  * `TIERS.priority` is now only the source of this default; the live order lives on
  * `GameState.sacrificeOrder` and the player can rearrange it.
  */
-export const DEFAULT_SACRIFICE_ORDER: number[] = TIERS.map((_, i) => i).sort(
-  (a, b) => TIERS[a].priority - TIERS[b].priority,
+export const DEFAULT_SACRIFICE_ORDER: readonly number[] = Object.freeze(
+  TIERS.map((_, i) => i).sort((a, b) => TIERS[a].priority - TIERS[b].priority),
 );
 
 export const COST_GROWTH = 1.15;
@@ -261,7 +261,7 @@ export function reapInOrder(s: GameState, order: number[], budget: number): numb
 const standard: SweepDirective = {
   id: "standard",
   name: "standard",
-  flavor: "reap the lowest-priority children first",
+  flavor: "reap in your sacrifice order",
   unlockAt: 0,
   ignoresNice: false,
   budget: (s, total) => sweepBudget(s, total, 1, false),

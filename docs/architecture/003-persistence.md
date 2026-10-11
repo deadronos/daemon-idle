@@ -29,7 +29,8 @@ Every save stamps `state.lastSave = Date.now()` first.
 2. Parse and shallow-merge over `newGame()`: `{ ...newGame(), ...parsed }`. Missing fields
    are therefore filled with fresh defaults — additive state changes are safe.
 3. **Shape guards:** if `counts` is not an array of `TIERS.length`, reset it; coerce
-   `legacy` and `log` to arrays if missing.
+   `legacy` and `log` to arrays if missing; coerce `sacrificeOrder` to a valid
+   permutation of tier indices via `sanitizeSacrificeOrder`, else the default.
 4. If more than 5 seconds elapsed since `lastSave`, apply offline progress.
 5. Any parse error → `newGame()` (fail closed to a clean game, never a crash).
 

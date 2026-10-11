@@ -196,6 +196,20 @@ describe("sacrifice order", () => {
     expect(directiveById.get("standard")!.victims(s, 5)).toEqual([1, 1, 1, 1, 1]);
   });
 
+  it("sigkill reaps in the player's order", () => {
+    const s = newGame();
+    s.counts = [10, 10, 0, 0, 0];
+    expect(movePriority(s, 1, -1)).toBe(true); // tier 1 to the front
+    expect(directiveById.get("sigkill")!.victims(s, 5)).toEqual([1, 1, 1, 1, 1]);
+  });
+
+  it("backpressure reaps in the player's order", () => {
+    const s = newGame();
+    s.counts = [10, 10, 0, 0, 0];
+    expect(movePriority(s, 1, -1)).toBe(true); // tier 1 to the front
+    expect(directiveById.get("backpressure")!.victims(s, 5)).toEqual([1, 1, 1, 1, 1]);
+  });
+
   it("refuses to move past either end", () => {
     const s = newGame();
     expect(movePriority(s, 0, -1)).toBe(false);
@@ -222,6 +236,13 @@ describe("sacrifice order", () => {
 describe("sanitizeSacrificeOrder", () => {
   it("keeps a valid permutation", () => {
     expect(sanitizeSacrificeOrder([2, 0, 1, 3, 4])).toEqual([2, 0, 1, 3, 4]);
+  });
+  it("returns a fresh array, not the input or shared default", () => {
+    const input = [2, 0, 1, 3, 4];
+    const result = sanitizeSacrificeOrder(input);
+    expect(result).toEqual(input);
+    expect(result).not.toBe(input);
+    expect(result).not.toBe(DEFAULT_SACRIFICE_ORDER);
   });
   it("falls back to the default for invalid input", () => {
     expect(sanitizeSacrificeOrder([0, 0, 1, 2, 3])).toEqual(DEFAULT_SACRIFICE_ORDER); // duplicate
