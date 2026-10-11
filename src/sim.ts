@@ -59,6 +59,15 @@ export const TIERS: TierDef[] = [
   },
 ];
 
+/**
+ * Default sacrifice order: tier indices sorted by ascending `TIERS.priority`.
+ * `TIERS.priority` is now only the source of this default; the live order lives on
+ * `GameState.sacrificeOrder` and the player can rearrange it.
+ */
+export const DEFAULT_SACRIFICE_ORDER: readonly number[] = Object.freeze(
+  TIERS.map((_, i) => i).sort((a, b) => TIERS[a].priority - TIERS[b].priority),
+);
+
 export const COST_GROWTH = 1.15;
 const LEAK_RATE = 0.01; // fraction of footprint leaked per second
 const LEGACY_CRASH_CHANCE = 0.002; // per second, per daemon
@@ -75,6 +84,8 @@ export interface GameState {
   cycles: Decimal;
   totalEarned: Decimal;
   counts: number[];
+  /** Tier indices in reap order: earlier = sacrificed sooner. A permutation. */
+  sacrificeOrder: number[];
   ramCap: number;
   leak: number;
   nice: number;
@@ -107,6 +118,7 @@ export function newGame(): GameState {
     cycles: d(0),
     totalEarned: d(0),
     counts: TIERS.map(() => 0),
+    sacrificeOrder: [...DEFAULT_SACRIFICE_ORDER],
     ramCap: BASE.ramCap,
     leak: 0,
     nice: 0,
@@ -158,6 +170,53 @@ export function sweepVictimMult(s: GameState): number {
   return Math.max(0.3, 1 - s.nice * 0.03);
 }
 
+// --- sacrifice order -------------------------------------------------------
+
+/** Rank of `tier` in the player's sacrifice order (lower = reaped sooner). */
+export function priorityOf(s: GameState, tier: number): number {
+  return s.sacrificeOrder.indexOf(tier);
+}
+
+/** Tier indices sorted by `priorityOf`; a permutation of `0..TIERS.length-1`. */
+export function priorityOrder(s: GameState): number[] {
+  return TIERS.map((_, i) => i).sort((a, b) => priorityOf(s, a) - priorityOf(s, b));
+}
+
+/**
+ * Move `tier` one slot earlier (`-1`) or later (`+1`), swapping with its neighbour.
+ * Returns `false` (and mutates nothing) when the move would leave the range.
+ */
+export function movePriority(s: GameState, tier: number, delta: -1 | 1): boolean {
+  const pos = s.sacrificeOrder.indexOf(tier);
+  const next = pos + delta;
+  if (pos < 0 || next < 0 || next >= s.sacrificeOrder.length) return false;
+  s.sacrificeOrder[pos] = s.sacrificeOrder[next];
+  s.sacrificeOrder[next] = tier;
+  return true;
+}
+
+/**
+ * Coerce loaded data into a valid sacrifice order. Accepts `unknown` (save decode);
+ * returns a copy of the valid permutation when given one, else a copy of the default.
+ */
+export function sanitizeSacrificeOrder(order: unknown): number[] {
+  if (!Array.isArray(order) || order.length !== TIERS.length) return [...DEFAULT_SACRIFICE_ORDER];
+  const seen = new Set<number>();
+  for (const t of order as unknown[]) {
+    if (
+      typeof t !== "number" ||
+      !Number.isInteger(t) ||
+      t < 0 ||
+      t >= TIERS.length ||
+      seen.has(t)
+    ) {
+      return [...DEFAULT_SACRIFICE_ORDER];
+    }
+    seen.add(t);
+  }
+  return (order as number[]).slice();
+}
+
 // --- sweep directives ------------------------------------------------------
 
 export type DirectiveId = "standard" | "sigkill" | "scavenger" | "group-kill" | "backpressure";
@@ -186,10 +245,6 @@ function sweepBudget(s: GameState, total: number, frac: number, ignoresNice: boo
   return Math.max(1, Math.round(total * baseSeverity(s) * frac * mult));
 }
 
-const ascendingPriorityOrder = TIERS.map((_, i) => i).sort(
-  (a, b) => TIERS[a].priority - TIERS[b].priority,
-);
-
 /** Pure: returns the tier indices to reap, taking up to `budget` from `order`. */
 export function reapInOrder(s: GameState, order: number[], budget: number): number[] {
   const victims: number[] = [];
@@ -206,11 +261,11 @@ export function reapInOrder(s: GameState, order: number[], budget: number): numb
 const standard: SweepDirective = {
   id: "standard",
   name: "standard",
-  flavor: "reap the lowest-priority children first",
+  flavor: "reap in your sacrifice order",
   unlockAt: 0,
   ignoresNice: false,
   budget: (s, total) => sweepBudget(s, total, 1, false),
-  victims: (s, budget) => reapInOrder(s, ascendingPriorityOrder, budget),
+  victims: (s, budget) => reapInOrder(s, priorityOrder(s), budget),
 };
 
 // Static order: highest baseOutput first (ties keep the lower tier index).
@@ -225,7 +280,7 @@ const sigkill: SweepDirective = {
   unlockAt: 3,
   ignoresNice: true,
   budget: (s, total) => sweepBudget(s, total, 1, true),
-  victims: (s, budget) => reapInOrder(s, ascendingPriorityOrder, budget),
+  victims: (s, budget) => reapInOrder(s, priorityOrder(s), budget),
 };
 
 const scavenger: SweepDirective = {
@@ -258,7 +313,7 @@ const backpressure: SweepDirective = {
   unlockAt: 15,
   ignoresNice: false,
   budget: (s, total) => sweepBudget(s, total, 0.5, false),
-  victims: (s, budget) => reapInOrder(s, ascendingPriorityOrder, budget),
+  victims: (s, budget) => reapInOrder(s, priorityOrder(s), budget),
   pre: (s) => {
     s.leak = 0;
   },
