@@ -64,16 +64,19 @@ Cost of the next unit of tier `i`: `baseCost[i] * costGrowth[i]^counts[i]`.
 ## Income
 
 ```
-cyclesPerSec = (childOutput + BASE.rootOutput) * lineageMult * heatMult
-childOutput  = Σ counts[i] * baseOutput[i]
-heatMult     = 1 - MAX_THROTTLE * clamp((heat - HEAT_THROTTLE_AT) / (100 - HEAT_THROTTLE_AT), 0, 1)
+rawCyclesPerSec = (childOutput + BASE.rootOutput) * lineageMult
+cyclesPerSec    = rawCyclesPerSec * heatMult
+childOutput     = Σ counts[i] * baseOutput[i]
+heatMult        = 1 - MAX_THROTTLE * clamp((heat - HEAT_THROTTLE_AT) / (100 - HEAT_THROTTLE_AT), 0, 1)
 ```
 
 - `BASE.rootOutput = 1` — the root process itself yields 1 cycle/s. **This is the
   bootstrap:** without it a fresh game earns nothing and can never afford the first child.
 - `lineageMult = 1 + forks * 0.1` multiplies _all_ income (children, root, legacy).
 - `heatMult` throttles children + root income only, and only above `HEAT_THROTTLE_AT = 60`
-  (see [Heat](#heat)). Legacy daemons are not part of `cyclesPerSec` and stay unaffected.
+  (see [Heat](#heat)). Legacy daemons are entirely unaffected by heat: their per-tick income
+  is not part of `cyclesPerSec`, and their fork-time rate is seeded from the unthrottled
+  `rawCyclesPerSec = (childOutput + BASE.rootOutput) * lineageMult`.
 
 ## RAM
 
@@ -118,8 +121,11 @@ heat  = clamp(heat, 0, 100)
 
 `heatMult` stays `1` up to `HEAT_THROTTLE_AT = 60`, then falls linearly to
 `1 - MAX_THROTTLE = 0.5` at heat 100 — so a hot board loses up to half its children + root
-income (legacy income is exempt). `cooling` is the counter-upgrade: each level sheds heat
-50% faster, buying back headroom for a bigger footprint.
+income. Legacy daemons are exempt on both counts: their per-tick income ignores `heatMult`,
+and `doFork` seeds a new legacy daemon's rate from the unthrottled `rawCyclesPerSec`, so a
+throttled board does not permanently cripple the daemons it forks off. `cooling` is the
+counter-upgrade: each level sheds heat 50% faster, buying back headroom for a bigger
+footprint.
 
 ## Tick order (`tick(s, dt)`)
 

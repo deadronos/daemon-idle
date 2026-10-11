@@ -24,6 +24,7 @@ import {
   priorityOf,
   priorityOrder,
   ramUsed,
+  rawCyclesPerSec,
   sanitizeSacrificeOrder,
   shieldCost,
   spawn,
@@ -599,6 +600,19 @@ describe("prestige", () => {
     const s = newGame();
     expect(doFork(s)).toBe(false);
     expect(s.forks).toBe(0);
+  });
+
+  it("seeds a forked legacy daemon's rate from unthrottled income", () => {
+    const s = newGame();
+    s.totalEarned = d(2e6);
+    s.ramCap = 1000;
+    s.counts = [0, 0, 0, 0, 10]; // big footprint -> heat-throttled board
+    s.heat = 100;
+    expect(heatMult(s)).toBeLessThan(1);
+    // rate is derived from the pre-throttle peak, so heatMult is not baked in
+    const expected = rawCyclesPerSec(s).mul(0.1);
+    expect(doFork(s)).toBe(true);
+    expect(s.legacy[0].rate.toNumber()).toBeCloseTo(expected.toNumber(), 5);
   });
 
   it("resets the working set and grants lineage plus a legacy daemon", () => {

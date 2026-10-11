@@ -213,8 +213,16 @@ export function heatMult(s: GameState): number {
   return 1 - MAX_THROTTLE * clamp(over, 0, 1);
 }
 
+/**
+ * Income before the heat throttle. Also the basis for forked legacy daemon rates,
+ * which must not bake in the heat throttle.
+ */
+export function rawCyclesPerSec(s: GameState): Decimal {
+  return childOutput(s).add(BASE.rootOutput).mul(lineageMult(s));
+}
+
 export function cyclesPerSec(s: GameState): Decimal {
-  return childOutput(s).add(BASE.rootOutput).mul(lineageMult(s)).mul(heatMult(s));
+  return rawCyclesPerSec(s).mul(heatMult(s));
 }
 
 export function sweepVictimMult(s: GameState): number {
@@ -508,7 +516,7 @@ export function canFork(s: GameState): boolean {
 
 export function doFork(s: GameState): boolean {
   if (!canFork(s)) return false;
-  const peak = cyclesPerSec(s);
+  const peak = rawCyclesPerSec(s); // unthrottled: legacy daemons ignore heat
   const rate = Decimal.max(0.1, peak.mul(LEGACY_SHARE));
   s.forks++;
   s.legacy.push({
