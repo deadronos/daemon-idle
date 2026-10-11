@@ -10,6 +10,7 @@ import {
   buyCooling,
   buyShield,
   canSpawn,
+  childOutput,
   childRam,
   coolCost,
   cyclesPerSec,
@@ -28,6 +29,7 @@ import {
   sanitizeSacrificeOrder,
   shieldCost,
   spawn,
+  synergyMult,
   tick,
   tierCost,
   unlockedDirectives,
@@ -107,6 +109,61 @@ describe("spawn gating", () => {
     const s = newGame();
     expect(spawn(s, 1)).toBe(false);
     expect(s.counts[1]).toBe(0);
+  });
+});
+
+// --- cross-tier synergy ----------------------------------------------------
+
+describe("cross-tier synergy", () => {
+  // tier indices: 2 = worker thread, 3 = microservice, 4 = cron daemon
+  it("boosts workers 2% per microservice (10 workers + 5 microservices = 1.10x)", () => {
+    const alone = newGame();
+    alone.counts = [0, 0, 10, 0, 0];
+    const mixed = newGame();
+    mixed.counts = [0, 0, 10, 5, 0];
+
+    expect(synergyMult(mixed, 2)).toBeCloseTo(1 + 0.02 * 5, 10);
+
+    const aloneWorkers = d(TIERS[2].baseOutput).mul(alone.counts[2]);
+    const mixedWorkers = d(TIERS[2].baseOutput).mul(mixed.counts[2]).mul(synergyMult(mixed, 2));
+    expect(mixedWorkers.div(aloneWorkers).toNumber()).toBeCloseTo(1.1, 10);
+
+    // the mixed board also earns its (unboosted) microservice output
+    const microComponent = d(TIERS[3].baseOutput).mul(mixed.counts[3]);
+    expect(childOutput(mixed).toNumber()).toBeCloseTo(
+      mixedWorkers.add(microComponent).toNumber(),
+      6,
+    );
+  });
+
+  it("boosts microservices 5% per cron daemon", () => {
+    const s = newGame();
+    s.counts = [0, 0, 0, 10, 4]; // 10 microservices, 4 cron daemons
+    expect(synergyMult(s, 3)).toBeCloseTo(1 + 0.05 * 4, 10);
+
+    const microComponent = d(TIERS[3].baseOutput).mul(10).mul(synergyMult(s, 3));
+    const cronComponent = d(TIERS[4].baseOutput).mul(4);
+    expect(childOutput(s).toNumber()).toBeCloseTo(
+      microComponent.add(cronComponent).toNumber(),
+      6,
+    );
+  });
+
+  it("leaves tiers without a booster at 1x regardless of unrelated counts", () => {
+    const s = newGame();
+    s.counts = [5, 5, 5, 5, 5]; // every tier populated
+    expect(synergyMult(s, 0)).toBe(1); // noop loop: no booster
+    expect(synergyMult(s, 1)).toBe(1); // fork(): no booster
+    expect(synergyMult(s, 4)).toBe(1); // cron daemon: no booster (top of the chain)
+    // microservices boost workers, not other microservices or forks
+    expect(synergyMult(s, 2)).toBeCloseTo(1 + 0.02 * s.counts[3], 10);
+  });
+
+  it("leaves the bootstrap unchanged (empty board)", () => {
+    const s = newGame();
+    expect(childOutput(s).toNumber()).toBe(0);
+    expect(s.heat).toBe(0);
+    expect(cyclesPerSec(s).toNumber()).toBe(1);
   });
 });
 

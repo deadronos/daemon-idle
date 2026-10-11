@@ -66,7 +66,8 @@ Cost of the next unit of tier `i`: `baseCost[i] * costGrowth[i]^counts[i]`.
 ```
 rawCyclesPerSec = (childOutput + BASE.rootOutput) * lineageMult
 cyclesPerSec    = rawCyclesPerSec * heatMult
-childOutput     = Σ counts[i] * baseOutput[i]
+childOutput     = Σ counts[i] * baseOutput[i] * synergyMult(i)
+synergyMult(i)  = Π (1 + pct * counts[from])  for each SYNERGY link targeting i
 heatMult        = 1 - MAX_THROTTLE * clamp((heat - HEAT_THROTTLE_AT) / (100 - HEAT_THROTTLE_AT), 0, 1)
 ```
 
@@ -78,7 +79,25 @@ heatMult        = 1 - MAX_THROTTLE * clamp((heat - HEAT_THROTTLE_AT) / (100 - HE
   is not part of `cyclesPerSec`, and their fork-time rate is seeded from the unthrottled
   `rawCyclesPerSec = (childOutput + BASE.rootOutput) * lineageMult`.
 
+### Cross-tier synergy
+
+Tiers reinforce each other, so the best board is a _composition_, not a stack of the
+priciest tier. The links live in the data-driven `SYNERGY` table (`src/sim.ts`) and are
+applied per-tier by `synergyMult`:
+
+| boosted tier  | boosted by    | per-unit boost |
+| ------------- | ------------- | -------------- |
+| worker thread | microservice  | +2% output     |
+| microservice  | cron daemon   | +5% output     |
+
+So a worker's output is `baseOutput * (1 + 0.02 * counts[microservice])`, and a
+microservice's is `baseOutput * (1 + 0.05 * counts[cron daemon])`. Tiers with no incoming
+link (noop loop, fork(), cron daemon) are exactly `1×`. The table is declared as
+`Array<{ tier; from; pct }>` and read in a loop, so adding a link is a data edit, not a new
+branch.
+
 ## RAM
+
 
 ```
 childRam = Σ counts[i] * ram[i]

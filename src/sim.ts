@@ -82,6 +82,17 @@ export const DEFAULT_SACRIFICE_ORDER: readonly number[] = Object.freeze(
   TIERS.map((_, i) => i).sort((a, b) => TIERS[a].priority - TIERS[b].priority),
 );
 
+/**
+ * Cross-tier synergy links. Owning `from` units multiplies the output of tier
+ * `tier` by `1 + pct * counts[from]`. Data-driven on purpose: links are declared
+ * here, not branched in `childOutput`, so composition (not raw tier spam) matters.
+ * Tier indices: 2 = worker thread, 3 = microservice, 4 = cron daemon.
+ */
+export const SYNERGY: Array<{ tier: number; from: number; pct: number }> = [
+  { tier: 2 /* worker thread */, from: 3 /* microservice */, pct: 0.02 },
+  { tier: 3 /* microservice */, from: 4 /* cron daemon */, pct: 0.05 },
+];
+
 const LEAK_RATE = 0.01; // fraction of footprint leaked per second
 const LEGACY_CRASH_CHANCE = 0.002; // per second, per daemon
 const LEGACY_SHARE = 0.1; // legacy daemon produces 10% of peak cps
@@ -199,9 +210,21 @@ export function tierCost(s: GameState, i: number): Decimal {
 export function childOutput(s: GameState): Decimal {
   let sum = d(0);
   for (let i = 0; i < TIERS.length; i++) {
-    sum = sum.add(d(TIERS[i].baseOutput).mul(s.counts[i]));
+    sum = sum.add(d(TIERS[i].baseOutput).mul(s.counts[i]).mul(synergyMult(s, i)));
   }
   return sum;
+}
+
+/**
+ * Output multiplier for tier `i`: the product of every `SYNERGY` link targeting it,
+ * `1 + pct * counts[from]`. Tiers with no incoming link stay at exactly `1`.
+ */
+export function synergyMult(s: GameState, i: number): number {
+  let mult = 1;
+  for (const link of SYNERGY) {
+    if (link.tier === i) mult *= 1 + link.pct * s.counts[link.from];
+  }
+  return mult;
 }
 
 /**
