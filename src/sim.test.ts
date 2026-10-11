@@ -7,6 +7,7 @@ import {
   TIERS,
   canSpawn,
   cyclesPerSec,
+  directiveById,
   doFork,
   freeMemory,
   lineageMult,
@@ -96,6 +97,29 @@ describe("cleanup sweep", () => {
     const withNice = 100 - nice.counts[0];
 
     expect(withNice).toBeLessThan(withoutNice);
+  });
+});
+
+describe("sweep directive model", () => {
+  it("standard reaps the lowest-priority tier first", () => {
+    const s = newGame();
+    s.counts = [10, 10, 0, 0, 0];
+    const d = directiveById.get("standard")!;
+    expect(d.victims(s, 5)).toEqual([0, 0, 0, 0, 0]);
+  });
+
+  it("standard budget matches the severity formula", () => {
+    const s = newGame(); // sweepsSurvived 0 -> severity 0.15, nice 0 -> mult 1
+    s.counts = [100, 0, 0, 0, 0];
+    const d = directiveById.get("standard")!;
+    expect(d.budget(s, 100)).toBe(15);
+  });
+
+  it("never returns more victims than are owned", () => {
+    const s = newGame();
+    s.counts = [2, 0, 0, 0, 0];
+    const d = directiveById.get("standard")!;
+    expect(d.victims(s, 50)).toEqual([0, 0]);
   });
 });
 

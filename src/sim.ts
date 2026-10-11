@@ -154,6 +154,67 @@ export function sweepVictimMult(s: GameState): number {
   return Math.max(0.3, 1 - s.nice * 0.03);
 }
 
+// --- sweep directives ------------------------------------------------------
+
+export type DirectiveId = "standard" | "sigkill" | "scavenger" | "group-kill" | "backpressure";
+
+export interface SweepDirective {
+  id: DirectiveId;
+  name: string; // shown on the countdown and in the sweep log line
+  flavor: string; // short description
+  unlockAt: number; // minimum sweepsSurvived before it can be drawn
+  ignoresNice: boolean; // when true, sweepVictimMult is not applied
+  /** Number of victims for this sweep, before selection. */
+  budget(s: GameState, totalChildren: number): number;
+  /** Tier indices to reap, in kill order; length == number of victims. */
+  victims(s: GameState, budget: number): number[];
+  /** Optional side effect applied before selection (e.g. reclaim the leak). */
+  pre?(s: GameState): void;
+}
+
+function baseSeverity(s: GameState): number {
+  return Math.min(0.35, 0.15 + s.sweepsSurvived * 0.002);
+}
+
+/** Shared budget: `max(1, round(total * severity * frac * niceMult))`. */
+function sweepBudget(s: GameState, total: number, frac: number, ignoresNice: boolean): number {
+  const mult = ignoresNice ? 1 : sweepVictimMult(s);
+  return Math.max(1, Math.round(total * baseSeverity(s) * frac * mult));
+}
+
+const ascendingPriorityOrder = TIERS.map((_, i) => i).sort(
+  (a, b) => TIERS[a].priority - TIERS[b].priority,
+);
+
+/** Pure: returns the tier indices to reap, taking up to `budget` from `order`. */
+export function reapInOrder(s: GameState, order: number[], budget: number): number[] {
+  const victims: number[] = [];
+  let remaining = budget;
+  for (const i of order) {
+    const take = Math.min(s.counts[i], remaining);
+    for (let n = 0; n < take; n++) victims.push(i);
+    remaining -= take;
+    if (remaining <= 0) break;
+  }
+  return victims;
+}
+
+const standard: SweepDirective = {
+  id: "standard",
+  name: "standard",
+  flavor: "reap the lowest-priority children first",
+  unlockAt: 0,
+  ignoresNice: false,
+  budget: (s, total) => sweepBudget(s, total, 1, false),
+  victims: (s, budget) => reapInOrder(s, ascendingPriorityOrder, budget),
+};
+
+export const DIRECTIVES: SweepDirective[] = [standard];
+
+export const directiveById: Map<DirectiveId, SweepDirective> = new Map(
+  DIRECTIVES.map((d) => [d.id, d]),
+);
+
 // --- upgrade costs ---------------------------------------------------------
 
 export function niceCost(s: GameState): Decimal {
@@ -322,22 +383,15 @@ function runSweep(s: GameState): void {
     s.sweepsSurvived++;
     return;
   }
-  const severity = Math.min(0.35, 0.15 + s.sweepsSurvived * 0.002);
-  let budget = Math.max(1, Math.round(total * severity * sweepVictimMult(s)));
-
-  // reap lowest priority first
-  const order = TIERS.map((_, i) => i).sort((a, b) => TIERS[a].priority - TIERS[b].priority);
-  let killed = 0;
-  for (const i of order) {
-    while (budget > 0 && s.counts[i] > 0) {
-      s.counts[i]--;
-      budget--;
-      killed++;
-    }
-    if (budget <= 0) break;
-  }
+  const d = directiveById.get("standard")!; // Task 3 replaces this with s.nextDirective
+  d.pre?.(s);
+  const victims = d.victims(s, d.budget(s, total));
+  for (const i of victims) s.counts[i]--;
   s.sweepsSurvived++;
-  log(s, `cleanup sweep: reaped ${killed} process${killed === 1 ? "" : "es"}`);
+  log(
+    s,
+    `cleanup sweep [${d.name}]: reaped ${victims.length} process${victims.length === 1 ? "" : "es"}`,
+  );
 }
 
 function runOom(s: GameState): void {
