@@ -82,6 +82,33 @@ never more than are owned.
 - The tick only calls a sweep when `sweepTimer <= 0`, then resets it to `sweepInterval`;
   see the tick order in [doc 001](./001-simulation-core.md).
 
+## Cadence escalation
+
+The interval between sweeps is **derived from progress**, not fixed at load time.
+`sweepIntervalFor(s)` shrinks it from `BASE.sweepInterval` (60 s) toward a hard floor as
+`sweepsSurvived` climbs, and `nice` softens the escalation (stretching the interval back
+toward 60 s):
+
+```
+progress        = min(1, sweepsSurvived / SWEEP_ESCALATE_SWEEPS)
+sweepInterval   = max(SWEEP_INTERVAL_MIN,
+                      BASE.sweepInterval
+                      - (BASE.sweepInterval - SWEEP_INTERVAL_MIN) * progress * sweepVictimMult)
+SWEEP_INTERVAL_MIN     = 10   // cadence floor (s)
+SWEEP_ESCALATE_SWEEPS  = 60   // sweeps survived to reach the floor
+```
+
+So the cadence is 60 s at 0 sweeps, 35 s at 30, and the 10 s floor at ≥60 sweeps. `nice`
+reuses the same victim multiplier (`max(0.3, 1 - nice * 0.03)`), so it can hold the cadence
+up to ~45 s at the escalation horizon — buying `nice` trades offence for cadence. The
+function is deterministic (no `Math.random`) and monotone in `sweepsSurvived`.
+
+`tick` recomputes `s.sweepInterval = sweepIntervalFor(s)` every frame, just before it
+decrements `s.sweepTimer`; the post-sweep reset (`s.sweepTimer = s.sweepInterval`) then uses
+the freshly escalated value. The field is therefore a cache the render layer already reads:
+the countdown (`sweepTimer` / `sweepInterval`) previews the new cadence with **no render
+change**.
+
 ## Seeded draw (`nextRng`, `pickNextDirective`)
 
 Selection is deterministic given the state (no `Math.random`), so a save reloads with the

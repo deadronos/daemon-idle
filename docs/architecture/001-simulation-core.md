@@ -21,7 +21,7 @@ cosmetics, which use `Math.random`).
 | `gc`             | number         | Upgrade level of automatic leak flushing.       |
 | `forks`          | number         | Prestige count; drives the lineage multiplier.  |
 | `sweepTimer`     | number         | Seconds until the next cleanup sweep.           |
-| `sweepInterval`  | number         | Seconds between sweeps.                         |
+| `sweepInterval`  | number         | Seconds between sweeps; derived each tick.      |
 | `sweepsSurvived` | number         | Sweeps run so far; raises severity.             |
 | `rngState`       | number         | Int32 PRNG cursor for the directive draw.       |
 | `nextDirective`  | DirectiveId    | Directive resolved at the next sweep.           |
@@ -173,8 +173,10 @@ Order matters — later steps observe the effects of earlier ones.
    **after** income so the throttle set here applies to the next tick's accrual.
 4. Grow the leak; apply `gc` flushing.
 5. Run legacy daemons (produce, roll for crash, auto-respawn if `gc > 0`).
-6. Decrement `sweepTimer`; when ≤ 0, run a sweep (resolve the stored `nextDirective`,
-   then redraw it from the unlocked pool) and reset the timer.
+6. Recompute `s.sweepInterval` from progress (`sweepIntervalFor`, see
+   [doc 008](./008-sweep-directives.md)), then decrement `s.sweepTimer`; when ≤ 0, run a
+   sweep (resolve the stored `nextDirective`, then redraw it from the unlocked pool) and
+   reset the timer to the escalated interval.
 7. Memory-pressure check: if `ramUsed > 0.9 * ramCap` and not already warned, log once;
    clear the latch below `0.8 * ramCap`.
 8. If `ramUsed > ramCap * OOM_TOLERANCE`, run the OOM killer.

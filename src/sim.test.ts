@@ -34,6 +34,7 @@ import {
   sanitizeSacrificeOrder,
   shieldCost,
   spawn,
+  sweepIntervalFor,
   synergyMult,
   tick,
   tierCost,
@@ -228,6 +229,53 @@ describe("cleanup sweep", () => {
     const withNice = 100 - nice.counts[0];
 
     expect(withNice).toBeLessThan(withoutNice);
+  });
+});
+
+describe("sweep cadence", () => {
+  it("sweepIntervalFor shrinks from 60 to the 10s floor", () => {
+    const s = newGame();
+    s.sweepsSurvived = 0;
+    expect(sweepIntervalFor(s)).toBe(60);
+    s.sweepsSurvived = 30;
+    expect(sweepIntervalFor(s)).toBeCloseTo(35, 5);
+    s.sweepsSurvived = 60;
+    expect(sweepIntervalFor(s)).toBeCloseTo(10, 5);
+    s.sweepsSurvived = 600; // past the escalation horizon: clamped at the floor
+    expect(sweepIntervalFor(s)).toBeCloseTo(10, 5);
+  });
+
+  it("nice softens the escalation", () => {
+    const s = newGame();
+    s.sweepsSurvived = 60;
+    s.nice = 0;
+    expect(sweepIntervalFor(s)).toBeCloseTo(10, 5);
+    s.nice = 20; // sweepVictimMult 0.4 -> 40s
+    expect(sweepIntervalFor(s)).toBeCloseTo(40, 5);
+    s.nice = 24; // sweepVictimMult at its 0.3 floor -> 45s
+    expect(sweepIntervalFor(s)).toBeCloseTo(45, 5);
+  });
+
+  it("the next sweep uses the escalated cadence", () => {
+    const s = newGame();
+    s.sweepsSurvived = 60;
+    s.sweepTimer = 0.001;
+    tick(s, 0.01);
+    expect(s.sweepsSurvived).toBe(61);
+    expect(s.sweepTimer).toBeCloseTo(10, 5);
+    expect(s.sweepInterval).toBeCloseTo(10, 5);
+  });
+
+  it("is deterministic and drives the countdown field", () => {
+    const a = newGame();
+    const b = newGame();
+    a.sweepsSurvived = 12;
+    b.sweepsSurvived = 12;
+    expect(sweepIntervalFor(a)).toBe(sweepIntervalFor(b));
+
+    a.sweepTimer = 1e9; // freeze the sweep so sweepsSurvived is stable
+    tick(a, 1);
+    expect(a.sweepInterval).toBe(sweepIntervalFor(a));
   });
 });
 

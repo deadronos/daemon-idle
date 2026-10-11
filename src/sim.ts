@@ -153,6 +153,11 @@ export const BASE = {
   rootOutput: 1,
 };
 
+/** Sweep cadence floor (s) reached once escalation saturates. */
+export const SWEEP_INTERVAL_MIN = 10;
+/** Sweeps survived needed to shrink the cadence from `BASE.sweepInterval` to the floor. */
+export const SWEEP_ESCALATE_SWEEPS = 60;
+
 const LOG_LIMIT = 40;
 
 export function newGame(): GameState {
@@ -271,6 +276,19 @@ export function cyclesPerSec(s: GameState): Decimal {
 
 export function sweepVictimMult(s: GameState): number {
   return Math.max(0.3, 1 - s.nice * 0.03);
+}
+
+/**
+ * Sweep cadence derived from progress: shrinks from `BASE.sweepInterval` toward
+ * `SWEEP_INTERVAL_MIN` over `SWEEP_ESCALATE_SWEEPS`, softened back toward 60 s by
+ * `nice` (via `sweepVictimMult`). Deterministic; the tick caches it on `s.sweepInterval`.
+ */
+export function sweepIntervalFor(s: GameState): number {
+  const progress = Math.min(1, s.sweepsSurvived / SWEEP_ESCALATE_SWEEPS);
+  const raw =
+    BASE.sweepInterval -
+    (BASE.sweepInterval - SWEEP_INTERVAL_MIN) * progress * sweepVictimMult(s);
+  return Math.max(SWEEP_INTERVAL_MIN, raw);
 }
 
 // --- sacrifice order -------------------------------------------------------
@@ -646,7 +664,8 @@ export function tick(s: GameState, dt: number, opts: TickOptions = {}): void {
   // Offline catch-up skips the sweep and the OOM machinery: idling must not punish.
   if (opts.offline) return;
 
-  // cleanup sweep
+  // cleanup sweep — cadence escalates with progress; the countdown previews it
+  s.sweepInterval = sweepIntervalFor(s);
   s.sweepTimer -= dt;
   if (s.sweepTimer <= 0) {
     runSweep(s);
