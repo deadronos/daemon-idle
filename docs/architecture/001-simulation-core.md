@@ -130,8 +130,8 @@ sweep, so current balance and tests carry over unchanged.
   takes up to `budget` from the ordering and never more than are owned. `standard`,
   `sigkill`, and `backpressure` use ascending `priority`; `scavenger` uses descending
   `baseOutput`; `group-kill` sorts by `counts` descending (ties keep the lower tier index).
-- `backpressure.pre` sets `s.leak = 0`, but only when there is something to reap — the
-  empty-table branch below skips it.
+- `backpressure.pre` sets `s.leak = 0` before selection, so the leak is reclaimed on every
+  `backpressure` sweep.
 
 ### Selection and escalation
 
@@ -143,10 +143,10 @@ sweep, so current balance and tests carry over unchanged.
   reap.
 - The draw is seeded: `nextRng(s)` advances the int32 `s.rngState` with a mulberry32-style
   step and returns a float in `[0, 1)`; the pick is
-  `pool[floor(nextRng(s) * pool.length)]`. When more than one directive is unlocked the
-  just-fired directive is excluded, so there are no back-to-back repeats. `newGame()` seeds
-  `rngState` from `Date.now() | 0` (falling back to `1`) and starts `nextDirective` at
-  `standard`.
+  `choices[floor(nextRng(s) * choices.length)]`, where `choices` is the unlocked pool minus
+  the just-fired directive when more than one is unlocked, so there are no back-to-back
+  repeats. `newGame()` seeds `rngState` from `Date.now() | 0` (falling back to `1`) and
+  starts `nextDirective` at `standard`.
 - Nothing owned → log "nothing to reap"; the sweep is still counted and the directive is
   still redrawn.
 

@@ -455,10 +455,10 @@ export function tick(s: GameState, dt: number): void {
 function runSweep(s: GameState): void {
   const total = s.counts.reduce((a, b) => a + b, 0);
   const d = directiveById.get(s.nextDirective) ?? directiveById.get("standard")!;
+  d.pre?.(s);
   if (total === 0) {
     log(s, "cleanup sweep: nothing to reap");
   } else {
-    d.pre?.(s);
     const victims = d.victims(s, d.budget(s, total));
     for (const i of victims) s.counts[i]--;
     log(

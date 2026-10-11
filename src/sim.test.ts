@@ -160,6 +160,18 @@ describe("sweep directives", () => {
     expect(s.leak).toBe(0);
     expect(d.budget(s, 100)).toBe(8); // round(100 * 0.15 * 0.5) = 8
   });
+
+  it("backpressure zeroes the leak even with no children to reap", () => {
+    const s = newGame();
+    s.sweepsSurvived = 15; // backpressure unlocked
+    s.nextDirective = "backpressure";
+    s.leak = 50;
+    s.ramCap = 1000;
+    s.sweepTimer = 0.001;
+    tick(s, 0.01);
+    expect(s.sweepsSurvived).toBe(16); // empty-table sweep still counts
+    expect(s.leak).toBe(0); // `pre` runs before the empty-table branch
+  });
 });
 
 // --- directive scheduling --------------------------------------------------
@@ -217,6 +229,21 @@ describe("directive scheduling", () => {
     (s as unknown as { nextDirective: string }).nextDirective = "bogus";
     s.counts = [10, 0, 0, 0, 0]; s.ramCap = 1000; s.sweepTimer = 0.001;
     expect(() => tick(s, 0.01)).not.toThrow();
+    // the fallback was actually applied: standard budget at severity 0.15, nice 0
+    expect(s.counts[0]).toBe(8); // 10 - round(10 * 0.15 * 1) = 8
+    expect(s.log[0]).toMatch(/^cleanup sweep \[standard\]:/);
+  });
+
+  it("applies the drawn directive end-to-end (scavenger reaps the highest-output tier)", () => {
+    const s = newGame();
+    s.sweepsSurvived = 6; // scavenger unlocks exactly here
+    s.nextDirective = "scavenger";
+    s.ramCap = 1000;
+    s.counts = [1, 1, 1, 1, 1];
+    s.sweepTimer = 0.001;
+    tick(s, 0.01);
+    expect(s.counts[4]).toBe(0); // tier 4 has the highest baseOutput; scavenger hits it first
+    expect(s.counts.slice(0, 4)).toEqual([1, 1, 1, 1]); // lower-output tiers untouched this sweep
   });
 });
 
