@@ -237,11 +237,20 @@ export function heatMult(s: GameState): number {
 }
 
 /**
+ * Income from children plus the root baseline, before lineage and heat. Lineage-free
+ * on purpose: legacy daemon rates snapshot this, then `tick` applies `lineageMult`
+ * once — baking lineage into the snapshot would double-count it.
+ */
+export function baseCyclesPerSec(s: GameState): Decimal {
+  return childOutput(s).add(BASE.rootOutput);
+}
+
+/**
  * Income before the heat throttle. Also the basis for forked legacy daemon rates,
  * which must not bake in the heat throttle.
  */
 export function rawCyclesPerSec(s: GameState): Decimal {
-  return childOutput(s).add(BASE.rootOutput).mul(lineageMult(s));
+  return baseCyclesPerSec(s).mul(lineageMult(s));
 }
 
 export function cyclesPerSec(s: GameState): Decimal {
@@ -539,7 +548,7 @@ export function canFork(s: GameState): boolean {
 
 export function doFork(s: GameState): boolean {
   if (!canFork(s)) return false;
-  const peak = rawCyclesPerSec(s); // unthrottled: legacy daemons ignore heat
+  const peak = baseCyclesPerSec(s); // unthrottled + lineage-free: heat and lineage are not baked in
   const rate = Decimal.max(0.1, peak.mul(LEGACY_SHARE));
   s.forks++;
   s.legacy.push({

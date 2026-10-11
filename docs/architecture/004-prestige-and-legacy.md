@@ -8,8 +8,9 @@ live in `src/sim.ts`; the panel is rendered in `src/main.ts`.
 - **Gate:** `canFork(s)` is true when `totalEarned >= forkCost`, where
   `forkCost = 1e6 * 10^forks`. The lifetime total, not the current balance, is what counts.
 - **On fork:**
-  1. Capture `peak = rawCyclesPerSec(s)` (children + root, at current lineage,
-     unthrottled so heat is not baked into the legacy rate).
+  1. Capture `peak = baseCyclesPerSec(s)` (children + root, **lineage-free** and
+     unthrottled — so neither the lineage multiplier nor heat is baked into the legacy
+     rate; lineage is applied once per tick, below).
   2. Increment `forks`; push a legacy daemon with
      `rate = max(0.1, peak * LEGACY_SHARE)` where `LEGACY_SHARE = 0.1`.
   3. **Reset the working set:** `cycles = 0`, `counts = zeros`, `leak = 0`,
@@ -30,7 +31,8 @@ HUD as `×N.N`. This is the only permanent numeric carry-over.
 
 Each fork adds one `LegacyDaemon { name, rate, crashed, respawn }`, named `legacy-N`.
 
-- **Produce:** while alive, contribute `rate * dt * lineageMult` cycles/s.
+- **Produce:** while alive, contribute `rate * dt * lineageMult` cycles/s. `rate` is the
+  lineage-free fork-time snapshot, so lineage is applied exactly once here.
 - **Crash:** each second there is a `LEGACY_CRASH_CHANCE = 0.002` chance to crash
   (per daemon; implemented as `1 - exp(-0.002 * dt)`). On crash, `respawn = 10`.
 - **Respawn:** if `gc > 0`, a crashed daemon auto-restarts when its respawn timer expires.

@@ -65,20 +65,24 @@ Cost of the next unit of tier `i`: `baseCost[i] * costGrowth[i]^counts[i]`.
 ## Income
 
 ```
-rawCyclesPerSec = (childOutput + BASE.rootOutput) * lineageMult
-cyclesPerSec    = rawCyclesPerSec * heatMult
-childOutput     = Σ counts[i] * baseOutput[i] * synergyMult(i)
-synergyMult(i)  = Π (1 + pct * counts[from])  for each SYNERGY link targeting i
-heatMult        = 1 - MAX_THROTTLE * clamp((heat - HEAT_THROTTLE_AT) / (100 - HEAT_THROTTLE_AT), 0, 1)
+baseCyclesPerSec = childOutput + BASE.rootOutput
+rawCyclesPerSec  = baseCyclesPerSec * lineageMult
+cyclesPerSec     = rawCyclesPerSec * heatMult
+childOutput      = Σ counts[i] * baseOutput[i] * synergyMult(i)
+synergyMult(i)   = Π (1 + pct * counts[from])  for each SYNERGY link targeting i
+heatMult         = 1 - MAX_THROTTLE * clamp((heat - HEAT_THROTTLE_AT) / (100 - HEAT_THROTTLE_AT), 0, 1)
 ```
 
 - `BASE.rootOutput = 1` — the root process itself yields 1 cycle/s. **This is the
   bootstrap:** without it a fresh game earns nothing and can never afford the first child.
+- `baseCyclesPerSec = childOutput + BASE.rootOutput` — income before lineage and heat.
+  Lineage-free on purpose: legacy daemon rates snapshot this (see [doc 004](./004-prestige-and-legacy.md)),
+  so applying lineage here too would double-count it.
 - `lineageMult = 1 + forks * 0.1` multiplies _all_ income (children, root, legacy).
 - `heatMult` throttles children + root income only, and only above `HEAT_THROTTLE_AT = 60`
   (see [Heat](#heat)). Legacy daemons are entirely unaffected by heat: their per-tick income
-  is not part of `cyclesPerSec`, and their fork-time rate is seeded from the unthrottled
-  `rawCyclesPerSec = (childOutput + BASE.rootOutput) * lineageMult`.
+  is not part of `cyclesPerSec`, and their fork-time rate is seeded from the unthrottled,
+  lineage-free `baseCyclesPerSec = childOutput + BASE.rootOutput`.
 
 ### Cross-tier synergy
 
@@ -141,8 +145,9 @@ heat  = clamp(heat, 0, 100)
 `heatMult` stays `1` up to `HEAT_THROTTLE_AT = 60`, then falls linearly to
 `1 - MAX_THROTTLE = 0.5` at heat 100 — so a hot board loses up to half its children + root
 income. Legacy daemons are exempt on both counts: their per-tick income ignores `heatMult`,
-and `doFork` seeds a new legacy daemon's rate from the unthrottled `rawCyclesPerSec`, so a
-throttled board does not permanently cripple the daemons it forks off. `cooling` is the
+and `doFork` seeds a new legacy daemon's rate from the unthrottled, lineage-free
+`baseCyclesPerSec`, so a throttled board does not permanently cripple the daemons it forks
+off. `cooling` is the
 counter-upgrade: each level sheds heat 50% faster, buying back headroom for a bigger
 footprint.
 

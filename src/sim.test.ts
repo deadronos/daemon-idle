@@ -8,6 +8,7 @@ import {
   MALLOC_STEP,
   MAX_THROTTLE,
   TIERS,
+  baseCyclesPerSec,
   buyCooling,
   buyShield,
   canSpawn,
@@ -29,7 +30,6 @@ import {
   priorityOf,
   priorityOrder,
   ramUsed,
-  rawCyclesPerSec,
   sanitizeSacrificeOrder,
   shieldCost,
   spawn,
@@ -764,10 +764,22 @@ describe("prestige", () => {
     s.counts = [0, 0, 0, 0, 10]; // big footprint -> heat-throttled board
     s.heat = 100;
     expect(heatMult(s)).toBeLessThan(1);
-    // rate is derived from the pre-throttle peak, so heatMult is not baked in
-    const expected = rawCyclesPerSec(s).mul(0.1);
+    // rate is derived from the pre-throttle, lineage-free peak, so neither heatMult
+    // nor lineageMult is baked in
+    const expected = baseCyclesPerSec(s).mul(0.1);
     expect(doFork(s)).toBe(true);
     expect(s.legacy[0].rate.toNumber()).toBeCloseTo(expected.toNumber(), 5);
+  });
+
+  it("does not bake lineage into the legacy rate (snapshot is lineage-free)", () => {
+    const s = newGame();
+    s.totalEarned = d(1e9); // >= forkCost at forks = 2 (1e8)
+    s.ramCap = 1000;
+    s.forks = 2; // lineage ×1.2
+    s.counts = [0, 0, 0, 0, 10]; // childOutput 4000, +root 1 => base 4001
+    expect(doFork(s)).toBe(true);
+    // 4001 * 0.1, not 4001 * 1.2 * 0.1 = 480.12 (the double-count bug)
+    expect(s.legacy[0].rate.toNumber()).toBeCloseTo(400.1, 5);
   });
 
   it("resets the working set and grants lineage plus a legacy daemon", () => {
@@ -797,6 +809,19 @@ describe("prestige", () => {
     expect(s.cooling).toBe(0);
     expect(s.shields).toBe(0);
     expect(s.counts).toEqual([0, 0, 0, 0, 0]);
+  });
+});
+
+// --- legacy daemons --------------------------------------------------------
+
+describe("legacy daemons", () => {
+  it("applies the lineage multiplier once to legacy income per tick", () => {
+    const s = newGame();
+    s.forks = 2; // lineage ×1.2
+    s.legacy = [{ name: "legacy-1", rate: d(10), crashed: false, respawn: 0 }];
+    tick(s, 1);
+    // root 1 * 1.2 + legacy rate 10 * 1.2 = 13.2 (lineage applied once, not twice)
+    expect(s.cycles.toNumber()).toBeCloseTo(13.2, 5);
   });
 });
 
