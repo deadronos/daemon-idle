@@ -8,11 +8,13 @@ live in `src/sim.ts`; the panel is rendered in `src/main.ts`.
 - **Gate:** `canFork(s)` is true when `totalEarned >= forkCost`, where
   `forkCost = 1e6 * 10^forks`. The lifetime total, not the current balance, is what counts.
 - **On fork:**
-  1. Capture `peak = cyclesPerSec(s)` (children + root, at current lineage).
+  1. Capture `peak = rawCyclesPerSec(s)` (children + root, at current lineage,
+     unthrottled so heat is not baked into the legacy rate).
   2. Increment `forks`; push a legacy daemon with
      `rate = max(0.1, peak * LEGACY_SHARE)` where `LEGACY_SHARE = 0.1`.
   3. **Reset the working set:** `cycles = 0`, `counts = zeros`, `leak = 0`,
-     `ramCap = BASE.ramCap`, `nice = 0`, `gc = 0`, `sweepTimer = BASE.sweepInterval`.
+     `ramCap = BASE.ramCap`, `heat = 0`, `cooling = 0`, `shields = 0`, `nice = 0`,
+     `gc = 0`, `sweepTimer = BASE.sweepInterval`.
   4. **Keep:** `totalEarned`, `forks`, `legacy`, `playtime`, log.
 
 ## Lineage multiplier

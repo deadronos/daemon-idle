@@ -38,6 +38,17 @@
           </div>
         </div>
 
+        <div class="meter">
+          <label>heat <span id="heatText">0 / 100</span></label>
+          <div class="bar">
+            <div id="heatBar" class="fill"></div>
+          </div>
+        </div>
+
+        <div id="shieldRow" class="meter shields" hidden>
+          <label>shields <span id="shieldText">0</span></label>
+        </div>
+
         <div id="alertBanner" class="banner" hidden></div>
       </header>
 
@@ -55,6 +66,14 @@
         <section class="panel">
           <h2>legacy daemons</h2>
           <div id="legacyPanel" class="legacy"></div>
+        </section>
+
+        <section class="panel">
+          <h2>sacrifice order</h2>
+          <p class="hint">
+            priority-based sweeps reap from the top down; scavenger and group-kill ignore this
+          </p>
+          <div id="priorityPanel" class="priority"></div>
         </section>
       </main>
 

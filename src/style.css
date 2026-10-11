@@ -150,6 +150,10 @@ body {
   background: var(--danger);
 }
 
+.meter.shields label span {
+  color: var(--leak);
+}
+
 main {
   display: grid;
   grid-template-columns: 1.35fr 1fr;
@@ -256,6 +260,57 @@ button.act .cost.ok {
 
 .daemon .rate {
   color: var(--dim);
+}
+
+.hint {
+  margin: -4px 0 12px;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.priority {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.priority-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+}
+
+.priority-row .tier {
+  flex: 1;
+}
+
+.priority-row .move {
+  padding: 2px 8px;
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-family: var(--font);
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: border-color 0.1s;
+}
+
+.priority-row .move:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.priority-row .move:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
 .logwrap {

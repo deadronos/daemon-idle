@@ -1,25 +1,32 @@
 import {
   type GameState,
+  HEAT_THROTTLE_AT,
   MALLOC_STEP,
   TIERS,
   buyGc,
   buyMalloc,
   buyNice,
+  buyShield,
   canFork,
   canSpawn,
   childRam,
   cyclesPerSec,
+  directiveById,
   doFork,
+  estimateVictims,
   forkCost,
   freeMemory,
   gcCost,
   lineageMult,
   log,
   mallocCost,
+  movePriority,
   newGame,
   niceCost,
   nudgeDaemon,
   ramUsed,
+  sanitizeSacrificeOrder,
+  shieldCost,
   spawn,
   sweepVictimMult,
   tick,
@@ -74,6 +81,7 @@ function decode(raw: string): GameState {
     s.counts = TIERS.map(() => 0);
   }
   if (!Array.isArray(s.log)) s.log = [];
+  s.sacrificeOrder = sanitizeSacrificeOrder(s.sacrificeOrder);
   return s;
 }
 
@@ -129,10 +137,15 @@ const el = {
   leakBar: $("leakBar"),
   sweepText: $("sweepText"),
   sweepBar: $("sweepBar"),
+  heatText: $("heatText"),
+  heatBar: $("heatBar"),
+  shieldRow: $("shieldRow"),
+  shieldText: $("shieldText"),
   alertBanner: $("alertBanner"),
   spawnPanel: $("spawnPanel"),
   upgradePanel: $("upgradePanel"),
   legacyPanel: $("legacyPanel"),
+  priorityPanel: $("priorityPanel"),
   log: $("log"),
 };
 
@@ -205,6 +218,13 @@ addUpgrade(
   () => buyMalloc(state),
 );
 addUpgrade(
+  () =>
+    `SIGTERM handler  ·  ${state.shields} charge${state.shields === 1 ? "" : "s"}  ·  absorb sweep victims`,
+  () => shieldCost(state),
+  () => state.cycles.gte(shieldCost(state)),
+  () => buyShield(state),
+);
+addUpgrade(
   () => (state.gc === 0 ? "gc  ·  auto-flush the leak" : `gc  ·  auto-flush lvl ${state.gc}`),
   () => gcCost(state),
   () => state.cycles.gte(gcCost(state)),
@@ -245,10 +265,19 @@ function render(force = false): void {
   // sweep meter
   const frac = 1 - state.sweepTimer / state.sweepInterval;
   el.sweepBar.style.width = `${Math.min(100, frac * 100)}%`;
-  const total = totalChildren();
-  const severity = Math.min(0.35, 0.15 + state.sweepsSurvived * 0.002);
-  const est = total === 0 ? 0 : Math.max(1, Math.round(total * severity * sweepVictimMult(state)));
-  el.sweepText.textContent = `${fmtTime(state.sweepTimer)}  ·  reaping ~${est}`;
+  const directiveName = directiveById.get(state.nextDirective)?.name ?? "standard";
+  el.sweepText.textContent = `next ${directiveName} sweep: ${fmtTime(state.sweepTimer)}  ·  reaping ~${estimateVictims(state)}`;
+
+  // heat meter — throttles income above HEAT_THROTTLE_AT
+  el.heatText.textContent = `heat ${Math.round(state.heat)} / 100`;
+  el.heatBar.style.width = `${Math.min(100, state.heat)}%`;
+  const hot = state.heat > HEAT_THROTTLE_AT;
+  el.heatBar.style.background = hot ? "var(--danger)" : "";
+  el.heatText.style.color = hot ? "var(--danger)" : "";
+
+  // shields readout — only meaningful while charges remain
+  el.shieldRow.hidden = state.shields <= 0;
+  el.shieldText.textContent = String(state.shields);
 
   // action buttons
   for (let i = 0; i < spawnButtons.length; i++) {
@@ -272,6 +301,7 @@ function render(force = false): void {
   }
 
   renderLegacy();
+  renderPriority();
   renderLog(force);
 }
 
@@ -308,6 +338,48 @@ function renderLegacy(): void {
   });
 }
 
+function renderPriority(): void {
+  const order = state.sacrificeOrder;
+  const sig = order.join(",");
+  if (el.priorityPanel.dataset.sig !== sig) {
+    el.priorityPanel.dataset.sig = sig;
+    el.priorityPanel.innerHTML = "";
+    order.forEach((tier, i) => {
+      const row = document.createElement("div");
+      row.className = "priority-row";
+
+      const name = document.createElement("span");
+      name.className = "tier";
+      name.textContent = TIERS[tier].name;
+
+      const up = document.createElement("button");
+      up.className = "move";
+      up.textContent = "▲";
+      up.title = "reap sooner";
+      up.setAttribute("aria-label", `reap ${TIERS[tier].name} sooner`);
+      up.disabled = i === 0;
+      up.addEventListener("click", () => {
+        movePriority(state, tier, -1);
+        render(true);
+      });
+
+      const down = document.createElement("button");
+      down.className = "move";
+      down.textContent = "▼";
+      down.title = "reap later";
+      down.setAttribute("aria-label", `reap ${TIERS[tier].name} later`);
+      down.disabled = i === order.length - 1;
+      down.addEventListener("click", () => {
+        movePriority(state, tier, 1);
+        render(true);
+      });
+
+      row.append(name, up, down);
+      el.priorityPanel.appendChild(row);
+    });
+  }
+}
+
 function renderLog(force: boolean): void {
   const sig = state.log.join("\n");
   if (!force && sig === lastLogSig) return;
@@ -318,10 +390,6 @@ function renderLog(force: boolean): void {
     div.textContent = `> ${line}`;
     el.log.appendChild(div);
   }
-}
-
-function totalChildren(): number {
-  return state.counts.reduce((a, b) => a + b, 0);
 }
 
 // --- boot ------------------------------------------------------------------
