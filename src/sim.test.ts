@@ -123,6 +123,43 @@ describe("sweep directive model", () => {
   });
 });
 
+describe("sweep directives", () => {
+  it("sigkill ignores nice entirely", () => {
+    const noNice = newGame();
+    noNice.counts = [100, 0, 0, 0, 0];
+    const nice = newGame();
+    nice.counts = [100, 0, 0, 0, 0];
+    nice.nice = 20; // well past the floor
+    const d = directiveById.get("sigkill")!;
+    expect(d.budget(noNice, 100)).toBe(15);
+    expect(d.budget(nice, 100)).toBe(d.budget(noNice, 100)); // nice does not reduce it
+  });
+
+  it("scavenger reaps the highest-output tier first", () => {
+    const s = newGame();
+    s.counts = [10, 10, 10, 10, 10];
+    const d = directiveById.get("scavenger")!;
+    expect(d.victims(s, 3)).toEqual([4, 4, 4]); // tier 4 has the highest baseOutput
+  });
+
+  it("group-kill reaps the densest tier first", () => {
+    const s = newGame();
+    s.counts = [0, 9, 2, 0, 0]; // tier 1 is densest
+    const d = directiveById.get("group-kill")!;
+    expect(d.victims(s, 11)).toEqual([1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2]);
+  });
+
+  it("backpressure reclaims the leak and reaps half the usual budget", () => {
+    const s = newGame();
+    s.counts = [100, 0, 0, 0, 0];
+    s.leak = 50;
+    const d = directiveById.get("backpressure")!;
+    d.pre?.(s);
+    expect(s.leak).toBe(0);
+    expect(d.budget(s, 100)).toBe(8); // round(100 * 0.15 * 0.5) = 8
+  });
+});
+
 // --- memory ----------------------------------------------------------------
 
 describe("memory leak and gc", () => {

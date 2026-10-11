@@ -209,7 +209,58 @@ const standard: SweepDirective = {
   victims: (s, budget) => reapInOrder(s, ascendingPriorityOrder, budget),
 };
 
-export const DIRECTIVES: SweepDirective[] = [standard];
+// Static order: highest baseOutput first (ties keep the lower tier index).
+const descendingOutputOrder = TIERS.map((_, i) => i).sort(
+  (a, b) => TIERS[b].baseOutput - TIERS[a].baseOutput,
+);
+
+const sigkill: SweepDirective = {
+  id: "sigkill",
+  name: "sigkill",
+  flavor: "SIGKILL — nice cannot save you",
+  unlockAt: 3,
+  ignoresNice: true,
+  budget: (s, total) => sweepBudget(s, total, 1, true),
+  victims: (s, budget) => reapInOrder(s, ascendingPriorityOrder, budget),
+};
+
+const scavenger: SweepDirective = {
+  id: "scavenger",
+  name: "scavenger",
+  flavor: "reap the highest-output children first",
+  unlockAt: 6,
+  ignoresNice: false,
+  budget: (s, total) => sweepBudget(s, total, 0.6, false),
+  victims: (s, budget) => reapInOrder(s, descendingOutputOrder, budget),
+};
+
+const groupKill: SweepDirective = {
+  id: "group-kill",
+  name: "group-kill",
+  flavor: "reap the densest tier first",
+  unlockAt: 10,
+  ignoresNice: false,
+  budget: (s, total) => sweepBudget(s, total, 1, false),
+  victims: (s, budget) => {
+    const densestFirst = TIERS.map((_, i) => i).sort((a, b) => s.counts[b] - s.counts[a] || a - b);
+    return reapInOrder(s, densestFirst, budget);
+  },
+};
+
+const backpressure: SweepDirective = {
+  id: "backpressure",
+  name: "backpressure",
+  flavor: "reclaim the leak, then reap half the usual budget",
+  unlockAt: 15,
+  ignoresNice: false,
+  budget: (s, total) => sweepBudget(s, total, 0.5, false),
+  victims: (s, budget) => reapInOrder(s, ascendingPriorityOrder, budget),
+  pre: (s) => {
+    s.leak = 0;
+  },
+};
+
+export const DIRECTIVES: SweepDirective[] = [standard, sigkill, scavenger, groupKill, backpressure];
 
 export const directiveById: Map<DirectiveId, SweepDirective> = new Map(
   DIRECTIVES.map((d) => [d.id, d]),
