@@ -3,6 +3,7 @@ import {
   HEAT_THROTTLE_AT,
   MALLOC_STEP,
   TIERS,
+  buyCooling,
   buyGc,
   buyMalloc,
   buyNice,
@@ -10,6 +11,7 @@ import {
   canFork,
   canSpawn,
   childRam,
+  coolCost,
   cyclesPerSec,
   directiveById,
   doFork,
@@ -174,6 +176,15 @@ addUpgrade(
   () => gcCost(state),
   () => state.cycles.gte(gcCost(state)),
   () => buyGc(state),
+);
+addUpgrade(
+  () =>
+    state.cooling === 0
+      ? "cooling  ·  heat sheds faster"
+      : `cooling  ·  heat sheds faster  ·  lvl ${state.cooling}`,
+  () => coolCost(state),
+  () => state.cycles.gte(coolCost(state)),
+  () => buyCooling(state),
 );
 addUpgrade(
   () => `fork()  ·  prestige  ·  lineage ×${(1 + (state.forks + 1) * 0.1).toFixed(1)}`,

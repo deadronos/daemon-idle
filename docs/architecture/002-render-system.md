@@ -50,7 +50,10 @@ Both panels share an `ActionButton` shape:
 - **Spawn buttons** are built once from `TIERS`. Each shows `count · cost` and is disabled
   when `canSpawn` is false; a `⚠ ram` suffix appears when the tier would exceed the RAM cap.
 - **Upgrade buttons** are registered via `addUpgrade(...)` with closures over the current
-  state, so labels and affordability track live state.
+  state, so labels and affordability track live state. The panel covers `free()`, `nice`,
+  `malloc`, `SIGTERM handler`, `gc`, `cooling`, and `fork()`; the `cooling` button labels
+  the current level, costs `coolCost(state)`, and runs `buyCooling(state)` — it is disabled
+  while `state.cycles` is below the cost.
 
 `enabled()` gates the button; `run()` performs the action; both call back into `sim.ts`.
 Cost text is tinted green (`.ok`) when affordable.
