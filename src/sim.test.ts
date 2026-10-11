@@ -684,6 +684,24 @@ describe("OOM killer", () => {
     expect(s.oomCount).toBe(1);
     expect(ramUsed(s)).toBeLessThanOrEqual(s.ramCap);
   });
+
+  it("does not OOM when RAM is exactly at the cap", () => {
+    const s = newGame();
+    s.counts = [0, 0, 0, 0, 1]; // one cron daemon, exactly 16 MB
+    s.ramCap = 16;
+    tick(s, 0.01);
+    expect(s.oomCount).toBe(0);
+  });
+
+  it("does not compound the penalty while under the margin", () => {
+    const s = newGame();
+    s.counts = [0, 0, 0, 0, 2]; // two cron daemons, 32 MB
+    s.ramCap = 16;
+    tick(s, 0.01);
+    expect(s.oomCount).toBe(1);
+    tick(s, 0.01);
+    expect(s.oomCount).toBe(1);
+  });
 });
 
 // --- heat ------------------------------------------------------------------

@@ -102,6 +102,9 @@ export const HEAT_DECAY = 1.0; // heat shed per second, before cooling
 export const HEAT_THROTTLE_AT = 60; // heat at which throttling begins
 export const MAX_THROTTLE = 0.5; // most cycles/s that heat can strip
 
+/** RAM may exceed the cap by this factor before the OOM killer fires (2% grace). */
+export const OOM_TOLERANCE = 1.02;
+
 function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v));
 }
@@ -634,7 +637,7 @@ export function tick(s: GameState, dt: number): void {
   } else if (s.ramWarned && used < s.ramCap * 0.8) {
     s.ramWarned = false;
   }
-  if (used > s.ramCap) runOom(s);
+  if (used > s.ramCap * OOM_TOLERANCE) runOom(s);
 }
 
 /**

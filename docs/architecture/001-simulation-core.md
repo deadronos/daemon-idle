@@ -171,7 +171,7 @@ Order matters — later steps observe the effects of earlier ones.
    then redraw it from the unlocked pool) and reset the timer.
 7. Memory-pressure check: if `ramUsed > 0.9 * ramCap` and not already warned, log once;
    clear the latch below `0.8 * ramCap`.
-8. If `ramUsed > ramCap`, run the OOM killer.
+8. If `ramUsed > ramCap * OOM_TOLERANCE`, run the OOM killer.
 
 ## Sacrifice order
 
@@ -199,10 +199,13 @@ roster, selection/escalation rules, and the seeded draw are in
 
 ## OOM killer (`runOom`)
 
-Fires when `ramUsed > ramCap`. Kills children from the **highest `baseOutput` tier
-downward** until under the cap — i.e. it destroys your most valuable processes first. If
-the leak alone is still over the cap, it is reclaimed. Then `cycles *= 0.9` and
-`oomCount++`.
+Fires when `ramUsed > ramCap * OOM_TOLERANCE` (`OOM_TOLERANCE = 1.02`), i.e. RAM may exceed
+the ceiling by up to **2%** before the killer reaps. This grace means a bar filled exactly to
+the cap survives the first leak increment. Kills children from the **highest `baseOutput`
+tier downward** until under the cap — i.e. it destroys your most valuable processes first.
+If the leak alone is still over the cap, it is reclaimed. Then `cycles *= 0.9` and
+`oomCount++`. Because the drain recovers to the cap, the killer only re-arms once the leak
+re-crosses `+2%`, so the `*0.9` penalty no longer compounds tick-over-tick.
 
 ## Upgrade costs
 
