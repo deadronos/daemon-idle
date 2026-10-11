@@ -19,6 +19,8 @@ cosmetics, which use `Math.random`).
 | `sweepTimer`     | number         | Seconds until the next cleanup sweep.           |
 | `sweepInterval`  | number         | Seconds between sweeps.                         |
 | `sweepsSurvived` | number         | Sweeps run so far; raises severity.             |
+| `rngState`       | number         | Int32 PRNG cursor for the directive draw.       |
+| `nextDirective`  | DirectiveId    | Directive resolved at the next sweep.           |
 | `oomCount`       | number         | Times the OOM killer has fired.                 |
 | `ramWarned`      | boolean        | Latches the ≥90% memory-pressure warning.       |
 | `legacy`         | LegacyDaemon[] | Background producers left by forks.             |
@@ -94,18 +96,59 @@ Order matters — later steps observe the effects of earlier ones.
 2. Accrue income: `cycles` and `totalEarned` += `cyclesPerSec * dt`.
 3. Grow the leak; apply `gc` flushing.
 4. Run legacy daemons (produce, roll for crash, auto-respawn if `gc > 0`).
-5. Decrement `sweepTimer`; when ≤ 0, run a sweep and reset the timer.
+5. Decrement `sweepTimer`; when ≤ 0, run a sweep (resolve the stored `nextDirective`,
+   then redraw it from the unlocked pool) and reset the timer.
 6. Memory-pressure check: if `ramUsed > 0.9 * ramCap` and not already warned, log once;
    clear the latch below `0.8 * ramCap`.
 7. If `ramUsed > ramCap`, run the OOM killer.
 
 ## Cleanup sweep (`runSweep`)
 
-- Nothing owned → log "nothing to reap", still count the sweep.
-- Otherwise: `severity = min(0.35, 0.15 + sweepsSurvived * 0.002)`.
-- `budget = max(1, round(totalChildren * severity * sweepVictimMult))`.
-- `sweepVictimMult = max(0.3, 1 - nice * 0.03)` — `nice` cuts victims, floored at 30%.
-- Reap `budget` children starting from the **lowest priority** tier upward.
+The sweep is a roster of named **directives** (`DIRECTIVES` in `src/sim.ts`), each with its
+own victim-selection rule, budget fraction, and optional side effect. Severity and `nice`
+are unchanged from the original model:
+
+```
+severity        = min(0.35, 0.15 + sweepsSurvived * 0.002)
+sweepVictimMult = max(0.3, 1 - nice * 0.03)   // nice cuts victims, floored at 30%
+budget          = max(1, round(totalChildren * severity * frac * niceMult))
+niceMult        = ignoresNice ? 1 : sweepVictimMult
+```
+
+`standard` (`frac = 1`, `nice` applies, lowest-`priority` first) is exactly the original
+sweep, so current balance and tests carry over unchanged.
+
+| id             | `unlockAt` | budget (`frac`) | victim selection                      | `nice` applies | `pre`         |
+| -------------- | ---------- | --------------- | ------------------------------------- | -------------- | ------------- |
+| `standard`     | 0          | `1`             | lowest `priority` first               | yes            | —             |
+| `sigkill`      | 3          | `1`             | lowest `priority` first               | **no**         | —             |
+| `scavenger`    | 6          | `0.6`           | highest `baseOutput` first            | yes            | —             |
+| `group-kill`   | 10         | `1`             | densest tier first, then next-densest | yes            | —             |
+| `backpressure` | 15         | `0.5`           | lowest `priority` first               | yes            | zero the leak |
+
+- Every directive selects through the shared `reapInOrder(s, order, budget)` helper, which
+  takes up to `budget` from the ordering and never more than are owned. `standard`,
+  `sigkill`, and `backpressure` use ascending `priority`; `scavenger` uses descending
+  `baseOutput`; `group-kill` sorts by `counts` descending (ties keep the lower tier index).
+- `backpressure.pre` sets `s.leak = 0`, but only when there is something to reap — the
+  empty-table branch below skips it.
+
+### Selection and escalation
+
+- The unlocked pool is `DIRECTIVES.filter(d => d.unlockAt <= s.sweepsSurvived)`; thresholds
+  are inclusive, so `sigkill` unlocks at exactly 3 sweeps survived.
+- `runSweep` resolves the stored `s.nextDirective` (falling back to `standard` for an
+  unknown loaded id), applies it, increments `s.sweepsSurvived`, then **always** redraws
+  `s.nextDirective` from the pool based on the new count — even when there was nothing to
+  reap.
+- The draw is seeded: `nextRng(s)` advances the int32 `s.rngState` with a mulberry32-style
+  step and returns a float in `[0, 1)`; the pick is
+  `pool[floor(nextRng(s) * pool.length)]`. When more than one directive is unlocked the
+  just-fired directive is excluded, so there are no back-to-back repeats. `newGame()` seeds
+  `rngState` from `Date.now() | 0` (falling back to `1`) and starts `nextDirective` at
+  `standard`.
+- Nothing owned → log "nothing to reap"; the sweep is still counted and the directive is
+  still redrawn.
 
 ## OOM killer (`runOom`)
 
