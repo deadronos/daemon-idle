@@ -150,6 +150,10 @@ body {
   background: var(--danger);
 }
 
+.meter.shields label span {
+  color: var(--leak);
+}
+
 main {
   display: grid;
   grid-template-columns: 1.35fr 1fr;

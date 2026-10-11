@@ -1,5 +1,6 @@
 import {
   type GameState,
+  HEAT_THROTTLE_AT,
   MALLOC_STEP,
   TIERS,
   buyGc,
@@ -12,6 +13,7 @@ import {
   cyclesPerSec,
   directiveById,
   doFork,
+  estimateVictims,
   forkCost,
   freeMemory,
   gcCost,
@@ -135,6 +137,10 @@ const el = {
   leakBar: $("leakBar"),
   sweepText: $("sweepText"),
   sweepBar: $("sweepBar"),
+  heatText: $("heatText"),
+  heatBar: $("heatBar"),
+  shieldRow: $("shieldRow"),
+  shieldText: $("shieldText"),
   alertBanner: $("alertBanner"),
   spawnPanel: $("spawnPanel"),
   upgradePanel: $("upgradePanel"),
@@ -259,11 +265,19 @@ function render(force = false): void {
   // sweep meter
   const frac = 1 - state.sweepTimer / state.sweepInterval;
   el.sweepBar.style.width = `${Math.min(100, frac * 100)}%`;
-  const total = totalChildren();
-  const severity = Math.min(0.35, 0.15 + state.sweepsSurvived * 0.002);
-  const est = total === 0 ? 0 : Math.max(1, Math.round(total * severity * sweepVictimMult(state)));
   const directiveName = directiveById.get(state.nextDirective)?.name ?? "standard";
-  el.sweepText.textContent = `next ${directiveName} sweep: ${fmtTime(state.sweepTimer)}  ·  reaping ~${est}`;
+  el.sweepText.textContent = `next ${directiveName} sweep: ${fmtTime(state.sweepTimer)}  ·  reaping ~${estimateVictims(state)}`;
+
+  // heat meter — throttles income above HEAT_THROTTLE_AT
+  el.heatText.textContent = `heat ${Math.round(state.heat)} / 100`;
+  el.heatBar.style.width = `${Math.min(100, state.heat)}%`;
+  const hot = state.heat > HEAT_THROTTLE_AT;
+  el.heatBar.style.background = hot ? "var(--danger)" : "";
+  el.heatText.style.color = hot ? "var(--danger)" : "";
+
+  // shields readout — only meaningful while charges remain
+  el.shieldRow.hidden = state.shields <= 0;
+  el.shieldText.textContent = String(state.shields);
 
   // action buttons
   for (let i = 0; i < spawnButtons.length; i++) {
@@ -376,10 +390,6 @@ function renderLog(force: boolean): void {
     div.textContent = `> ${line}`;
     el.log.appendChild(div);
   }
-}
-
-function totalChildren(): number {
-  return state.counts.reduce((a, b) => a + b, 0);
 }
 
 // --- boot ------------------------------------------------------------------

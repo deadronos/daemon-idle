@@ -70,8 +70,15 @@ itself; `main.ts` delegates the swap to `sim.ts`.
 - **RAM bar:** two segments — the child footprint (`ramBar`, green, turns red at >90% of
   cap) and the leak (`leakBar`, purple, offset to start where the footprint ends).
 - **Sweep bar:** fill = `1 - sweepTimer / sweepInterval`; the label names the incoming
-  sweep directive (`nextDirective`), the countdown, and an estimate of victims for the next
-  sweep (mirrors the severity math from doc 001).
+  sweep directive (`nextDirective`), the countdown, and the victim count for the next
+  sweep. The count comes from `sim.ts`'s `estimateVictims(state)`, which mirrors
+  `runSweep` (directive budget, then shield absorption) without mutating state, so the
+  number matches the directive that will actually fire — including a non-standard one.
+- **Heat bar:** fill = `heat` (0–100). The value reads `heat N / 100`; above
+  `HEAT_THROTTLE_AT` both the value and the bar turn the danger color, signalling that
+  income is being throttled (`heatMult`).
+- **Shields readout:** `#shieldRow` shows `shields N` and is hidden while
+  `state.shields <= 0`; charges absorb sweep victims before selection.
 
 ## Style
 

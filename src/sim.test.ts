@@ -17,6 +17,7 @@ import {
   cyclesPerSec,
   directiveById,
   doFork,
+  estimateVictims,
   freeMemory,
   heatMult,
   lineageMult,
@@ -349,6 +350,75 @@ describe("SIGTERM handler shields", () => {
     tick(s, 0.01);
     expect(s.counts[1]).toBe(20); // nothing reaped
     expect(s.shields).toBe(2); // only the budget was consumed, never negative
+  });
+});
+
+// --- victim estimate -------------------------------------------------------
+
+describe("estimateVictims", () => {
+  it("matches the count the standard sweep actually reaps", () => {
+    const s = newGame();
+    s.ramCap = 1000; // isolate from the OOM killer
+    s.counts = [10, 10, 0, 0, 0];
+    const est = estimateVictims(s);
+    const before = s.counts.reduce((a, b) => a + b, 0);
+    s.sweepTimer = 0.001;
+    tick(s, 0.01);
+    const reaped = before - s.counts.reduce((a, b) => a + b, 0);
+    expect(est).toBe(reaped);
+    expect(est).toBe(3); // round(20 * 0.15) at sweepsSurvived 0
+  });
+
+  it("follows the incoming non-standard directive (scavenger)", () => {
+    const s = newGame();
+    s.sweepsSurvived = 6; // scavenger unlocked
+    s.nextDirective = "scavenger";
+    s.ramCap = 1000;
+    s.counts = [3, 3, 3, 3, 3];
+    const est = estimateVictims(s);
+    const before = s.counts.reduce((a, b) => a + b, 0);
+    s.sweepTimer = 0.001;
+    tick(s, 0.01);
+    const reaped = before - s.counts.reduce((a, b) => a + b, 0);
+    expect(est).toBe(reaped);
+    expect(est).toBe(1); // round(15 * 0.162 * 0.6)
+    expect(s.counts[4]).toBe(2); // the highest-output tier was hit
+  });
+
+  it("subtracts shields from the estimate and never goes below zero", () => {
+    const s = newGame();
+    s.ramCap = 1000;
+    s.counts = [0, 20, 0, 0, 0]; // standard budget = round(20 * 0.15) = 3
+    s.shields = 2;
+    expect(estimateVictims(s)).toBe(1);
+
+    s.shields = 100; // more charges than the budget
+    expect(estimateVictims(s)).toBe(0);
+    expect(estimateVictims(s)).toBeGreaterThanOrEqual(0);
+  });
+
+  it("does not mutate state", () => {
+    const s = newGame();
+    s.ramCap = 1000;
+    s.counts = [0, 20, 0, 0, 0];
+    s.shields = 3;
+    s.leak = 12;
+    s.heat = 40;
+    const before = {
+      counts: [...s.counts],
+      shields: s.shields,
+      leak: s.leak,
+      heat: s.heat,
+      sweepsSurvived: s.sweepsSurvived,
+      nextDirective: s.nextDirective,
+    };
+    estimateVictims(s);
+    expect(s.counts).toEqual(before.counts);
+    expect(s.shields).toBe(before.shields);
+    expect(s.leak).toBe(before.leak);
+    expect(s.heat).toBe(before.heat);
+    expect(s.sweepsSurvived).toBe(before.sweepsSurvived);
+    expect(s.nextDirective).toBe(before.nextDirective);
   });
 });
 

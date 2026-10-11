@@ -621,6 +621,21 @@ export function tick(s: GameState, dt: number): void {
   if (used > s.ramCap) runOom(s);
 }
 
+/**
+ * Pure estimate of how many children the next sweep will reap. Mirrors `runSweep`
+ * without mutating state: resolve the incoming directive (fallback `standard`),
+ * compute its budget, absorb SIGTERM shield charges, and count the victims it would
+ * select. `pre` is deliberately not called — it has side effects (backpressure
+ * reclaims the leak).
+ */
+export function estimateVictims(s: GameState): number {
+  const total = s.counts.reduce((a, b) => a + b, 0);
+  const d = directiveById.get(s.nextDirective) ?? directiveById.get("standard")!;
+  const budget = d.budget(s, total);
+  const absorbed = Math.min(s.shields, budget);
+  return d.victims(s, budget - absorbed).length;
+}
+
 function runSweep(s: GameState): void {
   const total = s.counts.reduce((a, b) => a + b, 0);
   const d = directiveById.get(s.nextDirective) ?? directiveById.get("standard")!;
