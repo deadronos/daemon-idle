@@ -626,6 +626,33 @@ describe("memory leak and gc", () => {
     tick(s, 10);
     expect(s.leak).toBeLessThan(0.2);
   });
+
+  it("gc drains a standing leak with no footprint", () => {
+    const s = newGame();
+    s.ramCap = 1000; // keep the leak clear of the OOM reclaim
+    s.leak = 50;
+    s.gc = 1;
+    tick(s, 1);
+    expect(s.leak).toBeCloseTo(45, 5);
+  });
+
+  it("a standing leak decays geometrically under gc", () => {
+    const s = newGame();
+    s.ramCap = 1000;
+    s.leak = 50;
+    s.gc = 1;
+    tick(s, 10);
+    expect(s.leak).toBeCloseTo(50 * 0.9 ** 10, 5);
+  });
+
+  it("without gc a standing leak persists", () => {
+    const s = newGame();
+    s.ramCap = 1000;
+    s.leak = 50;
+    s.gc = 0;
+    tick(s, 1);
+    expect(s.leak).toBe(50);
+  });
 });
 
 describe("OOM killer", () => {

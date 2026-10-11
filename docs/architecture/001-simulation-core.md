@@ -120,10 +120,16 @@ the footprint being `childRam` minus `"leak-immune"` tiers:
 leakFootprint = Σ counts[i] * ram[i]  for tiers where trait != "leak-immune"
 growth = leakFootprint * 0.01 * dt
 leak  += growth
-if gc > 0: leak -= growth * gc * 0.9   // clamped at 0
+if gc > 0:
+  growthFlush   = growth * gc * 0.9
+  standingFlush = leak * (1 - (1 - min(1, gc * 0.1)) ** dt)  // 10%/s decay, compounded over dt
+  leak -= growthFlush + standingFlush   // clamped at 0
 ```
 
-So `gc` level 1 removes 90% of new growth (net +10%); level 2+ keeps the leak near zero.
+So `gc` level 1 removes 90% of new growth (net +10%) and sheds 10% per second of any
+standing leak; level 2+ keeps the leak near zero. The standing term matters when little
+new growth is being produced — e.g. once leak-prone children have been swept — so `gc`
+drains the residual leak instead of leaving it for `free()` or a `backpressure` sweep.
 `free()` zeroes the leak outright and is free to press.
 
 Immune tiers still consume RAM (they count in `childRam`, `ramUsed`, and spawn gating);

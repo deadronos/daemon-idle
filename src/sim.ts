@@ -591,7 +591,11 @@ export function tick(s: GameState, dt: number): void {
   const growth = footprint * LEAK_RATE * dt;
   s.leak += growth;
   if (s.gc > 0) {
-    s.leak = Math.max(0, s.leak - growth * s.gc * 0.9);
+    const growthFlush = growth * s.gc * 0.9;
+    // standing leak decays at `min(1, gc * 0.1)` per second; compound over dt
+    const standingRate = Math.min(1, s.gc * 0.1);
+    const standingFlush = s.leak * (1 - Math.pow(1 - standingRate, dt));
+    s.leak = Math.max(0, s.leak - growthFlush - standingFlush);
   }
 
   // legacy daemons: produce, occasionally crash, maybe auto-respawn
