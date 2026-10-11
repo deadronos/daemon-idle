@@ -693,14 +693,28 @@ describe("OOM killer", () => {
     expect(s.oomCount).toBe(0);
   });
 
-  it("does not compound the penalty while under the margin", () => {
+  it("does not compound the penalty while a full bar leaks past the cap", () => {
     const s = newGame();
-    s.counts = [0, 0, 0, 0, 2]; // two cron daemons, 32 MB
+    s.counts = [0, 0, 0, 0, 1]; // one cron daemon = 16 MB = ramCap
     s.ramCap = 16;
-    tick(s, 0.01);
-    expect(s.oomCount).toBe(1);
-    tick(s, 0.01);
-    expect(s.oomCount).toBe(1);
+    // The old `used > ramCap` trigger fired every tick; the 2% grace holds the
+    // killer off while the leak creeps up toward `ramCap * OOM_TOLERANCE`.
+    for (let i = 0; i < 5; i++) tick(s, 0.01);
+    expect(s.oomCount).toBe(0);
+  });
+
+  it("fires strictly above ramCap * OOM_TOLERANCE, not at it", () => {
+    const below = newGame();
+    below.ramCap = 16;
+    below.leak = 16.2; // < 16 * 1.02 = 16.32
+    tick(below, 0.01);
+    expect(below.oomCount).toBe(0);
+
+    const above = newGame();
+    above.ramCap = 16;
+    above.leak = 16.4; // > 16 * 1.02 = 16.32
+    tick(above, 0.01);
+    expect(above.oomCount).toBe(1);
   });
 });
 
