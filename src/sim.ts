@@ -86,6 +86,15 @@ const LEAK_RATE = 0.01; // fraction of footprint leaked per second
 const LEGACY_CRASH_CHANCE = 0.002; // per second, per daemon
 const LEGACY_SHARE = 0.1; // legacy daemon produces 10% of peak cps
 
+export const HEAT_PER_RAM = 0.02; // heat gained per second per MB of childRam
+export const HEAT_DECAY = 1.0; // heat shed per second, before cooling
+export const HEAT_THROTTLE_AT = 60; // heat at which throttling begins
+export const MAX_THROTTLE = 0.5; // most cycles/s that heat can strip
+
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, v));
+}
+
 export interface LegacyDaemon {
   name: string;
   rate: Decimal;
@@ -101,6 +110,10 @@ export interface GameState {
   sacrificeOrder: number[];
   ramCap: number;
   leak: number;
+  /** 0..100. Children generate it; it throttles income above HEAT_THROTTLE_AT. */
+  heat: number;
+  /** Cooling upgrade level; each level sheds heat 50% faster. */
+  cooling: number;
   nice: number;
   /** Sweep charges; each absorbs one victim before selection. */
   shields: number;
@@ -136,6 +149,8 @@ export function newGame(): GameState {
     sacrificeOrder: [...DEFAULT_SACRIFICE_ORDER],
     ramCap: BASE.ramCap,
     leak: 0,
+    heat: 0,
+    cooling: 0,
     nice: 0,
     shields: 0,
     gc: 0,
@@ -189,8 +204,17 @@ export function childOutput(s: GameState): Decimal {
   return sum;
 }
 
+/**
+ * Income multiplier from heat: `1` up to HEAT_THROTTLE_AT, then falls linearly to
+ * `1 - MAX_THROTTLE` at heat 100.
+ */
+export function heatMult(s: GameState): number {
+  const over = (s.heat - HEAT_THROTTLE_AT) / (100 - HEAT_THROTTLE_AT);
+  return 1 - MAX_THROTTLE * clamp(over, 0, 1);
+}
+
 export function cyclesPerSec(s: GameState): Decimal {
-  return childOutput(s).add(BASE.rootOutput).mul(lineageMult(s));
+  return childOutput(s).add(BASE.rootOutput).mul(lineageMult(s)).mul(heatMult(s));
 }
 
 export function sweepVictimMult(s: GameState): number {
@@ -392,6 +416,10 @@ export function gcCost(s: GameState): Decimal {
   return d(400).mul(d(3).pow(s.gc));
 }
 
+export function coolCost(s: GameState): Decimal {
+  return d(1000).mul(d(2.5).pow(s.cooling));
+}
+
 export function forkCost(s: GameState): Decimal {
   return d(1e6).mul(d(10).pow(s.forks));
 }
@@ -448,6 +476,15 @@ export function buyGc(s: GameState): boolean {
   return true;
 }
 
+export function buyCooling(s: GameState): boolean {
+  const cost = coolCost(s);
+  if (s.cycles.lt(cost)) return false;
+  s.cycles = s.cycles.sub(cost);
+  s.cooling++;
+  log(s, `cooling level ${s.cooling}: heat sheds ${(1 + s.cooling * 0.5).toFixed(1)}× faster`);
+  return true;
+}
+
 export function freeMemory(s: GameState): boolean {
   if (s.leak <= 0) return false;
   const freed = s.leak;
@@ -500,6 +537,11 @@ export function tick(s: GameState, dt: number): void {
   const gain = cyclesPerSec(s).mul(dt);
   s.cycles = s.cycles.add(gain);
   s.totalEarned = s.totalEarned.add(gain);
+
+  // heat: children generate it, cooling sheds it; throttles next tick's income
+  s.heat += childRam(s) * HEAT_PER_RAM * dt;
+  s.heat -= HEAT_DECAY * (1 + s.cooling * 0.5) * dt;
+  s.heat = clamp(s.heat, 0, 100);
 
   // memory leak grows with the non-immune footprint; gc flushes it back down
   const footprint = leakFootprint(s);

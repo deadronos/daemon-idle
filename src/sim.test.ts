@@ -4,14 +4,19 @@ import { fmt } from "./format";
 import {
   BASE,
   DEFAULT_SACRIFICE_ORDER,
+  HEAT_THROTTLE_AT,
+  MAX_THROTTLE,
   TIERS,
+  buyCooling,
   buyShield,
   canSpawn,
   childRam,
+  coolCost,
   cyclesPerSec,
   directiveById,
   doFork,
   freeMemory,
+  heatMult,
   lineageMult,
   movePriority,
   newGame,
@@ -486,6 +491,104 @@ describe("OOM killer", () => {
     tick(s, 0.01);
     expect(s.cycles.toNumber()).toBeGreaterThan(890);
     expect(s.cycles.toNumber()).toBeLessThan(915);
+  });
+});
+
+// --- heat ------------------------------------------------------------------
+
+describe("heat", () => {
+  it("rises with a non-zero footprint", () => {
+    const s = newGame();
+    s.ramCap = 1000;
+    s.counts = [0, 0, 0, 0, 10]; // 10 cron daemons = 160 MB
+    expect(s.heat).toBe(0);
+    tick(s, 10);
+    // gain 160 * 0.02 * 10 = 32; decay 1 * (1 + 0) * 10 = 10
+    expect(s.heat).toBeCloseTo(22, 5);
+  });
+
+  it("decays toward 0 with no footprint", () => {
+    const s = newGame();
+    s.heat = 50;
+    tick(s, 10);
+    expect(s.heat).toBeCloseTo(40, 5);
+  });
+
+  it("clamps to [0, 100]", () => {
+    const hot = newGame();
+    hot.ramCap = 1000;
+    hot.counts = [0, 0, 0, 0, 10];
+    hot.heat = 99;
+    tick(hot, 100);
+    expect(hot.heat).toBe(100);
+
+    const cold = newGame();
+    cold.heat = 5;
+    tick(cold, 100);
+    expect(cold.heat).toBe(0);
+  });
+
+  it("does not throttle cycles below HEAT_THROTTLE_AT", () => {
+    const cool = newGame();
+    const warm = newGame();
+    warm.heat = HEAT_THROTTLE_AT - 1;
+    expect(warm.heat).toBeLessThan(HEAT_THROTTLE_AT);
+    expect(cyclesPerSec(warm).toNumber()).toBe(cyclesPerSec(cool).toNumber());
+  });
+
+  it("throttles cycles above HEAT_THROTTLE_AT (heatMult is 0.75 at heat 80)", () => {
+    const s = newGame();
+    s.heat = 80;
+    expect(heatMult(s)).toBeCloseTo(
+      1 - MAX_THROTTLE * ((80 - HEAT_THROTTLE_AT) / (100 - HEAT_THROTTLE_AT)),
+      10,
+    );
+    expect(heatMult(s)).toBe(0.75);
+    expect(cyclesPerSec(s).toNumber()).toBeCloseTo(0.75, 10);
+  });
+
+  it("buyCooling raises the decay rate for the same footprint", () => {
+    const hot = newGame();
+    hot.ramCap = 1000;
+    hot.counts = [0, 0, 0, 0, 1]; // 16 MB footprint
+    hot.heat = 50;
+    hot.sweepTimer = 999; // keep the board stable for the comparison
+
+    const cooled = newGame();
+    cooled.ramCap = 1000;
+    cooled.counts = [0, 0, 0, 0, 1];
+    cooled.heat = 50;
+    cooled.sweepTimer = 999;
+    cooled.cooling = 1;
+
+    tick(hot, 10);
+    tick(cooled, 10);
+    expect(cooled.heat).toBeLessThan(hot.heat);
+    // hot:   50 + 16*0.02*10 - 1*(1 + 0)  *10 = 43.2
+    // cooled:50 + 16*0.02*10 - 1*(1 + 0.5)*10 = 38.2
+    expect(hot.heat).toBeCloseTo(43.2, 5);
+    expect(cooled.heat).toBeCloseTo(38.2, 5);
+  });
+
+  it("buyCooling spends cycles and refuses when unaffordable", () => {
+    const poor = newGame();
+    poor.cycles = coolCost(poor).sub(1);
+    expect(buyCooling(poor)).toBe(false);
+    expect(poor.cooling).toBe(0);
+
+    const rich = newGame();
+    rich.cycles = coolCost(rich).add(d(5));
+    expect(buyCooling(rich)).toBe(true);
+    expect(rich.cooling).toBe(1);
+    expect(rich.cycles.eq(d(5))).toBe(true);
+    expect(rich.log[0]).toMatch(/cooling/i);
+  });
+
+  it("coolCost grows 2.5x per level", () => {
+    const s = newGame();
+    const first = coolCost(s);
+    s.cooling = 1;
+    expect(coolCost(s).div(first).toNumber()).toBeCloseTo(2.5, 5);
   });
 });
 

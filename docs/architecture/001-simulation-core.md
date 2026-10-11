@@ -14,6 +14,8 @@ cosmetics, which use `Math.random`).
 | `sacrificeOrder` | number[]       | Reap order: tier indices, earlier dies first.   |
 | `ramCap`         | number         | RAM ceiling in MB.                              |
 | `leak`           | number         | Leaked RAM on top of the footprint.             |
+| `heat`           | number         | 0..100; throttles income above the threshold.   |
+| `cooling`        | number         | Upgrade level; sheds heat 50% faster per level. |
 | `nice`           | number         | Upgrade level reducing sweep victims.           |
 | `shields`        | number         | SIGTERM charges; each absorbs one sweep victim. |
 | `gc`             | number         | Upgrade level of automatic leak flushing.       |
@@ -37,8 +39,8 @@ with a boot line. `BASE` holds the tunable constants shared across the file.
 
 Unbounded values (`cycles`, `totalEarned`, tier/upgrade costs, child output, legacy rates,
 the lineage multiplier) are `Decimal` from `src/bignum.ts`. Bounded values (`counts`,
-`ramCap`, `leak`, `nice`, `gc`, timers, `playtime`) stay plain `number`. See
-[ADR 0003](../decisions/0003-bignum-break-eternity.md).
+`ramCap`, `leak`, `heat`, `cooling`, `nice`, `gc`, timers, `playtime`) stay plain `number`.
+See [ADR 0003](../decisions/0003-bignum-break-eternity.md).
 
 ## Tiers
 
@@ -62,13 +64,16 @@ Cost of the next unit of tier `i`: `baseCost[i] * costGrowth[i]^counts[i]`.
 ## Income
 
 ```
-cyclesPerSec = (childOutput + BASE.rootOutput) * lineageMult
+cyclesPerSec = (childOutput + BASE.rootOutput) * lineageMult * heatMult
 childOutput  = Σ counts[i] * baseOutput[i]
+heatMult     = 1 - MAX_THROTTLE * clamp((heat - HEAT_THROTTLE_AT) / (100 - HEAT_THROTTLE_AT), 0, 1)
 ```
 
 - `BASE.rootOutput = 1` — the root process itself yields 1 cycle/s. **This is the
   bootstrap:** without it a fresh game earns nothing and can never afford the first child.
 - `lineageMult = 1 + forks * 0.1` multiplies _all_ income (children, root, legacy).
+- `heatMult` throttles children + root income only, and only above `HEAT_THROTTLE_AT = 60`
+  (see [Heat](#heat)). Legacy daemons are not part of `cyclesPerSec` and stay unaffected.
 
 ## RAM
 
@@ -99,19 +104,38 @@ Immune tiers still consume RAM (they count in `childRam`, `ramUsed`, and spawn g
 they simply never contribute to leak growth. So a board of noop loops leaks nothing,
 while the same footprint of fork()s leaks at the usual rate.
 
+## Heat
+
+A second pressure axis alongside RAM: children run hot, and heat throttles income. Every
+tick, heat rises with the **child footprint** and is shed by decay (sped up by `cooling`),
+then clamped to `[0, 100]`:
+
+```
+heat += childRam * HEAT_PER_RAM * dt            // HEAT_PER_RAM = 0.02
+heat -= HEAT_DECAY * (1 + cooling * 0.5) * dt   // HEAT_DECAY = 1.0
+heat  = clamp(heat, 0, 100)
+```
+
+`heatMult` stays `1` up to `HEAT_THROTTLE_AT = 60`, then falls linearly to
+`1 - MAX_THROTTLE = 0.5` at heat 100 — so a hot board loses up to half its children + root
+income (legacy income is exempt). `cooling` is the counter-upgrade: each level sheds heat
+50% faster, buying back headroom for a bigger footprint.
+
 ## Tick order (`tick(s, dt)`)
 
 Order matters — later steps observe the effects of earlier ones.
 
 1. `playtime += dt`.
 2. Accrue income: `cycles` and `totalEarned` += `cyclesPerSec * dt`.
-3. Grow the leak; apply `gc` flushing.
-4. Run legacy daemons (produce, roll for crash, auto-respawn if `gc > 0`).
-5. Decrement `sweepTimer`; when ≤ 0, run a sweep (resolve the stored `nextDirective`,
+3. Update heat from the child footprint and cooling, then clamp to `[0, 100]`. This runs
+   **after** income so the throttle set here applies to the next tick's accrual.
+4. Grow the leak; apply `gc` flushing.
+5. Run legacy daemons (produce, roll for crash, auto-respawn if `gc > 0`).
+6. Decrement `sweepTimer`; when ≤ 0, run a sweep (resolve the stored `nextDirective`,
    then redraw it from the unlocked pool) and reset the timer.
-6. Memory-pressure check: if `ramUsed > 0.9 * ramCap` and not already warned, log once;
+7. Memory-pressure check: if `ramUsed > 0.9 * ramCap` and not already warned, log once;
    clear the latch below `0.8 * ramCap`.
-7. If `ramUsed > ramCap`, run the OOM killer.
+8. If `ramUsed > ramCap`, run the OOM killer.
 
 ## Sacrifice order
 
@@ -151,6 +175,7 @@ the leak alone is still over the cap, it is reclaimed. Then `cycles *= 0.9` and
 | `nice(+1)`        | `250 * 2.5^n`              | −3% sweep victims per level (floor 30%).  |
 | `malloc(+1)`      | `150 * 1.9^((ramCap-8)/8)` | +8 MB ceiling.                            |
 | `gc(+1)`          | `400 * 3^n`                | Faster automatic leak flushing.           |
+| `cooling(+1)`     | `1000 * 2.5^n`             | Heat sheds 50% faster per level.          |
 | `free()`          | 0                          | Zero the leak.                            |
 | `SIGTERM handler` | `500 * 2^shields`          | +1 charge; each absorbs one sweep victim. |
 | `fork()`          | `1e6 * 10^forks`           | Prestige — see doc 004.                   |
