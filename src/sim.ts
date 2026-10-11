@@ -577,7 +577,17 @@ export function doFork(s: GameState): boolean {
 
 // --- tick ------------------------------------------------------------------
 
-export function tick(s: GameState, dt: number): void {
+/**
+ * Options for `tick`. `offline` marks a catch-up replay (see `persistence.applyOffline`):
+ * it accrues income (heat-throttled), heat, leak + `gc` drain, and legacy crashes, but
+ * skips the cleanup sweep (step 6) and the memory-pressure latch + OOM killer (steps 7–8),
+ * so idling never reaps the table and never OOMs.
+ */
+export interface TickOptions {
+  offline?: boolean;
+}
+
+export function tick(s: GameState, dt: number, opts: TickOptions = {}): void {
   s.playtime += dt;
 
   const gain = cyclesPerSec(s).mul(dt);
@@ -621,6 +631,9 @@ export function tick(s: GameState, dt: number): void {
       }
     }
   }
+
+  // Offline catch-up skips the sweep and the OOM machinery: idling must not punish.
+  if (opts.offline) return;
 
   // cleanup sweep
   s.sweepTimer -= dt;

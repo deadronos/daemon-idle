@@ -59,16 +59,26 @@ Every save stamps `state.lastSave = Date.now()` first.
    | `counts[i]` | `coerceCount`, capped at `MAX_SANE_COUNT` |
 
 5. If more than `OFFLINE_MIN_S = 5` seconds elapsed since `lastSave`, apply offline
-   progress (capped at `OFFLINE_CAP_S`).
+   progress (capped at `OFFLINE_CAP_S`), then **stamp `lastSave = now`** so a crash before
+   the next save cannot re-apply the same window.
 6. Any parse error → `newGame()` (fail closed to a clean game, never a crash).
 
 ## Offline progress
 
-`applyOffline(s, seconds)` simulates the gap by calling `tick(s, dt)` in **1-second
-steps**, capped at `OFFLINE_CAP_S = 8 * 3600` (8 hours). It logs the elapsed time and the
-cycles gained. `loadFrom` computes the elapsed window from `lastSave` and calls it when the
-gap exceeds `OFFLINE_MIN_S`. Because it reuses `tick`, offline behaves exactly like live
-play (sweeps, leak, legacy crashes included).
+`applyOffline(s, seconds)` simulates the gap in **1-second steps** by calling
+`tick(s, dt, { offline: true })`, capped at `OFFLINE_CAP_S = 8 * 3600` (8 hours). It logs
+the elapsed time and the cycles gained.
+
+The `offline` flag is the whole policy: offline ticks accrue income (heat-throttled), heat,
+leak + `gc` drain, and legacy crashes, but skip the cleanup sweep and the memory-pressure
+latch + OOM killer (tick-order steps 6–8, see [doc 001](./001-simulation-core.md)). So
+idling is never punished — the process table is never reaped and RAM pressure never fires —
+and, because `heatMult ≥ 0.5` and the root always produces, cycles are strictly monotonic.
+
+`loadFrom` computes the elapsed window from `lastSave`, calls `applyOffline` when the gap
+exceeds `OFFLINE_MIN_S`, and then sets `s.lastSave = now`. That stamp is what makes the
+catch-up idempotent: re-loading the same save before a new one is written sees an elapsed
+gap of `0`, so the same offline window is never applied twice.
 
 ## Why the guards matter
 

@@ -131,7 +131,7 @@ export function applyOffline(s: GameState, seconds: number): void {
   let remaining = seconds;
   while (remaining > 0) {
     const dt = Math.min(1, remaining);
-    tick(s, dt);
+    tick(s, dt, { offline: true });
     remaining -= dt;
   }
   log(s, `offline ${fmtTime(seconds)}: +${fmt(s.cycles.sub(before))} cycles`);
@@ -139,11 +139,13 @@ export function applyOffline(s: GameState, seconds: number): void {
 
 /**
  * Decode a raw save and apply offline progress for the elapsed gap (capped at
- * `OFFLINE_CAP_S`, skipped below `OFFLINE_MIN_S`).
+ * `OFFLINE_CAP_S`, skipped below `OFFLINE_MIN_S`), then stamp `lastSave = now` so a
+ * crash before the next save cannot re-apply the same window.
  */
 export function loadFrom(raw: string, now: number): GameState {
   const s = decode(raw);
   const elapsed = Math.min(OFFLINE_CAP_S, (now - (s.lastSave || now)) / 1000);
   if (elapsed > OFFLINE_MIN_S) applyOffline(s, elapsed);
+  s.lastSave = now;
   return s;
 }

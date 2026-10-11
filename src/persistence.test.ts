@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { MAX_SANE_COUNT, decode, encode } from "./persistence";
+import { MAX_SANE_COUNT, OFFLINE_CAP_S, applyOffline, decode, encode, loadFrom } from "./persistence";
 import { BASE, newGame } from "./sim";
 
 describe("decode — save hardening", () => {
@@ -72,5 +72,56 @@ describe("decode — save hardening", () => {
       ...s.counts,
     ];
     for (const n of numbers) expect(Number.isFinite(n)).toBe(true);
+  });
+});
+
+describe("offline progress", () => {
+  it("does not reap the process table while offline", () => {
+    const s = newGame();
+    s.counts = [0, 10, 0, 0, 0];
+    s.ramCap = 1000;
+    s.sweepInterval = 1;
+    s.sweepTimer = 1;
+    applyOffline(s, 50);
+    expect(s.counts[1]).toBe(10);
+    expect(s.sweepsSurvived).toBe(0);
+  });
+
+  it("is monotonic in cycles over an offline gap", () => {
+    const s = newGame();
+    s.counts = [0, 10, 0, 0, 0];
+    s.ramCap = 1000;
+    s.sweepInterval = 1;
+    s.sweepTimer = 1;
+    const before = s.cycles;
+    applyOffline(s, 3600);
+    expect(s.cycles.gt(before)).toBe(true);
+  });
+
+  it("loadFrom applies offline and stamps lastSave", () => {
+    const now = 1_000_000_000;
+    const g = newGame();
+    g.lastSave = now - 3.6e6; // one hour ago
+    const s = loadFrom(encode(g), now);
+    expect(s.lastSave).toBe(now);
+    expect(s.playtime).toBeGreaterThan(0);
+  });
+
+  it("does not double-apply the same offline window", () => {
+    const now = 1_000_000_000;
+    const g = newGame();
+    g.lastSave = now - 3.6e6;
+    const first = loadFrom(encode(g), now);
+    const again = loadFrom(encode(first), now);
+    expect(again.cycles.eq(first.cycles)).toBe(true);
+    expect(again.playtime).toBe(first.playtime);
+  });
+
+  it("caps offline at OFFLINE_CAP_S", () => {
+    const now = 10_000_000_000;
+    const g = newGame();
+    g.lastSave = 0; // epoch — an arbitrarily long gap
+    const s = loadFrom(encode(g), now);
+    expect(s.playtime).toBeLessThanOrEqual(OFFLINE_CAP_S + 1);
   });
 });

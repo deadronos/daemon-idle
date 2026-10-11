@@ -157,7 +157,7 @@ off. `cooling` is the
 counter-upgrade: each level sheds heat 50% faster, buying back headroom for a bigger
 footprint.
 
-## Tick order (`tick(s, dt)`)
+## Tick order (`tick(s, dt, opts)`)
 
 Order matters — later steps observe the effects of earlier ones.
 
@@ -172,6 +172,12 @@ Order matters — later steps observe the effects of earlier ones.
 7. Memory-pressure check: if `ramUsed > 0.9 * ramCap` and not already warned, log once;
    clear the latch below `0.8 * ramCap`.
 8. If `ramUsed > ramCap * OOM_TOLERANCE`, run the OOM killer.
+
+`tick(s, dt, { offline: true })` is the offline catch-up path (see
+[doc 003](./003-persistence.md)): it runs steps 1–5 only, so an idle gap still earns
+(heat-throttled) income and runs legacy daemons but **never reaps the table (step 6) and
+never OOMs (steps 7–8)**. The default `opts` is `{}` (live play), so the non-offline path
+is unchanged.
 
 ## Sacrifice order
 
