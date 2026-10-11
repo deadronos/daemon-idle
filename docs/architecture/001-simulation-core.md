@@ -107,68 +107,26 @@ Order matters — later steps observe the effects of earlier ones.
 ## Sacrifice order
 
 Which children die first is player-controlled. `GameState.sacrificeOrder` is a permutation
-of the tier indices (`[0, 1, 2, 3, 4]` by default, sorted by ascending `TIERS.priority` and
-exposed as `DEFAULT_SACRIFICE_ORDER`); earlier entries are reaped sooner.
-
-- `priorityOf(s, tier)` = the tier's rank = `s.sacrificeOrder.indexOf(tier)`.
-- `priorityOrder(s)` = the tier indices sorted by `priorityOf` — the single source of truth
-  used by the directives (it supersedes the old static ascending-priority const).
-- `movePriority(s, tier, delta)` swaps `tier` one slot earlier (`-1`) or later (`+1`) and
-  returns `true`; returns `false` without mutating when the move would leave the range.
-- `sanitizeSacrificeOrder(order)` accepts `unknown` (save decode) and returns a copy of the
-  order when it is a valid permutation (length `TIERS.length`, each index present exactly
-  once), else a copy of `DEFAULT_SACRIFICE_ORDER`.
-- Only `standard`, `sigkill`, and `backpressure` honor the order. `scavenger` (descending
-  `baseOutput`) and `group-kill` (densest tier) ignore it by design.
+of the tier indices (default `DEFAULT_SACRIFICE_ORDER`, the tiers sorted by ascending
+`TIERS.priority`); earlier entries are reaped sooner. `priorityOf`/`priorityOrder` are the
+single source of truth for that rank, and `movePriority`/`sanitizeSacrificeOrder` drive edits
+and load-time coercion (see [doc 003](./003-persistence.md)). `standard`, `sigkill`, and
+`backpressure` honor the order; `scavenger` and `group-kill` do not. Details in
+[doc 008](./008-sweep-directives.md).
 
 ## Cleanup sweep (`runSweep`)
 
 The sweep is a roster of named **directives** (`DIRECTIVES` in `src/sim.ts`), each with its
-own victim-selection rule, budget fraction, and optional side effect. Severity and `nice`
-are unchanged from the original model:
+own victim-selection rule, budget fraction (`frac`), and optional `pre` side effect. The
+shared budget is `max(1, round(totalChildren * severity * frac * niceMult))`; the exact
+`severity` and `sweepVictimMult` definitions live in
+[doc 008](./008-sweep-directives.md).
 
-```
-severity        = min(0.35, 0.15 + sweepsSurvived * 0.002)
-sweepVictimMult = max(0.3, 1 - nice * 0.03)   // nice cuts victims, floored at 30%
-budget          = max(1, round(totalChildren * severity * frac * niceMult))
-niceMult        = ignoresNice ? 1 : sweepVictimMult
-```
-
-`standard` (`frac = 1`, `nice` applies, player sacrifice order) is, with the default order,
-exactly the original sweep, so current balance and tests carry over unchanged.
-
-| id             | `unlockAt` | budget (`frac`) | victim selection                          | `nice` applies | `pre`         |
-| -------------- | ---------- | --------------- | ----------------------------------------- | -------------- | ------------- |
-| `standard`     | 0          | `1`             | player sacrifice order                    | yes            | —             |
-| `sigkill`      | 3          | `1`             | player sacrifice order                    | **no**         | —             |
-| `scavenger`    | 6          | `0.6`           | highest `baseOutput` first                | yes            | —             |
-| `group-kill`   | 10         | `1`             | densest tier first, then next-densest     | yes            | —             |
-| `backpressure` | 15         | `0.5`           | player sacrifice order                    | yes            | zero the leak |
-
-- Every directive selects through the shared `reapInOrder(s, order, budget)` helper, which
-  takes up to `budget` from the ordering and never more than are owned. `standard`,
-  `sigkill`, and `backpressure` use `priorityOrder(s)` (the player's order); `scavenger`
-  uses descending `baseOutput`; `group-kill` sorts by `counts` descending (ties keep the
-  lower tier index).
-- `backpressure.pre` sets `s.leak = 0` before selection, so the leak is reclaimed on every
-  `backpressure` sweep.
-
-### Selection and escalation
-
-- The unlocked pool is `DIRECTIVES.filter(d => d.unlockAt <= s.sweepsSurvived)`; thresholds
-  are inclusive, so `sigkill` unlocks at exactly 3 sweeps survived.
-- `runSweep` resolves the stored `s.nextDirective` (falling back to `standard` for an
-  unknown loaded id), applies it, increments `s.sweepsSurvived`, then **always** redraws
-  `s.nextDirective` from the pool based on the new count — even when there was nothing to
-  reap.
-- The draw is seeded: `nextRng(s)` advances the int32 `s.rngState` with a mulberry32-style
-  step and returns a float in `[0, 1)`; the pick is
-  `choices[floor(nextRng(s) * choices.length)]`, where `choices` is the unlocked pool minus
-  the just-fired directive when more than one is unlocked, so there are no back-to-back
-  repeats. `newGame()` seeds `rngState` from `Date.now() | 0` (falling back to `1`) and
-  starts `nextDirective` at `standard`.
-- Nothing owned → log "nothing to reap"; the sweep is still counted and the directive is
-  still redrawn.
+`standard` (`frac = 1`, `nice` applies, player order) is exactly the original sweep, so the
+pre-roster balance and tests carry over. Directives unlock as `sweepsSurvived` rises, are
+stored in `nextDirective`, and are redrawn deterministically after every sweep. The full
+roster, selection/escalation rules, and the seeded draw are in
+[doc 008](./008-sweep-directives.md).
 
 ## OOM killer (`runOom`)
 
