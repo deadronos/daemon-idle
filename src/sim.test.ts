@@ -25,6 +25,7 @@ import {
   directiveById,
   doFork,
   estimateVictims,
+  forkCost,
   freeMemory,
   gcCost,
   heatEquilibrium,
@@ -37,12 +38,14 @@ import {
   pickNextDirective,
   priorityOf,
   priorityOrder,
+  ramCapTotal,
   ramUsed,
   sanitizeSacrificeOrder,
   shieldCost,
   spawn,
   survivalMult,
   sweepIntervalFor,
+  sweepVictimMult,
   synergyMult,
   tick,
   tierCost,
@@ -1177,5 +1180,47 @@ describe("lineage perks", () => {
     expect(buyPerk(s, "vec")).toBe(false); // prereq owned but costs 10
     s.lineage = 10;
     expect(buyPerk(s, "vec")).toBe(true);
+  });
+});
+
+describe("perk effects on the economy", () => {
+  it("incomeMult raises cps; vec doubles the root term", () => {
+    const plain = newGame();
+    const perked = newGame();
+    perked.perks = { spin: 1 }; // +10% on BOTH children and root
+    expect(cyclesPerSec(perked).toNumber()).toBeCloseTo(cyclesPerSec(plain).toNumber() * 1.1, 6);
+    perked.perks = { vec: 1 };
+    expect(cyclesPerSec(perked).toNumber()).toBeCloseTo(2, 6); // root 1 -> 2, no children
+  });
+  it("tailcall reduces tierCost; oomguard raises the effective RAM cap", () => {
+    const s = newGame();
+    const cost0 = tierCost(s, 0).toNumber();
+    s.perks = { tailcall: 1 };
+    expect(tierCost(s, 0).toNumber()).toBeLessThan(cost0);
+    expect(ramCapTotal(newGame())).toBe(BASE.ramCap);
+    const oom = newGame();
+    oom.perks = { oomguard: 1 };
+    expect(ramCapTotal(oom)).toBe(BASE.ramCap + 8);
+  });
+  it("heatsink lowers the heat equilibrium; renice reduces sweep victims but respects the floor", () => {
+    const s = newGame();
+    s.counts = TIERS.map(() => 4);
+    const eq = heatEquilibrium(s);
+    s.perks = { heatsink: 1 };
+    expect(heatEquilibrium(s)).toBeLessThan(eq);
+    const many = newGame();
+    many.counts = TIERS.map(() => 10);
+    many.nice = 40;
+    many.perks = { renice: 1, reaper: 20 }; // drive niceAdd hard against the 0.3 floor
+    expect(sweepVictimMult(many)).toBeGreaterThanOrEqual(0.3);
+    expect(estimateVictims(many)).toBeGreaterThanOrEqual(0);
+  });
+  it("cheapfork reduces forkCost but never below the floor", () => {
+    const s = newGame();
+    s.forks = 3;
+    const full = forkCost(s).toNumber();
+    s.perks = { cheapfork: 1 };
+    expect(forkCost(s).toNumber()).toBeCloseTo(full / 1.1, 6);
+    expect(forkCost(s).toNumber()).toBeGreaterThanOrEqual(full * 0.25 - 1e-9);
   });
 });
