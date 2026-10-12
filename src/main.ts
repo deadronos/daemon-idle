@@ -34,6 +34,14 @@ import {
   tierCost,
 } from "./sim";
 import { d } from "./bignum";
+import {
+  MILESTONES,
+  METRICS,
+  hasUnlock,
+  milestoneProgress,
+  UNLOCK,
+  type MetricId,
+} from "./milestones";
 import { type Alert, checkNumericHealth } from "./diagnostics";
 import { consoleSink, logFeedSink, makeReporter } from "./report";
 import { fmt, fmtRate, fmtTime } from "./format";
@@ -93,6 +101,7 @@ const el = {
   upgradePanel: $("upgradePanel"),
   legacyPanel: $("legacyPanel"),
   priorityPanel: $("priorityPanel"),
+  milestonePanel: $("milestonePanel"),
   log: $("log"),
 };
 
@@ -153,9 +162,11 @@ addUpgrade(
 );
 addUpgrade(
   () =>
-    `nice(+1)  ·  reap ${Math.round((1 - sweepVictimMult(state)) * 100)}% fewer  ·  lvl ${state.nice}`,
+    hasUnlock(state, UNLOCK.nice)
+      ? `nice(+1)  ·  reap ${Math.round((1 - sweepVictimMult(state)) * 100)}% fewer  ·  lvl ${state.nice}`
+      : `🔒 nice  ·  ${unlockSource(UNLOCK.nice)}`,
   () => niceCost(state),
-  () => state.cycles.gte(niceCost(state)),
+  () => hasUnlock(state, UNLOCK.nice) && state.cycles.gte(niceCost(state)),
   () => buyNice(state),
 );
 addUpgrade(
@@ -172,9 +183,14 @@ addUpgrade(
   () => buyShield(state),
 );
 addUpgrade(
-  () => (state.gc === 0 ? "gc  ·  auto-flush the leak" : `gc  ·  auto-flush lvl ${state.gc}`),
+  () =>
+    hasUnlock(state, UNLOCK.gc)
+      ? state.gc === 0
+        ? "gc  ·  auto-flush the leak"
+        : `gc  ·  auto-flush lvl ${state.gc}`
+      : `🔒 gc  ·  ${unlockSource(UNLOCK.gc)}`,
   () => gcCost(state),
-  () => state.cycles.gte(gcCost(state)),
+  () => hasUnlock(state, UNLOCK.gc) && state.cycles.gte(gcCost(state)),
   () => buyGc(state),
 );
 addUpgrade(
@@ -258,6 +274,7 @@ function render(force = false): void {
 
   renderLegacy();
   renderPriority();
+  renderMilestones();
   renderLog(force);
 }
 
@@ -298,6 +315,83 @@ function renderLegacy(): void {
     const rateEl = row?.querySelector(".rate");
     if (rateEl && !dm.crashed) rateEl.textContent = fmtRate(dm.rate.mul(lineageMult(state)));
   });
+}
+
+const METRIC_UNIT: Partial<Record<MetricId, string>> = {
+  totalEarned: "cycles",
+  sweepsSurvived: "sweeps",
+  forks: "forks",
+  playtime: "s",
+  children: "children",
+  ramCap: "MB",
+};
+
+/** Name of the milestone that grants `unlockId` (for the locked-upgrade hint). */
+function unlockSource(unlockId: string): string {
+  return MILESTONES.find((m) => m.unlocks.includes(unlockId))?.name ?? "locked";
+}
+
+/**
+ * The milestones panel: pending first (closest to firing on top), achieved dimmed below.
+ * Rows are rebuilt only when the done/unlock sets change; progress refreshes each frame.
+ */
+function renderMilestones(): void {
+  const pending = MILESTONES.filter((m) => !state.milestonesDone[m.id]).sort(
+    (a, b) => milestoneProgress(state, b) - milestoneProgress(state, a),
+  );
+  const done = MILESTONES.filter((m) => state.milestonesDone[m.id]);
+  const ordered = [...pending, ...done];
+
+  const sig = `${Object.keys(state.milestonesDone).sort().join(",")}|${Object.keys(state.unlocks).sort().join(",")}`;
+  if (el.milestonePanel.dataset.sig !== sig) {
+    el.milestonePanel.dataset.sig = sig;
+    el.milestonePanel.innerHTML = "";
+    for (const m of ordered) {
+      const row = document.createElement("div");
+      row.className = "milestone";
+      row.dataset.milestone = m.id;
+
+      const head = document.createElement("div");
+      head.className = "milestone-head";
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = m.name;
+      const status = document.createElement("span");
+      status.className = "status";
+      head.append(name, status);
+
+      const bar = document.createElement("div");
+      bar.className = "bar";
+      const fill = document.createElement("div");
+      fill.className = "fill";
+      bar.appendChild(fill);
+
+      const desc = document.createElement("p");
+      desc.className = "hint";
+      desc.textContent = m.desc;
+
+      row.append(head, bar, desc);
+      el.milestonePanel.appendChild(row);
+    }
+  }
+
+  for (const m of ordered) {
+    const row = el.milestonePanel.querySelector(`[data-milestone="${m.id}"]`);
+    if (!row) continue;
+    const doneNow = Boolean(state.milestonesDone[m.id]);
+    row.classList.toggle("done", doneNow);
+    const fill = row.querySelector(".fill") as HTMLElement;
+    const status = row.querySelector(".status") as HTMLElement;
+    if (doneNow) {
+      fill.style.width = "100%";
+      status.textContent = `✓ unlocked: ${m.unlocks.join(", ")}`;
+    } else {
+      const value = Math.floor(METRICS[m.metric](state));
+      fill.style.width = `${Math.min(100, milestoneProgress(state, m) * 100)}%`;
+      const unit = METRIC_UNIT[m.metric] ? ` ${METRIC_UNIT[m.metric]}` : "";
+      status.textContent = `${value} / ${m.at}${unit}`;
+    }
+  }
 }
 
 function renderPriority(): void {
