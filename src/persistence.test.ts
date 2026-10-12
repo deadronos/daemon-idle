@@ -329,3 +329,13 @@ describe("automation persistence", () => {
     expect(decode("{}").freeThreshold).toBe(16);
   });
 });
+
+describe("offlineCap persistence", () => {
+  it("round-trips and coerces the level", () => {
+    const s = newGame();
+    s.offlineCap = 3;
+    expect(decode(encode(s)).offlineCap).toBe(3);
+    expect(decode('{"offlineCap":-2}').offlineCap).toBe(0);
+    expect(decode("{}").offlineCap).toBe(0);
+  });
+});

@@ -186,6 +186,7 @@ export function decode(raw: string): GameState {
   s.autoMalloc = Boolean(parsed.autoMalloc);
   s.autoFree = Boolean(parsed.autoFree);
   s.freeThreshold = Math.max(0, coerceFinite(parsed.freeThreshold, 16));
+  s.offlineCap = coerceCount(parsed.offlineCap);
   // Staged migrations, each keyed to the version it upgrades *from* (never a single
   // `saveVersion < SAVE_VERSION` check, which would re-run older steps on newer saves).
   const from = coerceFinite(parsed.saveVersion, 0);
@@ -201,6 +202,7 @@ export function decode(raw: string): GameState {
   // newGame() defaults already filled them and the rosters rebuild them.
   // from < 4: `buyMax` is additive too — newGame() defaults it to false.
   // from < 5: the automation toggles + `freeThreshold` are additive as well.
+  // from < 6: `offlineCap` is additive too — newGame() defaults it to 0.
   s.saveVersion = SAVE_VERSION;
   s.log = Array.isArray(s.log) ? s.log.map(String) : [];
   s.sacrificeOrder = sanitizeSacrificeOrder(s.sacrificeOrder);

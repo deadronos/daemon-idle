@@ -177,6 +177,8 @@ export interface GameState {
   autoFree: boolean;
   /** Leak MB at which auto-free fires. */
   freeThreshold: number;
+  /** `nohup` level; each adds `OFFLINE_CAP_STEP` to the offline cap. */
+  offlineCap: number;
   log: string[];
   playtime: number;
   lastSave: number;
@@ -191,9 +193,10 @@ export interface GameState {
  * Version 3 added the lineage/perk fields (`lineage`, `perks`, `runBaseEarned`,
  * `runStartPlaytime`) and the milestone records (`milestonesDone`, `unlocks`) — both additive.
  * Version 4 added the `buyMax` toggle. Version 5 added the automation toggles
- * (`autoNice`, `autoMalloc`, `autoFree`) and `freeThreshold`. Versions 3–5 are additive.
+ * (`autoNice`, `autoMalloc`, `autoFree`) and `freeThreshold`. Version 6 added the `offlineCap`
+ * level. Versions 3–6 are additive.
  */
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 
 export const BASE = {
   ramCap: 8,
@@ -201,6 +204,11 @@ export const BASE = {
   /** Baseline cycles/s from the root process itself, before any children. */
   rootOutput: 1,
 };
+
+/** Offline cap: 8 h base, +4 h per `nohup` level; a step budget bounds the replay loop. */
+export const BASE_OFFLINE_CAP_S = 8 * 3600;
+export const OFFLINE_CAP_STEP = 4 * 3600;
+export const OFFLINE_MAX_STEPS = 200_000;
 
 /** Sweep cadence floor (s) reached once escalation saturates. */
 export const SWEEP_INTERVAL_MIN = 10;
@@ -245,6 +253,7 @@ export function newGame(): GameState {
     autoMalloc: false,
     autoFree: false,
     freeThreshold: 16,
+    offlineCap: 0,
     log: ["boot: daemon pid 1 started (unattended)"],
     playtime: 0,
     lastSave: Date.now(),
@@ -585,6 +594,24 @@ export function coolCost(s: GameState): Decimal {
 
 export function forkCost(s: GameState): Decimal {
   return d(1e6).mul(d(10).pow(s.forks)).mul(perkMods(s).forkCostMult);
+}
+
+/** Offline cap in seconds for the current `nohup` level. */
+export function offlineCapS(s: GameState): number {
+  return BASE_OFFLINE_CAP_S + s.offlineCap * OFFLINE_CAP_STEP;
+}
+
+export function offlineCost(s: GameState): Decimal {
+  return d(1e7).mul(d(5).pow(s.offlineCap));
+}
+
+export function buyOfflineCap(s: GameState): boolean {
+  const cost = offlineCost(s);
+  if (s.cycles.lt(cost)) return false;
+  s.cycles = s.cycles.sub(cost);
+  s.offlineCap++;
+  log(s, `nohup: offline cap ${Math.round(offlineCapS(s) / 3600)}h`);
+  return true;
 }
 
 // --- actions ---------------------------------------------------------------
