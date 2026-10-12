@@ -88,8 +88,8 @@ Rules live in `sim.ts`: `buyNice`/`buyGc` return `false` while
 
 Both records are plain objects (no `Decimal`), defaulted to `{}` in `newGame()`, and rebuilt
 on load: `sanitizeMilestones` keeps only ids present in `MILESTONES`; `sanitizeUnlocks` keeps
-string keys with truthy values (open-ended — later issues add ids). `SAVE_VERSION` is 3, with
-an additive `if (from < 3)` migration step (doc 003).
+string keys with truthy values (open-ended — later issues add ids). `SAVE_VERSION` is 4, with
+additive `if (from < 3)` / `if (from < 4)` migration steps (doc 003).
 
 ## Extending
 

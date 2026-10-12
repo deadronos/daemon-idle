@@ -408,3 +408,8 @@ button.act .cost.ok {
   cursor: pointer;
   user-select: none;
 }
+
+/* a normal `display` rule outranks the UA `[hidden]` rule — restore it explicitly */
+.toggle[hidden] {
+  display: none;
+}
