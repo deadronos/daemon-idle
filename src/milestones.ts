@@ -12,20 +12,27 @@ import {
 
 export * from "./config/milestones";
 
-/** The slice of game state the milestone helpers read/write. `GameState` satisfies it. */
-export interface MilestoneInput {
+/**
+ * The slice of game state the metric readers need. `MilestoneInput` and
+ * `AchievementInput` both extend it, so one `METRICS` table serves both subsystems.
+ */
+export interface MetricInput {
   totalEarned: Decimal;
   sweepsSurvived: number;
   forks: number;
   playtime: number;
   counts: number[];
   ramCap: number;
+}
+
+/** The slice of game state the milestone helpers read/write. `GameState` satisfies it. */
+export interface MilestoneInput extends MetricInput {
   milestonesDone: Record<MilestoneId, true>;
   unlocks: Record<string, true>;
 }
 
 /** Comparable metric readers, one per `MetricId`. */
-export const METRICS: Record<MetricId, (s: MilestoneInput) => number> = {
+export const METRICS: Record<MetricId, (s: MetricInput) => number> = {
   totalEarned: (s) => s.totalEarned.toNumber(),
   sweepsSurvived: (s) => s.sweepsSurvived,
   forks: (s) => s.forks,
