@@ -323,6 +323,7 @@ describe("lineage perks", () => {
     expect(buyPerk(s, "vec")).toBe(true);
   });
 });
+```
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
