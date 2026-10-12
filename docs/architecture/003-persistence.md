@@ -82,14 +82,14 @@ Every save stamps `state.lastSave = Date.now()` first.
    | `counts[i]`                                             | `coerceCount`, capped at `MAX_SANE_COUNT` |
 
 6. If more than `OFFLINE_MIN_S = 5` seconds elapsed since `lastSave`, apply offline
-   progress (capped at `OFFLINE_CAP_S`), then **stamp `lastSave = now`** so a crash before
+   progress (capped by `applyOffline` at `offlineCapS(s)`), then **stamp `lastSave = now`** so a crash before
    the next save cannot re-apply the same window.
 7. Any parse error → `newGame()` (fail closed to a clean game, never a crash).
 
 ## Save versioning
 
 `GameState.saveVersion` records the semantics of the persisted fields; `newGame()` stamps
-it at `SAVE_VERSION = 5`. `encode()` spreads the field, so it round-trips. On load,
+it at `SAVE_VERSION = 6`. `encode()` spreads the field, so it round-trips. On load,
 `decode()` reads the parsed value into `from` and runs each staged migration whose `from`
 is older, before the numeric clamps.
 
@@ -99,6 +99,7 @@ is older, before the numeric clamps.
 | `< 3`             | 3   | Additive only: the perk fields + milestone records come from `newGame()` defaults; no-op. |
 | `< 4`             | 4   | Additive only: `buyMax` comes from `newGame()` defaults; no-op.              |
 | `< 5`             | 5   | Additive only: the automation toggles + `freeThreshold`; no-op.              |
+| `< 6`             | 6   | Additive only: `offlineCap` comes from `newGame()` defaults; no-op.          |
 
 **Why v2:** the old `doFork` snapshotted a new daemon's rate from `rawCyclesPerSec`, which
 already included the lineage multiplier `1 + forks*0.1` — so the `k`-th daemon's rate had
@@ -121,6 +122,10 @@ placeholder.
 Additive — the booleans default `false` and coerce with `Boolean(...)`, and `freeThreshold`
 defaults `16` and is clamped `>= 0` — so the v5 step is a no-op placeholder.
 
+**Why v6:** the offline rework added `offlineCap` (the `nohup` level). Additive too —
+`newGame()` defaults it to `0` and `decode` coerces it with `coerceCount` — so the v6 step is
+a no-op placeholder.
+
 The chain is append-only: to migrate further, add the next `if (from < N)` step and bump
 `SAVE_VERSION`.
 
@@ -128,9 +133,10 @@ The chain is append-only: to migrate further, add the next `if (from < N)` step 
 
 `applyOffline(s, seconds)` simulates the gap in **1-second steps** by calling
 `tick(s, dt, { offline: true })`, capped at the **upgradable** `offlineCapS(s) =
-BASE_OFFLINE_CAP_S + s.offlineCap * OFFLINE_CAP_STEP` (8 h base, +4 h per `nohup` level). A
-step budget (`OFFLINE_MAX_STEPS`) bounds the loop for an extreme cap. It logs the elapsed time
-and the cycles gained.
+BASE_OFFLINE_CAP_S + s.offlineCap * OFFLINE_CAP_STEP` (8 h base, +4 h per `nohup` level),
+**saturated at `OFFLINE_MAX_STEPS`** (the replay loop's step budget — a `nohup` purchase is
+refused once the cap saturates, so the advertised cap is always the effective one). It logs the
+elapsed time and the cycles gained.
 
 The `offline` flag is the whole policy: offline ticks accrue income (heat-throttled), heat,
 leak + `gc` drain, and legacy crashes, but skip the cleanup sweep and the memory-pressure

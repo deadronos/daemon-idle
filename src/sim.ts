@@ -596,9 +596,9 @@ export function forkCost(s: GameState): Decimal {
   return d(1e6).mul(d(10).pow(s.forks)).mul(perkMods(s).forkCostMult);
 }
 
-/** Offline cap in seconds for the current `nohup` level. */
+/** Offline cap in seconds for the current `nohup` level, saturated at the step budget. */
 export function offlineCapS(s: GameState): number {
-  return BASE_OFFLINE_CAP_S + s.offlineCap * OFFLINE_CAP_STEP;
+  return Math.min(BASE_OFFLINE_CAP_S + s.offlineCap * OFFLINE_CAP_STEP, OFFLINE_MAX_STEPS);
 }
 
 export function offlineCost(s: GameState): Decimal {
@@ -606,6 +606,8 @@ export function offlineCost(s: GameState): Decimal {
 }
 
 export function buyOfflineCap(s: GameState): boolean {
+  // Refuse once the cap is saturated, so a purchase never silently buys nothing.
+  if (offlineCapS(s) >= OFFLINE_MAX_STEPS) return false;
   const cost = offlineCost(s);
   if (s.cycles.lt(cost)) return false;
   s.cycles = s.cycles.sub(cost);

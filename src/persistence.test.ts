@@ -386,3 +386,12 @@ describe("applyOffline cap and equivalence", () => {
     expect(s.sweepsSurvived).toBe(0);
   });
 });
+
+describe("applyOffline cap reach", () => {
+  it("simulates the requested gap when it is under the cap", () => {
+    const s = newGame();
+    const before = s.playtime;
+    applyOffline(s, 120); // 2 min, well under the 8h base cap
+    expect(s.playtime - before).toBeCloseTo(120, 0);
+  });
+});
