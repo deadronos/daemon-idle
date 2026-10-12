@@ -1085,9 +1085,9 @@ function playGreedy(s: GameState, seconds: number, dt = 1): void {
 }
 
 /** A fresh state with a pinned PRNG cursor, so directive draws are reproducible. */
-function freshGreedy(): GameState {
+function freshGreedy(rngState = 1): GameState {
   const s = newGame();
-  s.rngState = 1;
+  s.rngState = rngState;
   return s;
 }
 
@@ -1109,11 +1109,29 @@ describe("progression", () => {
     expect(late.div(early).toNumber()).toBeGreaterThan(100);
   });
 
-  it("composition survives (no tier strictly dominates)", () => {
+  it("a composed board still functions after a session", () => {
+    // NB: this does not claim "no tier dominates" — cron daemons do dominate on both
+    // payback and output/RAM (a pre-existing base-stat shape, out of scope here). It only
+    // checks that a session ends with a mixed, functioning board (workers still boosted).
     const s = freshGreedy();
     playGreedy(s, 3600);
     expect(s.counts.filter((n) => n > 0).length).toBeGreaterThanOrEqual(3);
     expect(synergyMult(s, 2)).toBeGreaterThan(1); // microservices still boost workers
+  });
+
+  it("progresses from several fixed PRNG seeds (not a lucky snapshot)", () => {
+    // The plan's script is seed-sensitive; pinning one seed would make the test vacuous.
+    // Five fixed cursors cover the directive draws cheaply (~0.2 s total).
+    for (const seed of [1, 2, 3, 7, 12]) {
+      const s = freshGreedy(seed);
+      playGreedy(s, 3600);
+      expect(s.counts[3], `seed ${seed}: microservice`).toBeGreaterThan(0);
+      expect(s.counts[4], `seed ${seed}: cron daemon`).toBeGreaterThan(0);
+      expect(s.totalEarned.gte(d(1e6)), `seed ${seed}: totalEarned`).toBe(true);
+      expect(s.counts.filter((n) => n > 0).length, `seed ${seed}: tiers`).toBeGreaterThanOrEqual(3);
+      expect(s.heat, `seed ${seed}: heat floor`).toBeGreaterThan(HEAT_THROTTLE_AT);
+      expect(s.heat, `seed ${seed}: heat ceiling`).toBeLessThan(100);
+    }
   });
 
   it("heat stays interior, not saturated", () => {

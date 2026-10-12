@@ -94,7 +94,7 @@ the next sweep?_
 
 - `fork() +1` — spawn a basic child.
 - `nice(5)` — +priority to all children.
-- `malloc(+64MB)` — raise RAM ceiling.
+- `malloc(+16MB)` — raise RAM ceiling.
 - `SIGTERM handler` — children survive one sweep each.
 - `cron()` — auto-respawn legacy daemons on crash.
 - `noop loop` — flat passive cycles, no upkeep (early safety net).
