@@ -6,6 +6,7 @@
 // finite, sane value before it reaches the simulation.
 
 import { d, Decimal } from "./bignum";
+import { MILESTONES } from "./config/milestones";
 import { fmt, fmtTime } from "./format";
 import {
   type GameState,
@@ -73,6 +74,30 @@ export function sanitizeLegacy(raw: unknown): LegacyDaemon[] {
 }
 
 /**
+ * Milestones that have fired: keep only ids present in `MILESTONES` whose value is truthy;
+ * a non-object yields `{}`. Rebuilt from the roster, so stale ids never survive.
+ */
+export function sanitizeMilestones(raw: unknown): Record<string, true> {
+  const out: Record<string, true> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  const rec = raw as Record<string, unknown>;
+  for (const m of MILESTONES) if (rec[m.id]) out[m.id] = true;
+  return out;
+}
+
+/**
+ * Unlock ids: keep string keys with a truthy value. Open-ended on purpose (later issues add
+ * ids), so this is deliberately NOT restricted to the current `UNLOCK` registry.
+ */
+export function sanitizeUnlocks(raw: unknown): Record<string, true> {
+  const out: Record<string, true> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  const rec = raw as Record<string, unknown>;
+  for (const key of Object.keys(rec)) if (rec[key]) out[key] = true;
+  return out;
+}
+
+/**
  * Clamp every bounded numeric field of `s` in place. This is what stops a corrupt
  * save from soft-locking: `sweepInterval` can never be 0 (the `render()` ÷0), `ramCap`
  * never below `BASE.ramCap` (the OOM soft-lock), and no field can stay `NaN`/`Infinity`.
@@ -124,14 +149,21 @@ export function decode(raw: string): GameState {
   s.cycles = coerceDecimal(parsed.cycles, d(0));
   s.totalEarned = coerceDecimal(parsed.totalEarned, d(0));
   s.legacy = sanitizeLegacy(parsed.legacy);
-  // Pre-versioning saves have lineage baked into each legacy `rate` (the old `doFork`
-  // snapshotted `rawCyclesPerSec`), and `tick` now applies lineage again — so divide the
-  // baked factor back out, keyed by the daemon's lineage index `k`.
-  if (coerceFinite(parsed.saveVersion, 0) < SAVE_VERSION) {
+  s.milestonesDone = sanitizeMilestones(parsed.milestonesDone);
+  s.unlocks = sanitizeUnlocks(parsed.unlocks);
+  // Staged migrations, each keyed to the version it upgrades *from* (never a single
+  // `saveVersion < SAVE_VERSION` check, which would re-run older steps on newer saves).
+  const from = coerceFinite(parsed.saveVersion, 0);
+  if (from < 2) {
+    // Pre-versioning saves have lineage baked into each legacy `rate` (the old `doFork`
+    // snapshotted `rawCyclesPerSec`), and `tick` now applies lineage again — so divide the
+    // baked factor back out, keyed by the daemon's lineage index `k`.
     s.legacy.forEach((dm, k) => {
       dm.rate = dm.rate.div(d(1 + k * 0.1));
     });
   }
+  // from < 3: the milestone records are additive only — newGame() defaults already filled
+  // them and the rosters rebuild them, so there is nothing else to migrate.
   s.saveVersion = SAVE_VERSION;
   s.log = Array.isArray(s.log) ? s.log.map(String) : [];
   s.sacrificeOrder = sanitizeSacrificeOrder(s.sacrificeOrder);

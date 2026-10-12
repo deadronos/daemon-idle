@@ -7,6 +7,8 @@ import {
   decode,
   encode,
   loadFrom,
+  sanitizeMilestones,
+  sanitizeUnlocks,
 } from "./persistence";
 import { BASE, SAVE_VERSION, newGame, tick } from "./sim";
 
@@ -202,5 +204,31 @@ describe("offline progress", () => {
     tick(s, 0.01); // first live tick must not OOM the board away
     expect(s.oomCount).toBe(0);
     expect(s.counts).toEqual([0, 5, 0, 0, 0]);
+  });
+});
+
+describe("milestone persistence", () => {
+  it("round-trips the two records", () => {
+    const s = newGame();
+    s.milestonesDone = { "first-blood": true };
+    s.unlocks = { nice: true, "auto-nice": true };
+    const out = decode(encode(s));
+    expect(out.milestonesDone).toEqual({ "first-blood": true });
+    expect(out.unlocks).toEqual({ nice: true, "auto-nice": true });
+  });
+  it("drops unknown milestone ids and garbage unlocks", () => {
+    expect(
+      sanitizeMilestones({ "first-blood": true, ghost: true, "grown-up": false }),
+    ).toEqual({ "first-blood": true });
+    expect(sanitizeMilestones(null)).toEqual({});
+    expect(sanitizeUnlocks({ nice: true, bad: false, zero: 0 })).toEqual({ nice: true });
+    expect(sanitizeUnlocks([1, 2])).toEqual({});
+    expect(sanitizeUnlocks("x")).toEqual({});
+  });
+  it("loads a pre-version save with empty records", () => {
+    const s = decode('{"cycles":"0","totalEarned":"0"}');
+    expect(s.milestonesDone).toEqual({});
+    expect(s.unlocks).toEqual({});
+    expect(s.saveVersion).toBe(SAVE_VERSION);
   });
 });
