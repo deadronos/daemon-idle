@@ -127,14 +127,23 @@ The chain is append-only: to migrate further, add the next `if (from < N)` step 
 ## Offline progress
 
 `applyOffline(s, seconds)` simulates the gap in **1-second steps** by calling
-`tick(s, dt, { offline: true })`, capped at `OFFLINE_CAP_S = 8 * 3600` (8 hours). It logs
-the elapsed time and the cycles gained.
+`tick(s, dt, { offline: true })`, capped at the **upgradable** `offlineCapS(s) =
+BASE_OFFLINE_CAP_S + s.offlineCap * OFFLINE_CAP_STEP` (8 h base, +4 h per `nohup` level). A
+step budget (`OFFLINE_MAX_STEPS`) bounds the loop for an extreme cap. It logs the elapsed time
+and the cycles gained.
 
 The `offline` flag is the whole policy: offline ticks accrue income (heat-throttled), heat,
 leak + `gc` drain, and legacy crashes, but skip the cleanup sweep and the memory-pressure
 latch + OOM killer (tick-order steps 6–8, see [doc 001](./001-simulation-core.md)). So
 idling is never punished — the process table is never reaped and RAM pressure never fires —
 and, because `heatMult ≥ 0.5` and the root always produces, cycles are strictly monotonic.
+
+**Equivalence.** The replay matches an online run in the *safe regime* — no sweep fires and RAM
+stays under the cap, which is exactly what offline promises. With no legacy daemons and
+`N < sweepInterval` the two are equal (same code; the `offline` branch only skips events, none
+of which fire); with a legacy daemon they match within **~2%** (unseeded `Math.random` crash
+timing). This is the sense in which offline "matches an equivalent online run" — see
+[ADR 0010](../decisions/0010-offline-fidelity.md).
 
 Because the offline path skips the OOM killer, it also **clamps the leak to `ramCapTotal`**
 after the leak/`gc` step (`s.leak = Math.min(s.leak, ramCapTotal(s))`). Without that bound,

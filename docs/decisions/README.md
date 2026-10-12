@@ -40,6 +40,7 @@ the alternatives you rejected. Record the trade-off, not a story.
 | [`0007`](./0007-player-controlled-sacrifice-order.md) | Player-controlled sacrifice order        | Accepted |
 | [`0008`](./0008-branching-prestige-perk-tree.md)      | Branching prestige: the perk tree        | Accepted |
 | [`0009`](./0009-milestone-gating-model.md)            | Milestone gating model                   | Accepted |
+| [`0010`](./0010-offline-fidelity.md)                  | Offline fidelity and the upgradable cap  | Accepted |
 
 ## Naming
 
