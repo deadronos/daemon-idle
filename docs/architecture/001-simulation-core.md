@@ -169,7 +169,8 @@ Because `HEAT_PER_RAM === HEAT_DECAY_RATE`, the equilibrium simplifies to
 `heat_eq = childRam / (1 + cooling * 0.5)` MB — roughly **1 heat per MB of child RAM**,
 halved per two cooling levels. The time constant is τ = 50 s at `cooling = 0`. The
 60 → 100 throttle ramp is therefore an **interior equilibrium**: a board can settle partway
-up it, and a footprint above ~100 MB saturates at the cap.
+up it, and it only saturates at the cap once the equilibrium passes 100 — i.e. a footprint
+above `100 * (1 + cooling * 0.5)` MB (~100 MB at `cooling = 0`, ~150 MB at level 1).
 
 `heatMult` stays `1` up to `HEAT_THROTTLE_AT = 60`, then falls linearly to
 `1 - MAX_THROTTLE = 0.5` at heat 100 — so a hot board loses up to half its children + root

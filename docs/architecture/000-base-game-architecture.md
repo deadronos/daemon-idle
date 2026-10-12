@@ -14,7 +14,7 @@ and **memory pressure**. See [`../../IDEA.md`](../../IDEA.md) for the design int
 
 - **TypeScript**, strict mode (`tsconfig.json`: `strict`, `noUnusedLocals`, `noUnusedParameters`).
 - **Vite+** (`vp`: Vite, Vitest, oxlint, oxfmt) for dev, build, test, lint, and format.
-  No runtime dependencies, no backend.
+  One bundled runtime dependency (`break_eternity.js`); no backend.
 - **Plain DOM + CSS** for rendering (no framework). Terminal aesthetic in `src/style.css`.
 - Unbounded values are `Decimal` from `break_eternity.js` via `src/bignum.ts`; bounded
   values stay plain `number`. See [ADR 0003](../decisions/0003-bignum-break-eternity.md).
@@ -54,8 +54,9 @@ requestAnimationFrame (main.ts)
 ```
 
 Nothing else drives state. All player actions are functions in `sim.ts` (`spawn`,
-`buyNice`, `buyMalloc`, `buyGc`, `freeMemory`, `doFork`, `nudgeDaemon`) called from button
-handlers in `main.ts`, each followed by a `render(true)`.
+`buyNice`, `buyShield`, `buyMalloc`, `buyGc`, `buyCooling`, `freeMemory`, `doFork`,
+`nudgeDaemon`, `movePriority`) called from button handlers in `main.ts`, each followed by a
+`render(true)`.
 
 ## Boot sequence (`main.ts`)
 
@@ -74,7 +75,7 @@ handlers in `main.ts`, each followed by a `render(true)`.
 | **tier**            | One of five child types (`noop loop` … `cron daemon`).                        |
 | **footprint**       | RAM held by children.                                                         |
 | **leak**            | RAM that grows over time on top of the footprint; reclaimed by `free()`/`gc`. |
-| **sweep**           | Periodic reap of the lowest-priority processes.                               |
+| **sweep**           | Periodic reap by a directive roster (see [008](./008-sweep-directives.md)).   |
 | **OOM killer**      | Fires when RAM used exceeds the cap; kills the highest-output children.       |
 | **lineage**         | Permanent multiplier earned by forking.                                       |
 | **legacy daemon**   | A background producer left behind by a fork.                                  |

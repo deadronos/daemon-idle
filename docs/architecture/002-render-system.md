@@ -25,7 +25,7 @@ tumble hundreds of steps at once on return (offline progress handles long gaps �
 idempotent — it reads state and reflects it. Called with `render(true)` (force) right
 after a player action, so the UI updates before the next frame.
 
-Two cheap diffs avoid needless DOM churn:
+Three cheap diffs avoid needless DOM churn:
 
 - **Log:** rebuilt only when the joined log string changes (`lastLogSig`).
 - **Legacy list:** rows rebuilt only when the `name:crashed` signature changes
@@ -44,7 +44,7 @@ reference in the `el` map.
 Both panels share an `ActionButton` shape:
 
 ```ts
-{ el, name(): string, cost(): number, enabled(): boolean, run(): void }
+{ el, name(): string, cost(): Decimal, enabled(): boolean, run(): void }
 ```
 
 - **Spawn buttons** are built once from `TIERS`. Each shows `count · cost` and is disabled
