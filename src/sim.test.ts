@@ -1238,3 +1238,9 @@ describe("spawnMax", () => {
     expect(spawnMax(s, 0)).toBe(false);
   });
 });
+
+describe("buyMax toggle state", () => {
+  it("defaults to false", () => {
+    expect(newGame().buyMax).toBe(false);
+  });
+});

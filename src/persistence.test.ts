@@ -240,3 +240,13 @@ describe("sanitizeUnlocks cap", () => {
     expect(Object.keys(sanitizeUnlocks(raw)).length).toBe(256);
   });
 });
+
+describe("buyMax persistence", () => {
+  it("round-trips and coerces a corrupt value to boolean", () => {
+    const s = newGame();
+    s.buyMax = true;
+    expect(decode(encode(s)).buyMax).toBe(true);
+    expect(decode('{"buyMax":"nope"}').buyMax).toBe(true); // truthy
+    expect(decode("{}").buyMax).toBe(false);
+  });
+});

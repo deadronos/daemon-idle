@@ -150,6 +150,8 @@ export interface GameState {
   milestonesDone: Record<MilestoneId, true>;
   /** Unlock ids granted by milestones; features gate via `hasUnlock`. */
   unlocks: Record<string, true>;
+  /** `buy max` toggle preference (is a bulk-buy capability unlocked). */
+  buyMax: boolean;
   log: string[];
   playtime: number;
   lastSave: number;
@@ -161,9 +163,10 @@ export interface GameState {
  * Current save format. Version 2 fixed `doFork` to snapshot legacy rates from the
  * lineage-free `baseCyclesPerSec`; saves below it still have lineage baked into their
  * legacy `rate`s and must be migrated in `decode` (see `src/persistence.ts`).
- * Version 3 added the milestone records (`milestonesDone`, `unlocks`); additive only.
+ * Version 3 added the milestone records (`milestonesDone`, `unlocks`).
+ * Version 4 added the `buyMax` toggle. Versions 3–4 are additive only.
  */
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 export const BASE = {
   ramCap: 8,
@@ -206,6 +209,7 @@ export function newGame(): GameState {
     legacy: [],
     milestonesDone: {},
     unlocks: {},
+    buyMax: false,
     log: ["boot: daemon pid 1 started (unattended)"],
     playtime: 0,
     lastSave: Date.now(),
