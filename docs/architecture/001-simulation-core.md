@@ -210,7 +210,7 @@ Order matters — later steps observe the effects of earlier ones.
 3. Update heat from the child footprint and cooling, then clamp to `[0, 100]`. This runs
    **after** income so the throttle set here applies to the next tick's accrual.
 4. Grow the leak; apply `gc` flushing.
-5. Run legacy daemons (produce, roll for crash, auto-respawn if `gc > 0`).
+5. Run legacy daemons (produce, roll for crash, auto-respawn if `hasUnlock(s, "legacy-respawn")`).
 6. Recompute `s.sweepInterval` from progress (`sweepIntervalFor`, see
    [doc 008](./008-sweep-directives.md)), then decrement `s.sweepTimer`; when ≤ 0, run a
    sweep (resolve the stored `nextDirective`, then redraw it from the unlocked pool) and
@@ -303,7 +303,7 @@ perk-free so the legacy snapshot is clean.
 Named, one-shot goals (`MILESTONES` in `src/config/milestones.ts`) that fire when a metric
 threshold is reached and grant named unlocks. State is two sticky records (`milestonesDone`,
 `unlocks`); `evaluateMilestones` runs at the end of a live tick; features gate via
-`hasUnlock(s, id)` — `nice` and `gc` are the starter gates. Full contract in
+`hasUnlock(s, id)` — `nice`, `gc`, and `legacy-respawn` are the starter gates. Full contract in
 [doc 010](./010-milestones.md).
 
 The bulk-spawn ability is also gated: `maxAffordable(s, i)` returns the largest number of

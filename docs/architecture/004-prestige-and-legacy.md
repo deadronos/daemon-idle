@@ -54,11 +54,19 @@ Each fork adds one `LegacyDaemon { name, rate, crashed, respawn }`, named `legac
   multiplier is inherited at fork time.
 - **Crash:** each second there is a `LEGACY_CRASH_CHANCE = 0.002` chance to crash
   (per daemon; implemented as `1 - exp(-0.002 * dt)`). On crash, `respawn = 10`.
-- **Respawn:** if `gc > 0`, a crashed daemon auto-restarts when its respawn timer expires.
+- **Respawn:** once `hasUnlock(s, "legacy-respawn")` is granted (the `legacy-respawn`
+  milestone, two forks), a crashed daemon auto-restarts when its respawn timer expires.
   Otherwise it stays down until the player clicks it (`nudgeDaemon`).
 
-Legacy daemons are the active-play hook of the meta-layer: without `gc` you occasionally
-have to click a crashed row in the panel to bring it back.
+**Offline role.** The legacy block sits at the top of `tick`, **before** the `offline`
+early-return, so an offline replay already produces, crashes, and respawns every daemon across
+the gap — and the produced cycles are folded into the offline cycles total (`s.cycles` /
+`s.totalEarned`) like any other income. There is no separate offline accumulator. Respawn is
+unlock-gated there too, so a pre-crashed daemon only comes back offline once `legacy-respawn`
+is granted.
+
+Legacy daemons are the active-play hook of the meta-layer: before the `legacy-respawn` unlock
+you occasionally have to click a crashed row in the panel to bring it back.
 
 ## Design notes
 

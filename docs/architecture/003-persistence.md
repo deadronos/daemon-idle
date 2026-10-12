@@ -140,7 +140,9 @@ elapsed time and the cycles gained.
 
 The `offline` flag is the whole policy: offline ticks accrue income (heat-throttled), heat,
 leak + `gc` drain, and legacy crashes, but skip the cleanup sweep and the memory-pressure
-latch + OOM killer (tick-order steps 6–8, see [doc 001](./001-simulation-core.md)). So
+latch + OOM killer (tick-order steps 6–8, see [doc 001](./001-simulation-core.md)). Legacy
+respawn during replay is unlock-gated (`legacy-respawn`), so a pre-crashed daemon only comes
+back offline once that milestone fires. So
 idling is never punished — the process table is never reaped and RAM pressure never fires —
 and, because `heatMult ≥ 0.5` and the root always produces, cycles are strictly monotonic.
 
