@@ -47,9 +47,11 @@ tier gates follow a `tier:<index>` convention. A feature that is not gated simpl
 | ------------- | ---------------- | ---- | ------- |
 | `first-blood` | `sweepsSurvived` | 1    | `nice`  |
 | `grown-up`    | `ramCap`         | 24   | `gc`    |
+| `bulk-buy`    | `totalEarned`    | 1e5  | `buy-max` |
 
 `nice` and `gc` are the only upgrades gated; `free()`, `malloc`, `cooling`, shields, and
-`fork()` are available from the start.
+`fork()` are available from the start. `bulk-buy` gates the spawn-panel `buy max` toggle
+(bulk tier spawns — see [doc 001](./001-simulation-core.md)).
 
 ## Metrics and predicate
 

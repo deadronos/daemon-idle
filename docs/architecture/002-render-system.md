@@ -60,6 +60,11 @@ Cost text is tinted green (`.ok`) when affordable. The `nice` and `gc` buttons r
 with a `🔒 <milestone name>` hint until their milestone fires (see
 [doc 010](./010-milestones.md)) — the lock is a sim rule, so `enabled()` checks `hasUnlock`.
 
+The spawn panel also has a **`buy max` toggle** (`#buyMaxToggle`), shown only once
+`hasUnlock(state, "buy-max")`. While it is on, a spawn click calls `spawnMax` (buy the maximum
+affordable units) instead of `spawn`, and the cost line gains a `×max` marker; the preference is
+the persisted `state.buyMax`.
+
 ## Sacrifice order panel
 
 The `sacrifice order` panel (`#priorityPanel`) lists `state.sacrificeOrder` top-to-bottom,

@@ -30,6 +30,7 @@ cosmetics, which use `Math.random`).
 | `legacy`         | LegacyDaemon[] | Background producers left by forks.             |
 | `milestonesDone` | Record<MilestoneId, true> | Milestones that have fired (sticky).  |
 | `unlocks`        | Record<string, true> | Unlock ids granted; gate via `hasUnlock`. |
+| `buyMax`         | boolean        | `buy max` spawn toggle preference.              |
 | `log`            | string[]       | Terminal feed, newest first, capped at 40.      |
 | `playtime`       | number         | Seconds simulated (includes offline).           |
 | `lastSave`       | number         | Epoch ms of last save; drives offline progress. |
@@ -270,6 +271,12 @@ threshold is reached and grant named unlocks. State is two sticky records (`mile
 `unlocks`); `evaluateMilestones` runs at the end of a live tick; features gate via
 `hasUnlock(s, id)` — `nice` and `gc` are the starter gates. Full contract in
 [doc 010](./010-milestones.md).
+
+The bulk-spawn ability is also gated: `maxAffordable(s, i)` returns the largest number of
+tier-`i` units buyable now (bounded by both `cycles` and `ramCap`, solved in closed form with a
+rounding correction), and `spawnMax(s, i)` bulk-buys that many in one action. `spawnMax`
+refuses until `hasUnlock(s, "buy-max")` (the `bulk-buy` milestone); the persisted `buyMax`
+boolean is only the toggle *preference*, not the capability.
 
 ## Invariants
 
