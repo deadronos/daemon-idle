@@ -112,18 +112,17 @@ describe("evaluateMilestones", () => {
 
 describe("orderedMilestones", () => {
   it("orders pending by progress descending, then achieved last", () => {
-    // ramCap 0 -> both pending at 0 progress -> roster order
-    expect(orderedMilestones(base({ ramCap: 0 })).map((m) => m.id)).toEqual([
-      "first-blood",
-      "grown-up",
-    ]);
-    // ramCap 12 -> grown-up is closer to firing -> moves to the front
-    expect(orderedMilestones(base({ ramCap: 12 })).map((m) => m.id)).toEqual([
-      "grown-up",
-      "first-blood",
-    ]);
+    const idx = (ids: string[], id: string) => ids.indexOf(id);
+    // ramCap 0 -> first-blood and grown-up both pending at 0 progress -> roster order
+    const flat = orderedMilestones(base({ ramCap: 0 })).map((m) => m.id);
+    expect(idx(flat, "first-blood")).toBeLessThan(idx(flat, "grown-up"));
+    // ramCap 12 -> grown-up is closer to firing -> ahead of first-blood
+    const closer = orderedMilestones(base({ ramCap: 12 })).map((m) => m.id);
+    expect(idx(closer, "grown-up")).toBeLessThan(idx(closer, "first-blood"));
     // achieved goals sort below pending ones
-    const done = base({ ramCap: 12, milestonesDone: { "first-blood": true } });
-    expect(orderedMilestones(done).map((m) => m.id)).toEqual(["grown-up", "first-blood"]);
+    const done = orderedMilestones(
+      base({ ramCap: 12, milestonesDone: { "first-blood": true } }),
+    ).map((m) => m.id);
+    expect(idx(done, "grown-up")).toBeLessThan(idx(done, "first-blood"));
   });
 });

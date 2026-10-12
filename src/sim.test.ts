@@ -41,6 +41,7 @@ import {
   sanitizeSacrificeOrder,
   shieldCost,
   spawn,
+  spawnMax,
   survivalMult,
   sweepIntervalFor,
   synergyMult,
@@ -1211,5 +1212,29 @@ describe("maxAffordable", () => {
     full.cycles = d("1e100");
     full.counts[0] = BASE.ramCap; // fills RAM exactly
     expect(maxAffordable(full, 0)).toBe(0);
+  });
+});
+
+describe("spawnMax", () => {
+  it("refuses while buy-max is locked", () => {
+    const s = newGame();
+    s.cycles = d(1e6);
+    expect(spawnMax(s, 0)).toBe(false);
+  });
+  it("bulk-buys the max affordable once unlocked, without overspending", () => {
+    const s = newGame();
+    s.cycles = d(1e6);
+    s.unlocks = { [UNLOCK.buyMax]: true };
+    const expected = maxAffordable(s, 0); // pure, safe to read before the action
+    expect(spawnMax(s, 0)).toBe(true);
+    expect(s.counts[0]).toBe(expected);
+    expect(s.cycles.gte(0)).toBe(true);
+    expect(ramUsed(s)).toBeLessThanOrEqual(s.ramCap);
+  });
+  it("returns false with nothing affordable", () => {
+    const s = newGame();
+    s.cycles = d(0);
+    s.unlocks = { [UNLOCK.buyMax]: true };
+    expect(spawnMax(s, 0)).toBe(false);
   });
 });

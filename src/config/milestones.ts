@@ -43,6 +43,14 @@ export const MILESTONES: MilestoneDef[] = [
     at: 24,
     unlocks: ["gc"],
   },
+  {
+    id: "bulk-buy",
+    name: "bulk-buy",
+    desc: "earn 100,000 cycles",
+    metric: "totalEarned",
+    at: 1e5,
+    unlocks: ["buy-max"],
+  },
 ];
 
 /**

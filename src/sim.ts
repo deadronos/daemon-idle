@@ -562,6 +562,19 @@ export function maxAffordable(s: GameState, i: number): number {
   return k;
 }
 
+/** Buy the maximum affordable units of tier `i` in one action. Gated by the `buy-max` unlock. */
+export function spawnMax(s: GameState, i: number): boolean {
+  if (!hasUnlock(s, UNLOCK.buyMax)) return false;
+  const k = maxAffordable(s, i);
+  if (k <= 0) return false;
+  const growth = TIERS[i].costGrowth;
+  const total = tierCost(s, i).mul(d(growth).pow(k).sub(1)).div(growth - 1);
+  s.cycles = s.cycles.sub(total);
+  s.counts[i] += k;
+  log(s, `spawn x${k}: ${TIERS[i].name}`);
+  return true;
+}
+
 export function buyNice(s: GameState): boolean {
   if (!hasUnlock(s, UNLOCK.nice)) return false;
   const cost = niceCost(s);
