@@ -27,6 +27,9 @@ import {
   newGame,
   niceCost,
   nudgeDaemon,
+  offlineCapS,
+  offlineCost,
+  buyOfflineCap,
   ramCapTotal,
   ramUsed,
   shieldCost,
@@ -254,6 +257,12 @@ addUpgrade(
   () => forkCost(state),
   () => canFork(state),
   () => doFork(state),
+);
+addUpgrade(
+  () => `nohup(+4h)  ·  offline cap ${Math.round(offlineCapS(state) / 3600)}h`,
+  () => offlineCost(state),
+  () => state.cycles.gte(offlineCost(state)),
+  () => buyOfflineCap(state),
 );
 
 // --- render ----------------------------------------------------------------

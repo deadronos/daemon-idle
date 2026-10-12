@@ -39,6 +39,7 @@ cosmetics, which use `Math.random`).
 | `autoMalloc`     | boolean        | Auto-buy `malloc` when affordable (unlock-gated). |
 | `autoFree`       | boolean        | Auto-`free()` the leak at `freeThreshold`.      |
 | `freeThreshold`  | number         | Leak MB at which auto-free fires.               |
+| `offlineCap`     | number         | `nohup` level; +4 h offline cap per level.      |
 | `log`            | string[]       | Terminal feed, newest first, capped at 40.      |
 | `playtime`       | number         | Seconds simulated (includes offline).           |
 | `lastSave`       | number         | Epoch ms of last save; drives offline progress. |
@@ -278,6 +279,7 @@ re-crosses `+2%`, so the `*0.9` penalty no longer compounds tick-over-tick.
 | `free()`          | 0                           | Zero the leak.                               |
 | `SIGTERM handler` | `500 * 2^shields`           | +1 charge; each absorbs one sweep victim.    |
 | `fork()`          | `1e6 * 10^forks * forkCostMult` | Prestige — see doc 004.                  |
+| `nohup(+1)`       | `1e7 * 5^n`                 | +4 h offline cap (doc 003).                  |
 
 `malloc` is the real gate to the upper tiers: its `1.6` growth and `+16 MB` step let RAM
 scale fast enough to reach the cron daemon within a session, instead of leaving it

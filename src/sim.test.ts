@@ -4,6 +4,9 @@ import { fmt } from "./format";
 import type { GameState } from "./sim";
 import {
   BASE,
+  BASE_OFFLINE_CAP_S,
+  OFFLINE_CAP_STEP,
+  OFFLINE_MAX_STEPS,
   DEFAULT_SACRIFICE_ORDER,
   HEAT_THROTTLE_AT,
   MALLOC_STEP,
@@ -36,6 +39,9 @@ import {
   movePriority,
   newGame,
   niceCost,
+  offlineCapS,
+  offlineCost,
+  buyOfflineCap,
   pickNextDirective,
   priorityOf,
   priorityOrder,
@@ -1454,5 +1460,34 @@ describe("auto-free boundary", () => {
     s.leak = 0.001;
     tick(s, 0);
     expect(s.leak).toBe(0);
+  });
+});
+
+describe("nohup offline cap upgrade", () => {
+  it("starts at the base cap and grows by the step per level", () => {
+    const s = newGame();
+    expect(s.offlineCap).toBe(0);
+    expect(offlineCapS(s)).toBe(BASE_OFFLINE_CAP_S);
+    s.cycles = d(1e12);
+    expect(buyOfflineCap(s)).toBe(true);
+    expect(s.offlineCap).toBe(1);
+    expect(offlineCapS(s)).toBe(BASE_OFFLINE_CAP_S + OFFLINE_CAP_STEP);
+  });
+  it("refuses when unaffordable and costs grow per level", () => {
+    const s = newGame();
+    expect(buyOfflineCap(s)).toBe(false); // 0 cycles
+    s.cycles = d(1e12);
+    buyOfflineCap(s);
+    expect(offlineCost(s).gt(d(1e7))).toBe(true); // level 1 costs more than level 0
+  });
+});
+
+describe("nohup cap saturation", () => {
+  it("saturates at the step budget and refuses further purchases", () => {
+    const s = newGame();
+    s.cycles = d("1e300");
+    s.offlineCap = 1000; // far beyond the budget
+    expect(offlineCapS(s)).toBe(OFFLINE_MAX_STEPS);
+    expect(buyOfflineCap(s)).toBe(false); // saturated: a purchase would buy nothing
   });
 });

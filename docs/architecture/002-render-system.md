@@ -53,7 +53,8 @@ Both panels share an `ActionButton` shape:
   when `canSpawn` is false; a `⚠ ram` suffix appears when the tier would exceed the RAM cap.
 - **Upgrade buttons** are registered via `addUpgrade(...)` with closures over the current
   state, so labels and affordability track live state. The panel covers `free()`, `nice`,
-  `malloc`, `SIGTERM handler`, `gc`, `cooling`, and `fork()`; the `cooling` button labels
+  `malloc`, `SIGTERM handler`, `gc`, `cooling`, `fork()`, and `nohup` (the offline-cap upgrade,
+  `nohup(+4h) · offline cap Nh`, costs `offlineCost(state)`); the `cooling` button labels
   the current level, costs `coolCost(state)`, and runs `buyCooling(state)` — it is disabled
   while `state.cycles` is below the cost.
 

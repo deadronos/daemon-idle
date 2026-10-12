@@ -2,7 +2,6 @@ import { describe, expect, it } from "vite-plus/test";
 import { d } from "./bignum";
 import {
   MAX_SANE_COUNT,
-  OFFLINE_CAP_S,
   applyOffline,
   decode,
   encode,
@@ -11,7 +10,7 @@ import {
   sanitizeMilestones,
   sanitizeUnlocks,
 } from "./persistence";
-import { BASE, SAVE_VERSION, newGame, tick } from "./sim";
+import { BASE, BASE_OFFLINE_CAP_S, SAVE_VERSION, newGame, tick } from "./sim";
 
 describe("decode — save hardening", () => {
   it("round-trips a healthy save", () => {
@@ -176,13 +175,13 @@ describe("offline progress", () => {
     expect(again.playtime).toBe(first.playtime);
   });
 
-  it("caps offline at OFFLINE_CAP_S", () => {
+  it("caps offline at the base cap", () => {
     const now = 10_000_000_000;
     const g = newGame();
     g.lastSave = 1; // non-zero old stamp, so the gap is real (not masked by a `|| now`)
     const s = loadFrom(encode(g), now);
     expect(s.playtime).toBeGreaterThan(0);
-    expect(s.playtime).toBeLessThanOrEqual(OFFLINE_CAP_S + 1);
+    expect(s.playtime).toBeLessThanOrEqual(BASE_OFFLINE_CAP_S + 1);
   });
 
   it("never runs the OOM killer while offline", () => {
@@ -327,5 +326,72 @@ describe("automation persistence", () => {
     expect(decode('{"autoMalloc":1,"freeThreshold":-5}').autoMalloc).toBe(true);
     expect(decode('{"freeThreshold":-5}').freeThreshold).toBe(0);
     expect(decode("{}").freeThreshold).toBe(16);
+  });
+});
+
+describe("offlineCap persistence", () => {
+  it("round-trips and coerces the level", () => {
+    const s = newGame();
+    s.offlineCap = 3;
+    expect(decode(encode(s)).offlineCap).toBe(3);
+    expect(decode('{"offlineCap":-2}').offlineCap).toBe(0);
+    expect(decode("{}").offlineCap).toBe(0);
+  });
+});
+
+describe("applyOffline cap and equivalence", () => {
+  it("never simulates more than offlineCapS seconds", () => {
+    const s = newGame();
+    const before = s.playtime;
+    applyOffline(s, 100 * 3600); // 100h requested, base cap 8h
+    expect(s.playtime - before).toBeLessThanOrEqual(BASE_OFFLINE_CAP_S + 1);
+  });
+
+  it("matches an online run in the safe regime (no sweep, RAM under cap)", () => {
+    const online = newGame();
+    const offline = newGame();
+    for (const s of [online, offline]) {
+      s.cycles = d(1e6);
+      s.counts = [4, 0, 0, 0, 0];
+      s.sweepTimer = 1e9; // no sweep fires within N seconds
+    }
+    const N = 600;
+    for (let t = 0; t < N; t++) tick(online, 1);
+    applyOffline(offline, N);
+    expect(offline.totalEarned.toNumber()).toBeCloseTo(online.totalEarned.toNumber(), 0);
+  });
+
+  it("stays within tolerance with a legacy daemon", () => {
+    const online = newGame();
+    const offline = newGame();
+    for (const s of [online, offline]) {
+      s.ramCap = 200; // room for the children, so no OOM in either run
+      s.sweepTimer = 1e9;
+      s.gc = 5; // auto-respawn, so crashes are transient
+      s.counts = [0, 0, 0, 0, 4]; // children income dominates the small legacy share
+      s.legacy = [{ name: "legacy-1", rate: d(100), crashed: false, respawn: 0 }];
+    }
+    const N = 3600;
+    for (let t = 0; t < N; t++) tick(online, 1);
+    applyOffline(offline, N);
+    const a = online.totalEarned.toNumber();
+    const b = offline.totalEarned.toNumber();
+    expect(Math.abs(a - b) / a).toBeLessThan(0.02);
+  });
+
+  it("does not advance sweepsSurvived offline (non-punishing retained)", () => {
+    const s = newGame();
+    s.counts = [4, 0, 0, 0, 0];
+    applyOffline(s, 600); // > the 60s sweep interval
+    expect(s.sweepsSurvived).toBe(0);
+  });
+});
+
+describe("applyOffline cap reach", () => {
+  it("simulates the requested gap when it is under the cap", () => {
+    const s = newGame();
+    const before = s.playtime;
+    applyOffline(s, 120); // 2 min, well under the 8h base cap
+    expect(s.playtime - before).toBeCloseTo(120, 0);
   });
 });

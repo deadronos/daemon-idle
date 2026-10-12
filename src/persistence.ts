@@ -13,15 +13,16 @@ import {
   type GameState,
   type LegacyDaemon,
   BASE,
+  OFFLINE_MAX_STEPS,
   SAVE_VERSION,
   TIERS,
   log,
   newGame,
+  offlineCapS,
   sanitizeSacrificeOrder,
   tick,
 } from "./sim";
 
-export const OFFLINE_CAP_S = 8 * 3600;
 const OFFLINE_MIN_S = 5;
 
 /** A finite number, else `fallback`. Rejects strings, `NaN`, and `±Infinity`. */
@@ -186,6 +187,7 @@ export function decode(raw: string): GameState {
   s.autoMalloc = Boolean(parsed.autoMalloc);
   s.autoFree = Boolean(parsed.autoFree);
   s.freeThreshold = Math.max(0, coerceFinite(parsed.freeThreshold, 16));
+  s.offlineCap = coerceCount(parsed.offlineCap);
   // Staged migrations, each keyed to the version it upgrades *from* (never a single
   // `saveVersion < SAVE_VERSION` check, which would re-run older steps on newer saves).
   const from = coerceFinite(parsed.saveVersion, 0);
@@ -201,6 +203,7 @@ export function decode(raw: string): GameState {
   // newGame() defaults already filled them and the rosters rebuild them.
   // from < 4: `buyMax` is additive too — newGame() defaults it to false.
   // from < 5: the automation toggles + `freeThreshold` are additive as well.
+  // from < 6: `offlineCap` is additive too — newGame() defaults it to 0.
   s.saveVersion = SAVE_VERSION;
   s.log = Array.isArray(s.log) ? s.log.map(String) : [];
   s.sacrificeOrder = sanitizeSacrificeOrder(s.sacrificeOrder);
@@ -208,29 +211,30 @@ export function decode(raw: string): GameState {
   return s;
 }
 
-/** Simulate an offline gap in 1-second steps, then log the cycles gained. */
+/** Simulate an offline gap in 1-second steps, capped at the upgraded `offlineCapS(s)`. */
 export function applyOffline(s: GameState, seconds: number): void {
   const before = s.cycles;
-  let remaining = seconds;
-  while (remaining > 0) {
+  let remaining = Math.min(seconds, offlineCapS(s));
+  let budget = OFFLINE_MAX_STEPS;
+  while (remaining > 0 && budget-- > 0) {
     const dt = Math.min(1, remaining);
-    tick(s, dt, { offline: true });
+    tick(s, dt, { offline: true }); // non-punishing semantics: no sweep, no OOM
     remaining -= dt;
   }
   log(s, `offline ${fmtTime(seconds)}: +${fmt(s.cycles.sub(before))} cycles`);
 }
 
 /**
- * Decode a raw save and apply offline progress for the elapsed gap (capped at
- * `OFFLINE_CAP_S`, skipped below `OFFLINE_MIN_S`), then stamp `lastSave = now` so a
- * crash before the next save cannot re-apply the same window.
+ * Decode a raw save and apply offline progress for the elapsed gap (capped by
+ * `applyOffline` at `offlineCapS(s)`, skipped below `OFFLINE_MIN_S`), then stamp
+ * `lastSave = now` so a crash before the next save cannot re-apply the same window.
  */
 export function loadFrom(raw: string, now: number): GameState {
   const s = decode(raw);
   // A real timestamp is always positive; a missing, invalid, or non-positive stamp
   // falls back to `now` (no gap).
   const last = Number.isFinite(s.lastSave) && s.lastSave > 0 ? s.lastSave : now;
-  const elapsed = Math.min(OFFLINE_CAP_S, (now - last) / 1000);
+  const elapsed = (now - last) / 1000;
   if (elapsed > OFFLINE_MIN_S) applyOffline(s, elapsed);
   s.lastSave = now;
   return s;
