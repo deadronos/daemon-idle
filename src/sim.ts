@@ -5,6 +5,8 @@
 // ./bignum. Bounded values (counts, RAM, timers) stay plain numbers.
 
 import { d, Decimal } from "./bignum";
+import { type PerkId } from "./config/perks";
+import { canBuyPerk, perkById, perkCost } from "./perks";
 
 export interface TierDef {
   name: string;
@@ -144,6 +146,14 @@ export interface GameState {
   oomCount: number;
   ramWarned: boolean;
   legacy: LegacyDaemon[];
+  /** Lineage points earned at fork; spent on permanent perks. */
+  lineage: number;
+  /** Purchased perk level per node id; a missing key means level 0. */
+  perks: Record<PerkId, number>;
+  /** `totalEarned` at the last fork (base for the per-run earnings delta). */
+  runBaseEarned: Decimal;
+  /** `playtime` at the last fork (base for the per-run duration). */
+  runStartPlaytime: number;
   log: string[];
   playtime: number;
   lastSave: number;
@@ -155,8 +165,10 @@ export interface GameState {
  * Current save format. Version 2 fixed `doFork` to snapshot legacy rates from the
  * lineage-free `baseCyclesPerSec`; saves below it still have lineage baked into their
  * legacy `rate`s and must be migrated in `decode` (see `src/persistence.ts`).
+ * Version 3 added the lineage/perk fields (`lineage`, `perks`, `runBaseEarned`,
+ * `runStartPlaytime`); that migration is additive only.
  */
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 export const BASE = {
   ramCap: 8,
@@ -197,6 +209,10 @@ export function newGame(): GameState {
     oomCount: 0,
     ramWarned: false,
     legacy: [],
+    lineage: 0,
+    perks: {},
+    runBaseEarned: d(0),
+    runStartPlaytime: 0,
     log: ["boot: daemon pid 1 started (unattended)"],
     playtime: 0,
     lastSave: Date.now(),
@@ -590,6 +606,14 @@ export function nudgeDaemon(s: GameState, index: number): boolean {
   dm.crashed = false;
   dm.respawn = 0;
   log(s, `${dm.name} restarted by hand`);
+  return true;
+}
+
+export function buyPerk(s: GameState, id: PerkId): boolean {
+  if (!canBuyPerk(s, id)) return false;
+  s.lineage -= perkCost(s, id);
+  s.perks[id] = (s.perks[id] ?? 0) + 1;
+  log(s, `lineage: bought ${perkById(id)?.name ?? id} (L${s.perks[id]})`);
   return true;
 }
 

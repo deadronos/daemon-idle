@@ -15,6 +15,7 @@ import {
   buyGc,
   buyMalloc,
   buyNice,
+  buyPerk,
   buyShield,
   canSpawn,
   childOutput,
@@ -1149,5 +1150,32 @@ describe("progression", () => {
     playGreedy(s, 3600);
     expect(s.heat).toBeGreaterThan(HEAT_THROTTLE_AT);
     expect(s.heat).toBeLessThan(100);
+  });
+});
+
+describe("lineage perks", () => {
+  it("newGame starts with no points and no perks", () => {
+    const s = newGame();
+    expect(s.lineage).toBe(0);
+    expect(s.perks).toEqual({});
+    expect(s.runBaseEarned.toNumber()).toBe(0);
+    expect(s.runStartPlaytime).toBe(0);
+  });
+
+  it("buyPerk spends points, adds a level, and refuses when broke or gated", () => {
+    const s = newGame();
+    expect(buyPerk(s, "spin")).toBe(false); // 0 points
+    s.lineage = 2;
+    expect(buyPerk(s, "spin")).toBe(true);
+    expect(s.lineage).toBe(0);
+    expect(s.perks.spin).toBe(1);
+    expect(buyPerk(s, "spin")).toBe(false); // maxLevel 1 already reached
+    s.lineage = 5;
+    expect(buyPerk(s, "tailcall")).toBe(true); // prereq `spin` owned, costs 5
+    expect(s.lineage).toBe(0);
+    s.lineage = 4;
+    expect(buyPerk(s, "vec")).toBe(false); // prereq owned but costs 10
+    s.lineage = 10;
+    expect(buyPerk(s, "vec")).toBe(true);
   });
 });
