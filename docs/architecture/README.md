@@ -35,6 +35,7 @@ purpose per file.
 | [`006-diagnostics-and-reporting.md`](./006-diagnostics-and-reporting.md) | Numeric watchdog: detection, alert routing, sinks                 |
 | [`007-deployment.md`](./007-deployment.md)                               | GitHub Pages deployment: pipeline, triggers, base path            |
 | [`008-sweep-directives.md`](./008-sweep-directives.md)                   | Sweep directive roster, escalation, sacrifice order               |
+| [`010-milestones.md`](./010-milestones.md)                               | Milestones: goals, metrics, unlock flags, `hasUnlock`             |
 
 ## Conventions
 

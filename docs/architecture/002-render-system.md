@@ -56,7 +56,9 @@ Both panels share an `ActionButton` shape:
   while `state.cycles` is below the cost.
 
 `enabled()` gates the button; `run()` performs the action; both call back into `sim.ts`.
-Cost text is tinted green (`.ok`) when affordable.
+Cost text is tinted green (`.ok`) when affordable. The `nice` and `gc` buttons render disabled
+with a `🔒 <milestone name>` hint until their milestone fires (see
+[doc 010](./010-milestones.md)) — the lock is a sim rule, so `enabled()` checks `hasUnlock`.
 
 ## Sacrifice order panel
 
@@ -67,6 +69,16 @@ call `movePriority(state, tier, -1 | 1)` and re-render; `▲` is disabled on the
 (`priorityPanel.dataset.sig`). A `.hint` caption explains that only priority-based sweeps
 honour this order — scavenger and group-kill ignore it. The panel never reorders state
 itself; `main.ts` delegates the swap to `sim.ts`.
+
+## Milestones panel
+
+The `milestones` panel (`#milestonePanel`) lists `MILESTONES` pending-first by
+`milestoneProgress` descending, then achieved ones dimmed below. Each row shows the name,
+description, and — for a pending goal — a progress bar and `value / at`; an achieved goal
+shows `✓ unlocked: <ids>`. Rows are rebuilt only when the `milestonesDone` + `unlocks`
+signature changes (`milestonePanel.dataset.sig`); the progress numbers refresh each frame.
+Rows are never interactive (milestones fire from state, not clicks). The locked `nice`/`gc`
+buttons in the upgrades panel point at their milestone by name.
 
 ## Meters
 

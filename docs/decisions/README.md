@@ -38,6 +38,7 @@ the alternatives you rejected. Record the trade-off, not a story.
 | [`0005`](./0005-pages-deploy-on-tag.md)               | Deploy to GitHub Pages on release tags   | Accepted |
 | [`0006`](./0006-sweep-directive-model.md)             | Sweep directive model                    | Accepted |
 | [`0007`](./0007-player-controlled-sacrifice-order.md) | Player-controlled sacrifice order        | Accepted |
+| [`0009`](./0009-milestone-gating-model.md)            | Milestone gating model                   | Accepted |
 
 ## Naming
 
