@@ -1224,3 +1224,35 @@ describe("perk effects on the economy", () => {
     expect(forkCost(s).toNumber()).toBeGreaterThanOrEqual(full * 0.25 - 1e-9);
   });
 });
+
+describe("doFork with perks", () => {
+  it("awards points from the run, snapshots the run, and keeps perks + points", () => {
+    const s = newGame();
+    s.perks = { echo: 1 }; // pointsMult = 1 + 0.05*sqrt(1) = 1.05
+    s.lineage = 7; // must survive the fork
+    s.totalEarned = d(1e6); // == forkCost(0), so canFork is true
+    s.playtime = 600; // runSeconds 600 -> base 5; 5*1.05 -> 5
+    expect(doFork(s)).toBe(true);
+    expect(s.lineage).toBe(12);
+    expect(s.perks.echo).toBe(1);
+    expect(s.runBaseEarned.toNumber()).toBeCloseTo(1e6, 6);
+    expect(s.runStartPlaytime).toBeCloseTo(600, 6);
+  });
+  it("applies start-of-run grants", () => {
+    const s = newGame();
+    s.perks = { sigblock: 1, startup: 1 };
+    s.totalEarned = d(1e6);
+    s.playtime = 600;
+    doFork(s);
+    expect(s.shields).toBe(1);
+    expect(s.cycles.toNumber()).toBe(1000);
+  });
+  it("still resets the working set", () => {
+    const s = newGame();
+    s.counts = [5, 0, 0, 0, 0];
+    s.totalEarned = d(1e6);
+    s.playtime = 600;
+    doFork(s);
+    expect(s.counts.every((n) => n === 0)).toBe(true);
+  });
+});

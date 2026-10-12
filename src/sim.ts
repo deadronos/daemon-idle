@@ -6,7 +6,14 @@
 
 import { d, Decimal } from "./bignum";
 import { type PerkId } from "./config/perks";
-import { canBuyPerk, perkById, perkCost, perkMods } from "./perks";
+import {
+  canBuyPerk,
+  perkById,
+  perkCost,
+  perkMods,
+  pointsForFork,
+  MAX_POINTS_PER_FORK,
+} from "./perks";
 
 export interface TierDef {
   name: string;
@@ -645,6 +652,8 @@ export function canFork(s: GameState): boolean {
 
 export function doFork(s: GameState): boolean {
   if (!canFork(s)) return false;
+  const m = perkMods(s); // pre-reset: earning perks apply to the fork that earns
+  s.lineage += Math.min(MAX_POINTS_PER_FORK, Math.floor(pointsForFork(s) * m.pointsMult));
   const peak = baseCyclesPerSec(s); // unthrottled + lineage-free: heat and lineage are not baked in
   const rate = Decimal.max(0.1, peak.mul(LEGACY_SHARE));
   s.forks++;
@@ -654,16 +663,18 @@ export function doFork(s: GameState): boolean {
     crashed: false,
     respawn: 0,
   });
-  // reset the working set, keep lineage + legacy
-  s.cycles = d(0);
+  // reset the working set, keep lineage + legacy + perks
+  s.cycles = m.startCycles; // warm start grants a head start
   s.counts = TIERS.map(() => 0);
   s.leak = 0;
   s.ramCap = BASE.ramCap;
   s.heat = 0;
   s.cooling = 0;
-  s.shields = 0;
+  s.shields = m.startShieldsAdd; // signal-mask charges for the new run
   s.nice = 0;
   s.gc = 0;
+  s.runBaseEarned = s.totalEarned;
+  s.runStartPlaytime = s.playtime;
   s.sweepInterval = sweepIntervalFor(s);
   s.sweepTimer = s.sweepInterval;
   log(s, `fork(): new instance spawned — lineage ×${lineageMult(s).toNumber().toFixed(1)}`);
