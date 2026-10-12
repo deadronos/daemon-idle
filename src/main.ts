@@ -106,6 +106,11 @@ const el = {
   milestonePanel: $("milestonePanel"),
   buyMaxWrap: $("buyMaxWrap"),
   buyMaxToggle: $<HTMLInputElement>("buyMaxToggle"),
+  autoWrap: $("autoWrap"),
+  autoNiceToggle: $<HTMLInputElement>("autoNiceToggle"),
+  autoMallocToggle: $<HTMLInputElement>("autoMallocToggle"),
+  autoFreeToggle: $<HTMLInputElement>("autoFreeToggle"),
+  freeThresholdInput: $<HTMLInputElement>("freeThresholdInput"),
   log: $("log"),
 };
 
@@ -142,6 +147,23 @@ const spawnButtons: ActionButton[] = TIERS.map((tier, i) => {
 
 el.buyMaxToggle.addEventListener("change", () => {
   state.buyMax = el.buyMaxToggle.checked;
+  render(true);
+});
+
+el.autoNiceToggle.addEventListener("change", () => {
+  state.autoNice = el.autoNiceToggle.checked;
+  render(true);
+});
+el.autoMallocToggle.addEventListener("change", () => {
+  state.autoMalloc = el.autoMallocToggle.checked;
+  render(true);
+});
+el.autoFreeToggle.addEventListener("change", () => {
+  state.autoFree = el.autoFreeToggle.checked;
+  render(true);
+});
+el.freeThresholdInput.addEventListener("change", () => {
+  state.freeThreshold = Math.max(0, Math.floor(Number(el.freeThresholdInput.value) || 0));
   render(true);
 });
 
@@ -263,6 +285,11 @@ function render(force = false): void {
   // action buttons
   el.buyMaxWrap.hidden = !hasUnlock(state, UNLOCK.buyMax);
   el.buyMaxToggle.checked = state.buyMax;
+  el.autoWrap.hidden = !hasUnlock(state, UNLOCK.autoNice);
+  el.autoNiceToggle.checked = state.autoNice;
+  el.autoMallocToggle.checked = state.autoMalloc;
+  el.autoFreeToggle.checked = state.autoFree;
+  el.freeThresholdInput.value = String(state.freeThreshold);
   const maxOn = state.buyMax && hasUnlock(state, UNLOCK.buyMax);
   for (let i = 0; i < spawnButtons.length; i++) {
     const b = spawnButtons[i];

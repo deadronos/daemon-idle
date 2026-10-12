@@ -413,3 +413,29 @@ button.act .cost.ok {
 .toggle[hidden] {
   display: none;
 }
+
+/* automation group */
+.automation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin: 0 0 8px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.automation label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.automation input[type="number"] {
+  width: 56px;
+}
+
+.automation[hidden] {
+  display: none;
+}
