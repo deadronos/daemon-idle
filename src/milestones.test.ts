@@ -126,3 +126,13 @@ describe("orderedMilestones", () => {
     expect(idx(done, "grown-up")).toBeLessThan(idx(done, "first-blood"));
   });
 });
+
+describe("hands-off milestone", () => {
+  it("fires at forks >= 1 and grants all three automation ids", () => {
+    const s = base({ forks: 1 });
+    expect(evaluateMilestones(s)).toContain("hands-off");
+    expect(s.unlocks["auto-nice"]).toBe(true);
+    expect(s.unlocks["auto-malloc"]).toBe(true);
+    expect(s.unlocks["auto-free"]).toBe(true);
+  });
+});

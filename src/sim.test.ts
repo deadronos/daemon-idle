@@ -1325,3 +1325,16 @@ describe("runAutomation", () => {
     expect(s.cycles.gte(0)).toBe(true);
   });
 });
+
+describe("auto-free boundary", () => {
+  it("fires on any leak when the threshold is 0", () => {
+    const s = newGame();
+    s.ramCap = 100;
+    s.unlocks = { [UNLOCK.autoFree]: true };
+    s.autoFree = true;
+    s.freeThreshold = 0;
+    s.leak = 0.001;
+    tick(s, 0);
+    expect(s.leak).toBe(0);
+  });
+});

@@ -289,7 +289,10 @@ function render(force = false): void {
   el.autoNiceToggle.checked = state.autoNice;
   el.autoMallocToggle.checked = state.autoMalloc;
   el.autoFreeToggle.checked = state.autoFree;
-  el.freeThresholdInput.value = String(state.freeThreshold);
+  // don't clobber a field the user is typing into (change fires on blur/Enter only)
+  if (document.activeElement !== el.freeThresholdInput) {
+    el.freeThresholdInput.value = String(state.freeThreshold);
+  }
   const maxOn = state.buyMax && hasUnlock(state, UNLOCK.buyMax);
   for (let i = 0; i < spawnButtons.length; i++) {
     const b = spawnButtons[i];
