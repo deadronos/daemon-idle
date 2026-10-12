@@ -8,6 +8,7 @@
 import { d, Decimal } from "./bignum";
 import { PERKS } from "./config/perks";
 import { MILESTONES } from "./config/milestones";
+import { ACHIEVEMENTS } from "./config/achievements";
 import { fmt, fmtTime } from "./format";
 import {
   type GameState,
@@ -104,6 +105,19 @@ export function sanitizeMilestones(raw: unknown): Record<string, true> {
 }
 
 /**
+ * Achievements that have fired: keep only ids present in `ACHIEVEMENTS` whose value is
+ * truthy; a non-object (or array) yields `{}`. Rebuilt from the roster, so stale ids never
+ * survive.
+ */
+export function sanitizeAchievements(raw: unknown): Record<string, true> {
+  const out: Record<string, true> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  const rec = raw as Record<string, unknown>;
+  for (const a of ACHIEVEMENTS) if (rec[a.id]) out[a.id] = true;
+  return out;
+}
+
+/**
  * Unlock ids: keep string keys with a truthy value, capped at `MAX_UNLOCKS`. Open-ended on
  * purpose (later issues add ids), so this is deliberately NOT restricted to the current
  * `UNLOCK` registry.
@@ -181,6 +195,7 @@ export function decode(raw: string): GameState {
   s.perks = sanitizePerks(parsed.perks);
   s.lineage = coerceCount(parsed.lineage);
   s.milestonesDone = sanitizeMilestones(parsed.milestonesDone);
+  s.achievementsDone = sanitizeAchievements(parsed.achievementsDone);
   s.unlocks = sanitizeUnlocks(parsed.unlocks);
   s.buyMax = Boolean(parsed.buyMax);
   s.autoNice = Boolean(parsed.autoNice);
@@ -204,6 +219,8 @@ export function decode(raw: string): GameState {
   // from < 4: `buyMax` is additive too — newGame() defaults it to false.
   // from < 5: the automation toggles + `freeThreshold` are additive as well.
   // from < 6: `offlineCap` is additive too — newGame() defaults it to 0.
+  // from < 7: `achievementsDone` is additive too — newGame() defaults it to {} and the
+  // roster rebuilds it in `sanitizeAchievements`.
   s.saveVersion = SAVE_VERSION;
   s.log = Array.isArray(s.log) ? s.log.map(String) : [];
   s.sacrificeOrder = sanitizeSacrificeOrder(s.sacrificeOrder);

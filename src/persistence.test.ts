@@ -9,9 +9,11 @@ import {
   sanitizePerks,
   sanitizeMilestones,
   sanitizeUnlocks,
+  sanitizeAchievements,
 } from "./persistence";
 import { BASE, BASE_OFFLINE_CAP_S, SAVE_VERSION, newGame, tick } from "./sim";
 import { UNLOCK } from "./milestones";
+import { ACHIEVEMENTS } from "./achievements";
 
 describe("decode — save hardening", () => {
   it("round-trips a healthy save", () => {
@@ -372,6 +374,13 @@ describe("applyOffline cap and equivalence", () => {
       s.unlocks[UNLOCK.legacyRespawn] = true; // auto-respawn, so crashes are transient
       s.counts = [0, 0, 0, 0, 4]; // children income dominates the small legacy share
       s.legacy = [{ name: "legacy-1", rate: d(100), crashed: false, respawn: 0 }];
+      // Earn the whole roster up front on both runs: achievements are live-only, so an
+      // empty record would let the live run compound a multiplier the offline one never
+      // earns. Holding the achievement layer equal isolates the offline equivalence.
+      s.achievementsDone = Object.fromEntries(ACHIEVEMENTS.map((a) => [a.id, true])) as Record<
+        string,
+        true
+      >;
     }
     const N = 3600;
     for (let t = 0; t < N; t++) tick(online, 1);
@@ -428,5 +437,30 @@ describe("applyOffline cap reach", () => {
     const before = s.playtime;
     applyOffline(s, 120); // 2 min, well under the 8h base cap
     expect(s.playtime - before).toBeCloseTo(120, 0);
+  });
+});
+
+describe("achievements persistence", () => {
+  it("round-trips earned achievements", () => {
+    const s = newGame();
+    s.achievementsDone["first-earnings"] = true;
+    expect(decode(encode(s)).achievementsDone["first-earnings"]).toBe(true);
+  });
+
+  it("sanitizeAchievements keeps roster ids with truthy values and drops the rest", () => {
+    expect(sanitizeAchievements({ "first-earnings": true, bogus: true })).toEqual({
+      "first-earnings": true,
+    });
+    expect(sanitizeAchievements({ "first-earnings": false })).toEqual({});
+    expect(sanitizeAchievements(null)).toEqual({});
+    expect(sanitizeAchievements([])).toEqual({});
+    expect(sanitizeAchievements("nope")).toEqual({});
+  });
+
+  it("loads a pre-v7 save with an empty record and stamps version 7", () => {
+    const s = decode('{"saveVersion":6}');
+    expect(s.achievementsDone).toEqual({});
+    expect(s.saveVersion).toBe(7);
+    expect(SAVE_VERSION).toBe(7);
   });
 });
