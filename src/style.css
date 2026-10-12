@@ -396,3 +396,15 @@ button.act .cost.ok {
 .milestone.done {
   opacity: 0.55;
 }
+
+/* buy-max toggle */
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-size: 12px;
+  opacity: 0.85;
+  cursor: pointer;
+  user-select: none;
+}

@@ -29,6 +29,7 @@ import {
   ramUsed,
   shieldCost,
   spawn,
+  spawnMax,
   sweepVictimMult,
   tick,
   tierCost,
@@ -103,6 +104,8 @@ const el = {
   legacyPanel: $("legacyPanel"),
   priorityPanel: $("priorityPanel"),
   milestonePanel: $("milestonePanel"),
+  buyMaxWrap: $("buyMaxWrap"),
+  buyMaxToggle: $<HTMLInputElement>("buyMaxToggle"),
   log: $("log"),
 };
 
@@ -123,7 +126,8 @@ const spawnButtons: ActionButton[] = TIERS.map((tier, i) => {
     `<span class="name">${tier.name} <small>${tier.desc}</small></span>` +
     `<span class="cost"></span>`;
   b.addEventListener("click", () => {
-    spawn(state, i);
+    if (state.buyMax && hasUnlock(state, UNLOCK.buyMax)) spawnMax(state, i);
+    else spawn(state, i);
     render(true);
   });
   el.spawnPanel.appendChild(b);
@@ -134,6 +138,11 @@ const spawnButtons: ActionButton[] = TIERS.map((tier, i) => {
     enabled: () => canSpawn(state, i),
     run: () => spawn(state, i),
   };
+});
+
+el.buyMaxToggle.addEventListener("change", () => {
+  state.buyMax = el.buyMaxToggle.checked;
+  render(true);
 });
 
 const upgradeButtons: ActionButton[] = [];
@@ -213,7 +222,6 @@ addUpgrade(
 // --- render ----------------------------------------------------------------
 
 let lastLogSig = "";
-
 function render(force = false): void {
   el.cycles.textContent = fmt(state.cycles);
   el.cps.textContent = fmt(cyclesPerSec(state));
@@ -253,13 +261,16 @@ function render(force = false): void {
   el.shieldText.textContent = String(state.shields);
 
   // action buttons
+  el.buyMaxWrap.hidden = !hasUnlock(state, UNLOCK.buyMax);
+  el.buyMaxToggle.checked = state.buyMax;
+  const maxOn = state.buyMax && hasUnlock(state, UNLOCK.buyMax);
   for (let i = 0; i < spawnButtons.length; i++) {
     const b = spawnButtons[i];
     const ok = b.enabled();
     const ramFull = ramUsed(state) + TIERS[i].ram > state.ramCap;
     b.el.disabled = !ok;
     const costEl = b.el.querySelector(".cost") as HTMLElement;
-    costEl.textContent = `${state.counts[i]}  ·  ${fmt(b.cost())}${ramFull ? "  ⚠ ram" : ""}`;
+    costEl.textContent = `${state.counts[i]}  ·  ${fmt(b.cost())}${maxOn ? "  ×max" : ""}${ramFull ? "  ⚠ ram" : ""}`;
     costEl.classList.toggle("ok", ok);
   }
 
