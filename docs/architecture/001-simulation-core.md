@@ -20,6 +20,10 @@ cosmetics, which use `Math.random`).
 | `shields`        | number         | SIGTERM charges; each absorbs one sweep victim. |
 | `gc`             | number         | Upgrade level of automatic leak flushing.       |
 | `forks`          | number         | Prestige count; drives the lineage multiplier.  |
+| `lineage`        | number         | Unspent lineage points for the perk tree.        |
+| `perks`          | Record<PerkId, number> | Purchased perk level per node id (absent = 0). |
+| `runBaseEarned`  | Decimal        | `totalEarned` at the last fork (depth base).     |
+| `runStartPlaytime` | number       | `playtime` at the last fork (depth base).        |
 | `sweepTimer`     | number         | Seconds until the next cleanup sweep.           |
 | `sweepInterval`  | number         | Seconds between sweeps; derived each tick.      |
 | `sweepsSurvived` | number         | Sweeps run so far; raises severity.             |
@@ -38,10 +42,10 @@ with a boot line. `BASE` holds the tunable constants shared across the file.
 
 ### Numeric types
 
-Unbounded values (`cycles`, `totalEarned`, tier/upgrade costs, child output, legacy rates,
-the lineage multiplier, the survival multiplier) are `Decimal` from `src/bignum.ts`. Bounded
-values (`counts`, `ramCap`, `leak`, `heat`, `cooling`, `nice`, `shields`, `gc`, timers,
-`playtime`) stay plain `number`.
+Unbounded values (`cycles`, `totalEarned`, `runBaseEarned`, tier/upgrade costs, child output,
+legacy rates, the lineage multiplier, the survival multiplier) are `Decimal` from
+`src/bignum.ts`. Bounded values (`counts`, `ramCap`, `leak`, `heat`, `cooling`, `nice`,
+`shields`, `gc`, `lineage`, perk levels, timers, `playtime`) stay plain `number`.
 See [ADR 0003](../decisions/0003-bignum-break-eternity.md).
 
 ## Tiers
@@ -73,8 +77,10 @@ wins. (Output is linear in count; the exponential growth comes from the global
 
 ```
 survivalMult     = (1 + SURVIVAL_BONUS)^sweepsSurvived     // SURVIVAL_BONUS = 0.05
-baseCyclesPerSec = childOutput * survivalMult + BASE.rootOutput
-rawCyclesPerSec  = baseCyclesPerSec * lineageMult
+baseCyclesPerSec = childOutput * survivalMult + BASE.rootOutput        // perk-free (legacy snapshot)
+perkedBase       = childOutput * survivalMult * incomeMult
+                 + BASE.rootOutput * incomeMult * rootMult             // growth perks
+rawCyclesPerSec  = perkedBase * lineageMult
 cyclesPerSec     = rawCyclesPerSec * heatMult
 childOutput      = Σ counts[i] * baseOutput[i] * synergyMult(i)
 synergyMult(i)   = Π (1 + pct * counts[from])  for each SYNERGY link targeting i
@@ -96,6 +102,10 @@ heatMult         = 1 - MAX_THROTTLE * clamp((heat - HEAT_THROTTLE_AT) / (100 - H
   [doc 004](./004-prestige-and-legacy.md)), so applying lineage here too would double-count
   it; the snapshot therefore inherits the compounded `survivalMult` at fork time.
 - `lineageMult = 1 + forks * 0.1` multiplies _all_ income (children, root, legacy).
+- **Prestige perks** (see [doc 009](./009-prestige-perk-tree.md)) apply inside `perkedBase`:
+  `incomeMult` scales children and root, `rootMult` the root term only. They are applied in
+  `perkedBase`, **not** in `baseCyclesPerSec`, so the legacy-rate snapshot stays perk-free;
+  legacy daemons receive only the `legacyRateMult` perk (doc 004).
 - `heatMult` throttles children + root income only, and only above `HEAT_THROTTLE_AT = 60`
   (see [Heat](#heat)). Legacy daemons are entirely unaffected by heat: their per-tick income
   is not part of `cyclesPerSec`, and their fork-time rate is seeded from the unthrottled,
@@ -125,8 +135,9 @@ childRam = Σ counts[i] * ram[i]
 ramUsed  = childRam + leak
 ```
 
-A spawn is allowed only if `cycles >= cost` **and** `ramUsed + ram[i] <= ramCap`.
-`malloc(+1)` raises `ramCap` by `MALLOC_STEP = 16`.
+A spawn is allowed only if `cycles >= cost` **and** `ramUsed + ram[i] <= ramCapTotal`,
+where `ramCapTotal = ramCap + perkMods.ramCapAdd` (the `oomguard` perk bonus). `malloc(+1)`
+raises the stored `ramCap` by `MALLOC_STEP = 16`.
 
 ## The leak
 
@@ -160,7 +171,7 @@ A second pressure axis alongside RAM: children run hot, and heat throttles incom
 saturation. `tick` integrates the exponential exactly, so it is correct for any `dt`:
 
 ```
-eq    = heatEquilibrium(s) = childRam * HEAT_PER_RAM / (HEAT_DECAY_RATE * (1 + cooling * 0.5))
+eq    = heatEquilibrium(s) = childRam * HEAT_PER_RAM / (HEAT_DECAY_RATE * (1 + cooling * 0.5)) * heatGenMult
 rate  = HEAT_DECAY_RATE * (1 + cooling * 0.5)   // HEAT_DECAY_RATE = 0.02 /s
 heat  = eq + (heat - eq) * exp(-rate * dt)
 heat  = clamp(heat, 0, 100)
@@ -179,7 +190,8 @@ income. Legacy daemons are exempt on both counts: their per-tick income ignores 
 and `doFork` seeds a new legacy daemon's rate from the unthrottled, lineage-free
 `baseCyclesPerSec`, so a throttled board does not permanently cripple the daemons it forks
 off. `cooling` is the counter-upgrade: each level both sheds heat 50% faster **and lowers the
-equilibrium**, buying back headroom for a bigger footprint.
+equilibrium**, buying back headroom for a bigger footprint. The `heatsink` perk (doc 009)
+lowers the equilibrium by a further `heatGenMult` factor.
 
 ## Tick order (`tick(s, dt, opts)`)
 
@@ -195,9 +207,9 @@ Order matters — later steps observe the effects of earlier ones.
    [doc 008](./008-sweep-directives.md)), then decrement `s.sweepTimer`; when ≤ 0, run a
    sweep (resolve the stored `nextDirective`, then redraw it from the unlocked pool) and
    reset the timer to the escalated interval.
-7. Memory-pressure check: if `ramUsed > 0.9 * ramCap` and not already warned, log once;
-   clear the latch below `0.8 * ramCap`.
-8. If `ramUsed > ramCap * OOM_TOLERANCE`, run the OOM killer.
+7. Memory-pressure check: if `ramUsed > 0.9 * ramCapTotal` and not already warned, log once;
+   clear the latch below `0.8 * ramCapTotal`.
+8. If `ramUsed > ramCapTotal * OOM_TOLERANCE`, run the OOM killer.
 
 `tick(s, dt, { offline: true })` is the offline catch-up path (see
 [doc 003](./003-persistence.md)): it runs steps 1–5 only, so an idle gap still earns
@@ -232,9 +244,9 @@ roster, selection/escalation rules, and the seeded draw are in
 
 ## OOM killer (`runOom`)
 
-Fires when `ramUsed > ramCap * OOM_TOLERANCE` (`OOM_TOLERANCE = 1.02`), i.e. RAM may exceed
-the ceiling by up to **2%** before the killer reaps. This grace means a bar filled exactly to
-the cap survives the first leak increment. Kills children from the **highest `baseOutput`
+Fires when `ramUsed > ramCapTotal * OOM_TOLERANCE` (`OOM_TOLERANCE = 1.02`), i.e. RAM may
+exceed the ceiling by up to **2%** before the killer reaps. This grace means a bar filled
+exactly to the cap survives the first leak increment. Kills children from the **highest `baseOutput`
 tier downward** until under the cap — i.e. it destroys your most valuable processes first.
 If the leak alone is still over the cap, it is reclaimed. Then `cycles *= 0.9` and
 `oomCount++`. Because the drain recovers to the cap, the killer only re-arms once the leak
@@ -250,7 +262,7 @@ re-crosses `+2%`, so the `*0.9` penalty no longer compounds tick-over-tick.
 | `cooling(+1)`     | `1000 * 2.5^n`              | Heat sheds faster and its equilibrium drops. |
 | `free()`          | 0                           | Zero the leak.                               |
 | `SIGTERM handler` | `500 * 2^shields`           | +1 charge; each absorbs one sweep victim.    |
-| `fork()`          | `1e6 * 10^forks`            | Prestige — see doc 004.                      |
+| `fork()`          | `1e6 * 10^forks * forkCostMult` | Prestige — see doc 004.                  |
 
 `malloc` is the real gate to the upper tiers: its `1.6` growth and `+16 MB` step let RAM
 scale fast enough to reach the cron daemon within a session, instead of leaving it
@@ -258,6 +270,16 @@ unreachable under the old `1.85` / `+8`.
 
 The sweep now has more pressure axes (directives, sacrifice order, shields, heat throttling,
 cross-tier synergy), so `nice` and `malloc` grow slightly slower to keep the early game playable.
+
+## Prestige perks
+
+The permanent perk tree (see [doc 009](./009-prestige-perk-tree.md)) folds into one pure
+aggregate, `perkMods(s)`, which the formulas above read in place: `incomeMult`/`rootMult`
+(income), `tierCostMult` (`tierCost`), `ramCapAdd` (`ramCapTotal`), `niceAdd` (added to
+`s.nice` inside `sweepVictimMult`), `heatGenMult` (`heatEquilibrium`), `forkCostMult`
+(`forkCost`, floored), `pointsMult` and `legacyRateMult` (`doFork`). `buyPerk` spends lineage;
+`canBuyPerk` gates on prerequisite, level cap, and affordability. `baseCyclesPerSec` stays
+perk-free so the legacy snapshot is clean.
 
 ## Invariants
 
