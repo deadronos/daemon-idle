@@ -13,15 +13,16 @@ import {
   type GameState,
   type LegacyDaemon,
   BASE,
+  OFFLINE_MAX_STEPS,
   SAVE_VERSION,
   TIERS,
   log,
   newGame,
+  offlineCapS,
   sanitizeSacrificeOrder,
   tick,
 } from "./sim";
 
-export const OFFLINE_CAP_S = 8 * 3600;
 const OFFLINE_MIN_S = 5;
 
 /** A finite number, else `fallback`. Rejects strings, `NaN`, and `±Infinity`. */
@@ -210,29 +211,30 @@ export function decode(raw: string): GameState {
   return s;
 }
 
-/** Simulate an offline gap in 1-second steps, then log the cycles gained. */
+/** Simulate an offline gap in 1-second steps, capped at the upgraded `offlineCapS(s)`. */
 export function applyOffline(s: GameState, seconds: number): void {
   const before = s.cycles;
-  let remaining = seconds;
-  while (remaining > 0) {
+  let remaining = Math.min(seconds, offlineCapS(s));
+  let budget = OFFLINE_MAX_STEPS;
+  while (remaining > 0 && budget-- > 0) {
     const dt = Math.min(1, remaining);
-    tick(s, dt, { offline: true });
+    tick(s, dt, { offline: true }); // non-punishing semantics: no sweep, no OOM
     remaining -= dt;
   }
   log(s, `offline ${fmtTime(seconds)}: +${fmt(s.cycles.sub(before))} cycles`);
 }
 
 /**
- * Decode a raw save and apply offline progress for the elapsed gap (capped at
- * `OFFLINE_CAP_S`, skipped below `OFFLINE_MIN_S`), then stamp `lastSave = now` so a
- * crash before the next save cannot re-apply the same window.
+ * Decode a raw save and apply offline progress for the elapsed gap (capped by
+ * `applyOffline` at `offlineCapS(s)`, skipped below `OFFLINE_MIN_S`), then stamp
+ * `lastSave = now` so a crash before the next save cannot re-apply the same window.
  */
 export function loadFrom(raw: string, now: number): GameState {
   const s = decode(raw);
   // A real timestamp is always positive; a missing, invalid, or non-positive stamp
   // falls back to `now` (no gap).
   const last = Number.isFinite(s.lastSave) && s.lastSave > 0 ? s.lastSave : now;
-  const elapsed = Math.min(OFFLINE_CAP_S, (now - last) / 1000);
+  const elapsed = (now - last) / 1000;
   if (elapsed > OFFLINE_MIN_S) applyOffline(s, elapsed);
   s.lastSave = now;
   return s;
