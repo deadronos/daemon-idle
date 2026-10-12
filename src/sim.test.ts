@@ -1004,6 +1004,16 @@ describe("prestige", () => {
     expect(s.shields).toBe(0);
     expect(s.counts).toEqual([0, 0, 0, 0, 0]);
   });
+
+  it("resets sweepInterval (not just sweepTimer) on fork", () => {
+    const s = newGame();
+    s.totalEarned = d(1e9);
+    s.sweepsSurvived = 60; // escalated cadence: sweepIntervalFor is the 10s floor
+    expect(doFork(s)).toBe(true);
+    expect(s.sweepInterval).toBeCloseTo(sweepIntervalFor(s), 5);
+    expect(s.sweepInterval).toBeCloseTo(10, 5);
+    expect(s.sweepTimer).toBeCloseTo(s.sweepInterval, 5);
+  });
 });
 
 // --- legacy daemons --------------------------------------------------------

@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vite-plus/test";
-import { MAX_SANE_COUNT, OFFLINE_CAP_S, applyOffline, decode, encode, loadFrom } from "./persistence";
-import { BASE, newGame } from "./sim";
+import { d } from "./bignum";
+import {
+  MAX_SANE_COUNT,
+  OFFLINE_CAP_S,
+  applyOffline,
+  decode,
+  encode,
+  loadFrom,
+} from "./persistence";
+import { BASE, SAVE_VERSION, newGame, tick } from "./sim";
 
 describe("decode — save hardening", () => {
   it("round-trips a healthy save", () => {
@@ -44,6 +52,19 @@ describe("decode — save hardening", () => {
     expect(s.counts[0]).toBe(MAX_SANE_COUNT);
   });
 
+  it("caps a huge sweepsSurvived to MAX_SANE_COUNT", () => {
+    expect(decode('{"sweepsSurvived":1e15}').sweepsSurvived).toBe(MAX_SANE_COUNT);
+  });
+
+  it("treats a non-object JSON value as an empty save (never throws)", () => {
+    for (const raw of ["null", "42", '"nope"', "true"]) {
+      expect(() => decode(raw)).not.toThrow();
+      const s = decode(raw);
+      expect(s.counts).toEqual([0, 0, 0, 0, 0]);
+      expect(s.saveVersion).toBe(SAVE_VERSION);
+    }
+  });
+
   it("drops a null legacy entry and rejects a NaN rate", () => {
     const s = decode('{"legacy":[null,{"name":"x","rate":"NaN"}]}');
     expect(s.legacy).toHaveLength(1);
@@ -72,6 +93,41 @@ describe("decode — save hardening", () => {
       ...s.counts,
     ];
     for (const n of numbers) expect(Number.isFinite(n)).toBe(true);
+  });
+});
+
+describe("save versioning", () => {
+  it("stamps a fresh game at SAVE_VERSION and round-trips it", () => {
+    expect(newGame().saveVersion).toBe(SAVE_VERSION);
+    expect(decode(encode(newGame())).saveVersion).toBe(SAVE_VERSION);
+  });
+
+  it("migrates a version-less save's legacy rates by dividing out the baked lineage", () => {
+    // Old `doFork` snapshotted `rawCyclesPerSec`, so the k-th daemon's rate carried a
+    // `1 + k*0.1` factor that `tick` now applies again. decode() must undo it.
+    const raw = JSON.stringify({
+      legacy: [
+        { name: "legacy-1", rate: "22", crashed: false, respawn: 0 },
+        { name: "legacy-2", rate: "33", crashed: false, respawn: 0 },
+        { name: "legacy-3", rate: "44", crashed: false, respawn: 0 },
+      ],
+    });
+    const s = decode(raw);
+    expect(s.saveVersion).toBe(SAVE_VERSION);
+    expect(s.legacy[0].rate.toNumber()).toBeCloseTo(22 / 1, 5);
+    expect(s.legacy[1].rate.toNumber()).toBeCloseTo(33 / 1.1, 5);
+    expect(s.legacy[2].rate.toNumber()).toBeCloseTo(44 / 1.2, 5);
+  });
+
+  it("leaves a SAVE_VERSION save's legacy rates untouched", () => {
+    const g = newGame();
+    g.legacy = [
+      { name: "legacy-1", rate: d(22), crashed: false, respawn: 0 },
+      { name: "legacy-2", rate: d(33), crashed: false, respawn: 0 },
+    ];
+    const s = decode(encode(g));
+    expect(s.legacy[0].rate.toNumber()).toBeCloseTo(22, 5);
+    expect(s.legacy[1].rate.toNumber()).toBeCloseTo(33, 5);
   });
 });
 
@@ -133,5 +189,18 @@ describe("offline progress", () => {
     applyOffline(s, 10);
     expect(s.oomCount).toBe(0);
     expect(s.counts[4]).toBe(10);
+  });
+
+  it("bounds the offline leak at the RAM cap so returning does not wipe the board", () => {
+    const s = newGame();
+    s.counts = [0, 5, 0, 0, 0]; // 10 MB leak-prone footprint
+    s.ramCap = 1000;
+    s.gc = 0; // no auto-flush: the leak would grow without bound if offline let it
+    applyOffline(s, 8 * 3600);
+    expect(s.leak).toBeLessThanOrEqual(s.ramCap);
+    expect(s.leak).toBeCloseTo(s.ramCap, 5); // it did reach the cap
+    tick(s, 0.01); // first live tick must not OOM the board away
+    expect(s.oomCount).toBe(0);
+    expect(s.counts).toEqual([0, 5, 0, 0, 0]);
   });
 });

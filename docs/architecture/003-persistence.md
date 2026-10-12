@@ -12,7 +12,9 @@ is unit-testable in node). `src/main.ts` keeps only the `localStorage` plumbing:
   (`cycles`, `totalEarned`, and each legacy `rate`) are serialized as strings; `decode()`
   coerces them back with `d(...)`. Older saves that stored raw numbers still load.
 - Bump the key's suffix (`-v2`, …) only if the shape changes incompatibly; prefer the
-  additive guards below so existing saves keep working.
+  additive guards below so existing saves keep working. For _field semantics_ that change
+  meaning (not just shape), bump `GameState.saveVersion` and migrate in `decode` instead
+  (see [Save versioning](#save-versioning)).
 
 ## When it saves
 
@@ -30,8 +32,13 @@ Every save stamps `state.lastSave = Date.now()` first.
 
 1. No saved value → `newGame()`.
 2. Parse and shallow-merge over `newGame()`: `{ ...newGame(), ...parsed }`. Missing fields
-   are therefore filled with fresh defaults — additive state changes are safe.
-3. **Coercion (harden):** `decode()` sanitizes every field before it reaches the sim:
+   are therefore filled with fresh defaults — additive state changes are safe. A non-object
+   JSON value (`null`, `42`, `"x"`, `true`) is treated as `{}`, so it decodes to a fresh
+   game instead of throwing.
+3. **Version migration:** if the parsed `saveVersion` is missing or `< SAVE_VERSION`, the
+   migration chain runs (see [Save versioning](#save-versioning)) and the result is stamped
+   `saveVersion = SAVE_VERSION`.
+4. **Coercion (harden):** `decode()` sanitizes every field before it reaches the sim:
    - `cycles` / `totalEarned` / each legacy `rate` → `coerceDecimal` (finite number,
      numeric string, or `Decimal`; else the fallback). `d("abc")` is lenient and yields
      `0`; `NaN`/`Infinity` coerce to the fallback.
@@ -41,27 +48,47 @@ Every save stamps `state.lastSave = Date.now()` first.
      `"legacy"`, `rate`/`respawn` coerced.
    - `log` → mapped to strings if it is an array, else `[]`.
    - `sacrificeOrder` → `sanitizeSacrificeOrder` (valid permutation, else the default).
-4. **Numeric clamps (`sanitizeNumericState`):** every bounded field is made finite and
+5. **Numeric clamps (`sanitizeNumericState`):** every bounded field is made finite and
    in range.
 
-   | field | clamp |
-   | --- | --- |
-   | `ramCap` | `max(BASE.ramCap, …)` |
-   | `leak` | `max(0, …)` |
-   | `heat` | `[0, 100]` |
-   | `cooling`, `nice`, `shields`, `gc`, `forks`, `sweepsSurvived`, `oomCount` | `coerceCount` (non-negative integer) |
-   | `playtime` | `max(0, …)` |
-   | `sweepInterval` | `max(1, …)` — kills the `render()` ÷0 |
-   | `sweepTimer` | `[0, sweepInterval]` |
-   | `rngState` | `(finite \| 0) \|\| 1` (nonzero int32) |
-   | `ramWarned` | `Boolean(…)` |
-   | `lastSave` | finite, else `Date.now()` |
-   | `counts[i]` | `coerceCount`, capped at `MAX_SANE_COUNT` |
+   | field                                                   | clamp                                     |
+   | ------------------------------------------------------- | ----------------------------------------- |
+   | `ramCap`                                                | `max(BASE.ramCap, …)`                     |
+   | `leak`                                                  | `max(0, …)`                               |
+   | `heat`                                                  | `[0, 100]`                                |
+   | `cooling`, `nice`, `shields`, `gc`, `forks`, `oomCount` | `coerceCount` (non-negative integer)      |
+   | `sweepsSurvived`                                        | `coerceCount`, capped at `MAX_SANE_COUNT` |
+   | `playtime`                                              | `max(0, …)`                               |
+   | `sweepInterval`                                         | `max(1, …)` — kills the `render()` ÷0     |
+   | `sweepTimer`                                            | `[0, sweepInterval]`                      |
+   | `rngState`                                              | `(finite \| 0) \|\| 1` (nonzero int32)    |
+   | `ramWarned`                                             | `Boolean(…)`                              |
+   | `lastSave`                                              | finite, else `Date.now()`                 |
+   | `counts[i]`                                             | `coerceCount`, capped at `MAX_SANE_COUNT` |
 
-5. If more than `OFFLINE_MIN_S = 5` seconds elapsed since `lastSave`, apply offline
+6. If more than `OFFLINE_MIN_S = 5` seconds elapsed since `lastSave`, apply offline
    progress (capped at `OFFLINE_CAP_S`), then **stamp `lastSave = now`** so a crash before
    the next save cannot re-apply the same window.
-6. Any parse error → `newGame()` (fail closed to a clean game, never a crash).
+7. Any parse error → `newGame()` (fail closed to a clean game, never a crash).
+
+## Save versioning
+
+`GameState.saveVersion` records the semantics of the persisted fields; `newGame()` stamps
+it at `SAVE_VERSION = 2`. `encode()` spreads the field, so it round-trips. On load,
+`decode()` compares the parsed value against `SAVE_VERSION` and, when it is missing or
+older, applies the migration chain to the coerced `legacy` array before the numeric clamps.
+
+| from              | to  | migration                                                                    |
+| ----------------- | --- | ---------------------------------------------------------------------------- |
+| (missing) / `< 2` | 2   | For each legacy daemon at array index `k`, divide its `rate` by `1 + k*0.1`. |
+
+**Why v2:** the old `doFork` snapshotted a new daemon's rate from `rawCyclesPerSec`, which
+already included the lineage multiplier `1 + forks*0.1` — so the `k`-th daemon's rate had
+`1 + k*0.1` baked in. `tick` now applies lineage once more, double-counting it. v2 stores
+lineage-free rates; the migration divides the baked factor back out of pre-v2 saves so
+their legacy income matches a fresh fork's.
+
+The chain is append-only: to migrate further, add the next step and bump `SAVE_VERSION`.
 
 ## Offline progress
 
@@ -74,6 +101,12 @@ leak + `gc` drain, and legacy crashes, but skip the cleanup sweep and the memory
 latch + OOM killer (tick-order steps 6–8, see [doc 001](./001-simulation-core.md)). So
 idling is never punished — the process table is never reaped and RAM pressure never fires —
 and, because `heatMult ≥ 0.5` and the root always produces, cycles are strictly monotonic.
+
+Because the offline path skips the OOM killer, it also **clamps the leak to `ramCap`**
+after the leak/`gc` step (`s.leak = Math.min(s.leak, s.ramCap)`). Without that bound, hours
+away with `gc = 0` would grow the leak without limit and the first live tick would
+immediately OOM the board — contradicting "idling is never punished". The clamp means a
+returning player is at worst at the RAM ceiling, never arbitrarily past it.
 
 `loadFrom` computes the elapsed window from `lastSave`, calls `applyOffline` when the gap
 exceeds `OFFLINE_MIN_S`, and then sets `s.lastSave = now`. That stamp is what makes the
@@ -92,5 +125,6 @@ in-range value so a corrupt save can never divide by zero, soft-lock the OOM kil
 
 ## Known limitations
 
-- No export/import, no versioned migration beyond the additive merge.
+- No export/import. Migrations are code-only (see [Save versioning](#save-versioning));
+  there is no data-driven or plugin migration registry.
 - `localStorage` can throw (private mode, quota); `save()` swallows the error.

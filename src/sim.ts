@@ -147,7 +147,16 @@ export interface GameState {
   log: string[];
   playtime: number;
   lastSave: number;
+  /** Save format version; bumped when `decode` must migrate legacy fields. */
+  saveVersion: number;
 }
+
+/**
+ * Current save format. Version 2 fixed `doFork` to snapshot legacy rates from the
+ * lineage-free `baseCyclesPerSec`; saves below it still have lineage baked into their
+ * legacy `rate`s and must be migrated in `decode` (see `src/persistence.ts`).
+ */
+export const SAVE_VERSION = 2;
 
 export const BASE = {
   ramCap: 8,
@@ -191,6 +200,7 @@ export function newGame(): GameState {
     log: ["boot: daemon pid 1 started (unattended)"],
     playtime: 0,
     lastSave: Date.now(),
+    saveVersion: SAVE_VERSION,
   };
 }
 
@@ -608,7 +618,8 @@ export function doFork(s: GameState): boolean {
   s.shields = 0;
   s.nice = 0;
   s.gc = 0;
-  s.sweepTimer = sweepIntervalFor(s);
+  s.sweepInterval = sweepIntervalFor(s);
+  s.sweepTimer = s.sweepInterval;
   log(s, `fork(): new instance spawned — lineage ×${lineageMult(s).toNumber().toFixed(1)}`);
   return true;
 }
@@ -650,6 +661,10 @@ export function tick(s: GameState, dt: number, opts: TickOptions = {}): void {
     const standingFlush = s.leak * (1 - Math.pow(1 - standingRate, dt));
     s.leak = Math.max(0, s.leak - growthFlush - standingFlush);
   }
+
+  // Offline catch-up skips the OOM killer, so bound the leak here: otherwise hours away
+  // would grow it without limit and the first live tick would wipe the board.
+  if (opts.offline) s.leak = Math.min(s.leak, s.ramCap);
 
   // legacy daemons: produce, occasionally crash, maybe auto-respawn
   const mult = lineageMult(s);

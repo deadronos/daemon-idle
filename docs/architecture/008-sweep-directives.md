@@ -103,12 +103,14 @@ up to ~45 s at the escalation horizon — buying `nice` trades offence for caden
 function is deterministic (no `Math.random`) and monotone in `sweepsSurvived`.
 
 `tick` recomputes `s.sweepInterval = sweepIntervalFor(s)` every frame, just before it
-decrements `s.sweepTimer`; the post-sweep reset (`s.sweepTimer = s.sweepInterval`) then uses
-the freshly escalated value. The field is therefore a cache the render layer already reads:
+decrements `s.sweepTimer`. When the timer fires, `runSweep` increments `s.sweepsSurvived`,
+but the post-sweep reset (`s.sweepTimer = s.sweepInterval`) reuses the interval cached
+**before** that increment — so the reset cadence lags the sweep it just ran by one step and
+catches up on the next frame. The field is therefore a cache the render layer already reads:
 the countdown (`sweepTimer` / `sweepInterval`) previews the new cadence with **no render
-change**. `doFork` clears the working set, so it also resets `s.sweepTimer` to
-`sweepIntervalFor(s)` (not the raw `BASE.sweepInterval`) — the bar can never overshoot the
-escalated interval by a cycle.
+change**. `doFork` clears the working set, so it resets both `s.sweepInterval` and
+`s.sweepTimer` to `sweepIntervalFor(s)` (not the raw `BASE.sweepInterval`) — the bar can
+never overshoot the escalated interval by a cycle.
 
 ## Seeded draw (`nextRng`, `pickNextDirective`)
 

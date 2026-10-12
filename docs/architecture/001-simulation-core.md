@@ -31,6 +31,7 @@ cosmetics, which use `Math.random`).
 | `log`            | string[]       | Terminal feed, newest first, capped at 40.      |
 | `playtime`       | number         | Seconds simulated (includes offline).           |
 | `lastSave`       | number         | Epoch ms of last save; drives offline progress. |
+| `saveVersion`    | number         | Save format version; drives `decode` migration. |
 
 `newGame()` returns a fresh state with one child-tier array of zeros and the log seeded
 with a boot line. `BASE` holds the tunable constants shared across the file.

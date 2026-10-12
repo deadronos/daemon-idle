@@ -11,6 +11,7 @@ import {
   type GameState,
   type LegacyDaemon,
   BASE,
+  SAVE_VERSION,
   TIERS,
   log,
   newGame,
@@ -85,7 +86,7 @@ export function sanitizeNumericState(s: GameState): void {
   s.shields = coerceCount(s.shields);
   s.gc = coerceCount(s.gc);
   s.forks = coerceCount(s.forks);
-  s.sweepsSurvived = coerceCount(s.sweepsSurvived);
+  s.sweepsSurvived = Math.min(MAX_SANE_COUNT, coerceCount(s.sweepsSurvived));
   s.oomCount = coerceCount(s.oomCount);
   s.playtime = Math.max(0, coerceFinite(s.playtime, 0));
   s.sweepInterval = Math.max(1, coerceFinite(s.sweepInterval, BASE.sweepInterval));
@@ -111,14 +112,27 @@ export function encode(s: GameState): string {
 
 /**
  * Parse a save, merging over fresh defaults, then coerce every field. Throws only if
- * `raw` is not valid JSON (callers fail closed to `newGame()`).
+ * `raw` is not valid JSON (callers fail closed to `newGame()`). A non-object JSON value
+ * (`null`, a number, a string) decodes to a fresh game rather than throwing.
  */
 export function decode(raw: string): GameState {
-  const parsed = JSON.parse(raw) as Partial<GameState>;
+  const parsedRaw = JSON.parse(raw) as unknown;
+  const parsed = (
+    parsedRaw && typeof parsedRaw === "object" ? parsedRaw : {}
+  ) as Partial<GameState>;
   const s: GameState = { ...newGame(), ...parsed };
   s.cycles = coerceDecimal(parsed.cycles, d(0));
   s.totalEarned = coerceDecimal(parsed.totalEarned, d(0));
   s.legacy = sanitizeLegacy(parsed.legacy);
+  // Pre-versioning saves have lineage baked into each legacy `rate` (the old `doFork`
+  // snapshotted `rawCyclesPerSec`), and `tick` now applies lineage again — so divide the
+  // baked factor back out, keyed by the daemon's lineage index `k`.
+  if (coerceFinite(parsed.saveVersion, 0) < SAVE_VERSION) {
+    s.legacy.forEach((dm, k) => {
+      dm.rate = dm.rate.div(d(1 + k * 0.1));
+    });
+  }
+  s.saveVersion = SAVE_VERSION;
   s.log = Array.isArray(s.log) ? s.log.map(String) : [];
   s.sacrificeOrder = sanitizeSacrificeOrder(s.sacrificeOrder);
   sanitizeNumericState(s);
