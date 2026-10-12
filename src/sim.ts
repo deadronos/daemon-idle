@@ -7,6 +7,8 @@
 import { d, Decimal } from "./bignum";
 import { type PerkId } from "./config/perks";
 import { type MilestoneId } from "./config/milestones";
+import { type AchievementId } from "./config/achievements";
+import { achievementById, achievementMult, evaluateAchievements } from "./achievements";
 import {
   canBuyPerk,
   perkById,
@@ -165,6 +167,8 @@ export interface GameState {
   runStartPlaytime: number;
   /** Milestones that have fired (sticky). */
   milestonesDone: Record<MilestoneId, true>;
+  /** Achievements that have fired (sticky); each grants a small permanent income multiplier. */
+  achievementsDone: Record<AchievementId, true>;
   /** Unlock ids granted by milestones; features gate via `hasUnlock`. */
   unlocks: Record<string, true>;
   /** `buy max` toggle preference (is a bulk-buy capability unlocked). */
@@ -247,6 +251,7 @@ export function newGame(): GameState {
     runBaseEarned: d(0),
     runStartPlaytime: 0,
     milestonesDone: {},
+    achievementsDone: {},
     unlocks: {},
     buyMax: false,
     autoNice: false,
@@ -369,12 +374,12 @@ function perkedBaseCyclesPerSec(s: GameState): Decimal {
 }
 
 /**
- * Income before the heat throttle: `baseCyclesPerSec` scaled by the lineage multiplier.
- * Forked legacy daemon rates are based on `baseCyclesPerSec`, not this, so lineage is
- * not baked into the new daemon's output.
+ * Income before the heat throttle: `baseCyclesPerSec` scaled by the lineage and achievement
+ * multipliers. Both ride this same per-tick hook; forked legacy daemon rates are based on
+ * `baseCyclesPerSec`, not this, so neither is baked into the new daemon's output.
  */
 export function rawCyclesPerSec(s: GameState): Decimal {
-  return perkedBaseCyclesPerSec(s).mul(lineageMult(s));
+  return perkedBaseCyclesPerSec(s).mul(lineageMult(s)).mul(achievementMult(s));
 }
 
 export function cyclesPerSec(s: GameState): Decimal {
@@ -871,6 +876,12 @@ export function tick(s: GameState, dt: number, opts: TickOptions = {}): void {
   for (const id of evaluateMilestones(s)) {
     const def = milestoneById(id);
     if (def && def.unlocks.length > 0) log(s, `milestone: ${def.name} — unlocked`);
+  }
+
+  // achievements: micro-multipliers, evaluated once per live tick alongside milestones
+  for (const id of evaluateAchievements(s)) {
+    const def = achievementById(id);
+    if (def) log(s, `achievement: ${def.name} — +${Math.round(def.mult * 100)}% income`);
   }
 }
 

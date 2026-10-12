@@ -48,6 +48,7 @@ import {
   priorityOrder,
   ramCapTotal,
   ramUsed,
+  rawCyclesPerSec,
   sanitizeSacrificeOrder,
   shieldCost,
   spawn,
@@ -61,6 +62,7 @@ import {
   unlockedDirectives,
 } from "./sim";
 import { UNLOCK } from "./milestones";
+import { achievementById } from "./achievements";
 
 // --- bootstrap -------------------------------------------------------------
 
@@ -1529,5 +1531,52 @@ describe("nohup cap saturation", () => {
     s.offlineCap = 1000; // far beyond the budget
     expect(offlineCapS(s)).toBe(OFFLINE_MAX_STEPS);
     expect(buyOfflineCap(s)).toBe(false); // saturated: a purchase would buy nothing
+  });
+});
+
+describe("achievement income hook", () => {
+  it("scales live income by (1 + mult) per earned achievement", () => {
+    const s = newGame();
+    const def = achievementById("first-earnings")!;
+    const before = rawCyclesPerSec(s);
+    s.achievementsDone[def.id] = true;
+    expect(rawCyclesPerSec(s).toNumber()).toBeCloseTo(before.toNumber() * (1 + def.mult), 10);
+  });
+
+  it("leaves baseCyclesPerSec (the legacy snapshot source) achievement-free", () => {
+    const s = newGame();
+    const before = baseCyclesPerSec(s);
+    s.achievementsDone["first-earnings"] = true;
+    expect(baseCyclesPerSec(s).eq(before)).toBe(true);
+  });
+
+  it("does not bake achievements into a forked daemon's rate", () => {
+    const withA = newGame();
+    const without = newGame();
+    for (const s of [withA, without]) {
+      s.totalEarned = d(2e6);
+      s.ramCap = 1000;
+      s.counts = [0, 0, 0, 0, 10];
+    }
+    withA.achievementsDone["first-earnings"] = true;
+    expect(doFork(withA)).toBe(true);
+    expect(doFork(without)).toBe(true);
+    expect(withA.legacy[0].rate.eq(without.legacy[0].rate)).toBe(true);
+  });
+});
+
+describe("achievement tick evaluation", () => {
+  it("fires on a live tick", () => {
+    const s = newGame();
+    s.totalEarned = d(1e3);
+    tick(s, 0);
+    expect(s.achievementsDone["first-earnings"]).toBe(true);
+  });
+
+  it("grants none on an offline tick (live-only)", () => {
+    const s = newGame();
+    s.totalEarned = d(1e3);
+    tick(s, 0, { offline: true });
+    expect(s.achievementsDone["first-earnings"]).toBeUndefined();
   });
 });
