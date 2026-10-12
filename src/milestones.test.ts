@@ -4,6 +4,8 @@ import {
   MILESTONES,
   UNLOCK,
   METRICS,
+  evaluateMilestones,
+  hasUnlock,
   milestoneById,
   milestoneMet,
   milestoneProgress,
@@ -79,5 +81,30 @@ describe("milestoneMet / milestoneProgress", () => {
     const p = milestoneProgress(base({ totalEarned: d("1e1000") }), earn);
     expect(Number.isFinite(p)).toBe(true);
     expect(p).toBe(1);
+  });
+});
+
+describe("evaluateMilestones", () => {
+  it("fires a met milestone once, grants its unlocks, and is idempotent", () => {
+    const s = base({ sweepsSurvived: 1 });
+    expect(evaluateMilestones(s)).toEqual(["first-blood"]);
+    expect(s.milestonesDone["first-blood"]).toBe(true);
+    expect(s.unlocks.nice).toBe(true);
+    expect(evaluateMilestones(s)).toEqual([]); // already done
+  });
+
+  it("does not fire an unmet milestone", () => {
+    const s = base();
+    expect(evaluateMilestones(s)).toEqual([]);
+    expect(hasUnlock(s, "nice")).toBe(false);
+  });
+
+  it("stays fired when a non-monotonic metric later drops", () => {
+    const s = base({ sweepsSurvived: 1 });
+    evaluateMilestones(s);
+    s.sweepsSurvived = 0; // metric drops below the threshold
+    expect(evaluateMilestones(s)).toEqual([]);
+    expect(s.milestonesDone["first-blood"]).toBe(true);
+    expect(hasUnlock(s, "nice")).toBe(true);
   });
 });
