@@ -29,10 +29,6 @@ export function fmt(value: Num | number, digits = 2): string {
   return `${scaled.toFixed(digits)}${SUFFIXES[tier]}`;
 }
 
-export function fmtInt(value: Num | number): string {
-  return fmt(value, 0);
-}
-
 export function fmtRate(value: Num | number): string {
   return `${fmt(value)}/s`;
 }

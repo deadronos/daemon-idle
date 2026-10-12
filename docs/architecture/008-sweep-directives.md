@@ -13,7 +13,6 @@ described in [doc 001](./001-simulation-core.md).
 interface SweepDirective {
   id: DirectiveId;
   name: string; // shown on the countdown and in the sweep log line
-  flavor: string; // short description
   unlockAt: number; // minimum sweepsSurvived before it can be drawn
   ignoresNice: boolean; // when true, sweepVictimMult is not applied
   budget(s: GameState, totalChildren: number): number;
@@ -107,7 +106,9 @@ function is deterministic (no `Math.random`) and monotone in `sweepsSurvived`.
 decrements `s.sweepTimer`; the post-sweep reset (`s.sweepTimer = s.sweepInterval`) then uses
 the freshly escalated value. The field is therefore a cache the render layer already reads:
 the countdown (`sweepTimer` / `sweepInterval`) previews the new cadence with **no render
-change**.
+change**. `doFork` clears the working set, so it also resets `s.sweepTimer` to
+`sweepIntervalFor(s)` (not the raw `BASE.sweepInterval`) — the bar can never overshoot the
+escalated interval by a cycle.
 
 ## Seeded draw (`nextRng`, `pickNextDirective`)
 

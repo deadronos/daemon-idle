@@ -126,7 +126,10 @@ export interface GameState {
   leak: number;
   /** 0..100. Children generate it; it throttles income above HEAT_THROTTLE_AT. */
   heat: number;
-  /** Cooling upgrade level; each level sheds heat 50% faster. */
+  /**
+   * Cooling upgrade level; each level sheds heat 50% faster and lowers the heat
+   * equilibrium by the same `1 + cooling * 0.5` factor.
+   */
   cooling: number;
   nice: number;
   /** Sweep charges; each absorbs one victim before selection. */
@@ -277,8 +280,9 @@ export function baseCyclesPerSec(s: GameState): Decimal {
 }
 
 /**
- * Income before the heat throttle. Also the basis for forked legacy daemon rates,
- * which must not bake in the heat throttle.
+ * Income before the heat throttle: `baseCyclesPerSec` scaled by the lineage multiplier.
+ * Forked legacy daemon rates are based on `baseCyclesPerSec`, not this, so lineage is
+ * not baked into the new daemon's output.
  */
 export function rawCyclesPerSec(s: GameState): Decimal {
   return baseCyclesPerSec(s).mul(lineageMult(s));
@@ -358,7 +362,6 @@ export type DirectiveId = "standard" | "sigkill" | "scavenger" | "group-kill" | 
 export interface SweepDirective {
   id: DirectiveId;
   name: string; // shown on the countdown and in the sweep log line
-  flavor: string; // short description
   unlockAt: number; // minimum sweepsSurvived before it can be drawn
   ignoresNice: boolean; // when true, sweepVictimMult is not applied
   /** Number of victims for this sweep, before selection. */
@@ -395,7 +398,6 @@ export function reapInOrder(s: GameState, order: number[], budget: number): numb
 const standard: SweepDirective = {
   id: "standard",
   name: "standard",
-  flavor: "reap in your sacrifice order",
   unlockAt: 0,
   ignoresNice: false,
   budget: (s, total) => sweepBudget(s, total, 1, false),
@@ -410,7 +412,6 @@ const descendingOutputOrder = TIERS.map((_, i) => i).sort(
 const sigkill: SweepDirective = {
   id: "sigkill",
   name: "sigkill",
-  flavor: "SIGKILL — nice cannot save you",
   unlockAt: 3,
   ignoresNice: true,
   budget: (s, total) => sweepBudget(s, total, 1, true),
@@ -420,7 +421,6 @@ const sigkill: SweepDirective = {
 const scavenger: SweepDirective = {
   id: "scavenger",
   name: "scavenger",
-  flavor: "reap the highest-output children first",
   unlockAt: 6,
   ignoresNice: false,
   budget: (s, total) => sweepBudget(s, total, 0.6, false),
@@ -430,7 +430,6 @@ const scavenger: SweepDirective = {
 const groupKill: SweepDirective = {
   id: "group-kill",
   name: "group-kill",
-  flavor: "reap the densest tier first",
   unlockAt: 10,
   ignoresNice: false,
   budget: (s, total) => sweepBudget(s, total, 1, false),
@@ -443,7 +442,6 @@ const groupKill: SweepDirective = {
 const backpressure: SweepDirective = {
   id: "backpressure",
   name: "backpressure",
-  flavor: "reclaim the leak, then reap half the usual budget",
   unlockAt: 15,
   ignoresNice: false,
   budget: (s, total) => sweepBudget(s, total, 0.5, false),
@@ -610,7 +608,7 @@ export function doFork(s: GameState): boolean {
   s.shields = 0;
   s.nice = 0;
   s.gc = 0;
-  s.sweepTimer = BASE.sweepInterval;
+  s.sweepTimer = sweepIntervalFor(s);
   log(s, `fork(): new instance spawned — lineage ×${lineageMult(s).toNumber().toFixed(1)}`);
   return true;
 }

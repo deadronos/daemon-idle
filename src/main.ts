@@ -276,9 +276,15 @@ function renderLegacy(): void {
     state.legacy.forEach((dm, i) => {
       const div = document.createElement("div");
       div.className = `daemon${dm.crashed ? " crashed" : ""}`;
-      div.innerHTML = dm.crashed
-        ? `<span>${dm.name} — crashed</span><span class="rate">click to restart</span>`
-        : `<span>${dm.name}</span><span class="rate"></span>`;
+
+      const name = document.createElement("span");
+      name.textContent = dm.crashed ? `${dm.name} — crashed` : dm.name;
+
+      const rate = document.createElement("span");
+      rate.className = "rate";
+      if (dm.crashed) rate.textContent = "click to restart";
+
+      div.append(name, rate);
       div.addEventListener("click", () => {
         nudgeDaemon(state, i);
         render(true);
