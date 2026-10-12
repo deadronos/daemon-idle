@@ -59,6 +59,14 @@ export const MILESTONES: MilestoneDef[] = [
     at: 1,
     unlocks: ["auto-nice", "auto-malloc", "auto-free"],
   },
+  {
+    id: "legacy-respawn",
+    name: "auto-respawn",
+    desc: "fork twice",
+    metric: "forks",
+    at: 2,
+    unlocks: ["legacy-respawn"],
+  },
 ];
 
 /**
@@ -73,6 +81,7 @@ export const UNLOCK = {
   autoNice: "auto-nice",
   autoMalloc: "auto-malloc",
   autoFree: "auto-free",
+  legacyRespawn: "legacy-respawn",
 } as const;
 
 export function milestoneById(id: MilestoneId): MilestoneDef | undefined {

@@ -143,6 +143,8 @@ leak + `gc` drain, and legacy crashes, but skip the cleanup sweep and the memory
 latch + OOM killer (tick-order steps 6–8, see [doc 001](./001-simulation-core.md)). So
 idling is never punished — the process table is never reaped and RAM pressure never fires —
 and, because `heatMult ≥ 0.5` and the root always produces, cycles are strictly monotonic.
+Legacy respawn during replay is unlock-gated (`legacy-respawn`), so a pre-crashed daemon only
+comes back offline once that milestone fires.
 
 **Equivalence.** The replay matches an online run in the *safe regime* — no sweep fires and RAM
 stays under the cap, which is exactly what offline promises. With no legacy daemons and

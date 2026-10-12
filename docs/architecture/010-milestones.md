@@ -36,24 +36,26 @@ export interface MilestoneDef {
 }
 ```
 
-`UNLOCK` declares the unlock ids: `nice` and `gc` (granted by the starter set) plus the
-forward ids `buy-max`, `auto-nice`, `auto-malloc`, `auto-free` that #18/#19 consume; #23's
-tier gates follow a `tier:<index>` convention. A feature that is not gated simply never calls
-`hasUnlock`.
+`UNLOCK` declares the unlock ids: `nice`, `gc`, and `legacy-respawn` (granted by the starter
+set) plus the forward ids `buy-max`, `auto-nice`, `auto-malloc`, `auto-free` that #18/#19
+consume; #23's tier gates follow a `tier:<index>` convention. A feature that is not gated
+simply never calls `hasUnlock`.
 
 ## The starter set
 
-| id            | metric           | `at` | unlocks |
-| ------------- | ---------------- | ---- | ------- |
-| `first-blood` | `sweepsSurvived` | 1    | `nice`  |
-| `grown-up`    | `ramCap`         | 24   | `gc`    |
-| `bulk-buy`    | `totalEarned`    | 1e5  | `buy-max` |
-| `hands-off`   | `forks`          | 1    | `auto-nice`, `auto-malloc`, `auto-free` |
+| id               | metric           | `at` | unlocks                                 |
+| ---------------- | ---------------- | ---- | --------------------------------------- |
+| `first-blood`    | `sweepsSurvived` | 1    | `nice`                                  |
+| `grown-up`       | `ramCap`         | 24   | `gc`                                    |
+| `bulk-buy`       | `totalEarned`    | 1e5  | `buy-max`                               |
+| `hands-off`      | `forks`          | 1    | `auto-nice`, `auto-malloc`, `auto-free` |
+| `legacy-respawn` | `forks`          | 2    | `legacy-respawn`                        |
 
 `nice` and `gc` are the only upgrades gated; `free()`, `malloc`, `cooling`, shields, and
 `fork()` are available from the start. `bulk-buy` gates the spawn-panel `buy max` toggle
 (bulk tier spawns — see [doc 001](./001-simulation-core.md)); `hands-off` gates the upgrades
-panel's automation group (auto-nice/malloc/free).
+panel's automation group (auto-nice/malloc/free); `legacy-respawn` (name "auto-respawn") gates
+legacy auto-respawn (doc [004](./004-prestige-and-legacy.md)).
 
 ## Metrics and predicate
 

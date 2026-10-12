@@ -39,6 +39,7 @@ import {
   movePriority,
   newGame,
   niceCost,
+  nudgeDaemon,
   offlineCapS,
   offlineCost,
   buyOfflineCap,
@@ -1039,6 +1040,45 @@ describe("legacy daemons", () => {
     tick(s, 1);
     // root 1 * 1.2 + legacy rate 10 * 1.2 = 13.2 (lineage applied once, not twice)
     expect(s.cycles.toNumber()).toBeCloseTo(13.2, 5);
+  });
+});
+
+describe("legacy auto-respawn unlock", () => {
+  it("keeps a crashed daemon down without the unlock, even with gc", () => {
+    const s = newGame();
+    s.gc = 5; // gc no longer drives respawn
+    s.legacy = [{ name: "legacy-1", rate: d(10), crashed: true, respawn: 0 }];
+    tick(s, 1);
+    expect(s.legacy[0].crashed).toBe(true);
+  });
+
+  it("auto-respawns once the legacy-respawn unlock is granted", () => {
+    const s = newGame();
+    s.unlocks[UNLOCK.legacyRespawn] = true;
+    s.legacy = [{ name: "legacy-1", rate: d(10), crashed: true, respawn: 0 }];
+    tick(s, 1);
+    expect(s.legacy[0].crashed).toBe(false);
+  });
+
+  it("still restarts a crashed daemon by hand before the unlock", () => {
+    const s = newGame();
+    s.legacy = [{ name: "legacy-1", rate: d(10), crashed: true, respawn: 0 }];
+    expect(nudgeDaemon(s, 0)).toBe(true);
+    expect(s.legacy[0].crashed).toBe(false);
+  });
+
+  it("fires the milestone at two forks and unlocks auto-respawn", () => {
+    const s = newGame();
+    s.forks = 2;
+    tick(s, 0); // a live tick evaluates milestones
+    expect(s.unlocks[UNLOCK.legacyRespawn]).toBe(true);
+  });
+
+  it("produces on the offline path (legacy block runs before the early-return)", () => {
+    const s = newGame();
+    s.legacy = [{ name: "legacy-1", rate: d(1000), crashed: false, respawn: 0 }];
+    tick(s, 0.001, { offline: true }); // tiny dt: the 0.2%/s crash roll is effectively impossible
+    expect(s.cycles.toNumber()).toBeGreaterThan(0.9); // root 0.001 + legacy 1.0
   });
 });
 
