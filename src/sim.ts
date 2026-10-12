@@ -5,6 +5,15 @@
 // ./bignum. Bounded values (counts, RAM, timers) stay plain numbers.
 
 import { d, Decimal } from "./bignum";
+import { type PerkId } from "./config/perks";
+import {
+  canBuyPerk,
+  perkById,
+  perkCost,
+  perkMods,
+  pointsForFork,
+  MAX_POINTS_PER_FORK,
+} from "./perks";
 
 export interface TierDef {
   name: string;
@@ -144,6 +153,14 @@ export interface GameState {
   oomCount: number;
   ramWarned: boolean;
   legacy: LegacyDaemon[];
+  /** Lineage points earned at fork; spent on permanent perks. */
+  lineage: number;
+  /** Purchased perk level per node id; a missing key means level 0. */
+  perks: Record<PerkId, number>;
+  /** `totalEarned` at the last fork (base for the per-run earnings delta). */
+  runBaseEarned: Decimal;
+  /** `playtime` at the last fork (base for the per-run duration). */
+  runStartPlaytime: number;
   log: string[];
   playtime: number;
   lastSave: number;
@@ -155,8 +172,10 @@ export interface GameState {
  * Current save format. Version 2 fixed `doFork` to snapshot legacy rates from the
  * lineage-free `baseCyclesPerSec`; saves below it still have lineage baked into their
  * legacy `rate`s and must be migrated in `decode` (see `src/persistence.ts`).
+ * Version 3 added the lineage/perk fields (`lineage`, `perks`, `runBaseEarned`,
+ * `runStartPlaytime`); that migration is additive only.
  */
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 export const BASE = {
   ramCap: 8,
@@ -197,6 +216,10 @@ export function newGame(): GameState {
     oomCount: 0,
     ramWarned: false,
     legacy: [],
+    lineage: 0,
+    perks: {},
+    runBaseEarned: d(0),
+    runStartPlaytime: 0,
     log: ["boot: daemon pid 1 started (unattended)"],
     playtime: 0,
     lastSave: Date.now(),
@@ -216,6 +239,11 @@ export function ramUsed(s: GameState): number {
   return childRam(s) + s.leak;
 }
 
+/** Effective RAM ceiling: the purchased cap plus the `oomguard` perk bonus. */
+export function ramCapTotal(s: GameState): number {
+  return s.ramCap + perkMods(s).ramCapAdd;
+}
+
 /**
  * RAM that feeds the leak: like `childRam`, but skips `"leak-immune"` tiers.
  * Immune tiers still count toward `childRam`/`ramUsed` and spawn gating.
@@ -228,7 +256,9 @@ function leakFootprint(s: GameState): number {
 }
 
 export function tierCost(s: GameState, i: number): Decimal {
-  return d(TIERS[i].baseCost).mul(d(TIERS[i].costGrowth).pow(s.counts[i]));
+  return d(TIERS[i].baseCost)
+    .mul(d(TIERS[i].costGrowth).pow(s.counts[i]))
+    .mul(perkMods(s).tierCostMult);
 }
 
 export function childOutput(s: GameState): Decimal {
@@ -257,7 +287,10 @@ export function synergyMult(s: GameState, i: number): number {
  * roughly 1 heat per MB of child RAM, halved per two cooling levels.
  */
 export function heatEquilibrium(s: GameState): number {
-  return (childRam(s) * HEAT_PER_RAM) / (HEAT_DECAY_RATE * (1 + s.cooling * 0.5));
+  return (
+    ((childRam(s) * HEAT_PER_RAM) / (HEAT_DECAY_RATE * (1 + s.cooling * 0.5))) *
+    perkMods(s).heatGenMult
+  );
 }
 
 /**
@@ -290,12 +323,24 @@ export function baseCyclesPerSec(s: GameState): Decimal {
 }
 
 /**
+ * Live income base: `baseCyclesPerSec` with perk income applied (children scaled by
+ * `incomeMult`, the root term additionally by `rootMult`). Kept out of `baseCyclesPerSec`
+ * so the legacy-rate snapshot stays perk-free.
+ */
+function perkedBaseCyclesPerSec(s: GameState): Decimal {
+  const m = perkMods(s);
+  const children = childOutput(s).mul(survivalMult(s)).mul(m.incomeMult);
+  const root = d(BASE.rootOutput).mul(m.incomeMult).mul(m.rootMult);
+  return children.add(root);
+}
+
+/**
  * Income before the heat throttle: `baseCyclesPerSec` scaled by the lineage multiplier.
  * Forked legacy daemon rates are based on `baseCyclesPerSec`, not this, so lineage is
  * not baked into the new daemon's output.
  */
 export function rawCyclesPerSec(s: GameState): Decimal {
-  return baseCyclesPerSec(s).mul(lineageMult(s));
+  return perkedBaseCyclesPerSec(s).mul(lineageMult(s));
 }
 
 export function cyclesPerSec(s: GameState): Decimal {
@@ -303,7 +348,7 @@ export function cyclesPerSec(s: GameState): Decimal {
 }
 
 export function sweepVictimMult(s: GameState): number {
-  return Math.max(0.3, 1 - s.nice * 0.03);
+  return Math.max(0.3, 1 - (s.nice + perkMods(s).niceAdd) * 0.03);
 }
 
 /**
@@ -514,13 +559,13 @@ export function coolCost(s: GameState): Decimal {
 }
 
 export function forkCost(s: GameState): Decimal {
-  return d(1e6).mul(d(10).pow(s.forks));
+  return d(1e6).mul(d(10).pow(s.forks)).mul(perkMods(s).forkCostMult);
 }
 
 // --- actions ---------------------------------------------------------------
 
 export function canSpawn(s: GameState, i: number): boolean {
-  const ramOk = ramUsed(s) + TIERS[i].ram <= s.ramCap;
+  const ramOk = ramUsed(s) + TIERS[i].ram <= ramCapTotal(s);
   return s.cycles.gte(tierCost(s, i)) && ramOk;
 }
 
@@ -593,12 +638,22 @@ export function nudgeDaemon(s: GameState, index: number): boolean {
   return true;
 }
 
+export function buyPerk(s: GameState, id: PerkId): boolean {
+  if (!canBuyPerk(s, id)) return false;
+  s.lineage -= perkCost(s, id);
+  s.perks[id] = (s.perks[id] ?? 0) + 1;
+  log(s, `lineage: bought ${perkById(id)?.name ?? id} (L${s.perks[id]})`);
+  return true;
+}
+
 export function canFork(s: GameState): boolean {
   return s.totalEarned.gte(forkCost(s));
 }
 
 export function doFork(s: GameState): boolean {
   if (!canFork(s)) return false;
+  const m = perkMods(s); // pre-reset: earning perks apply to the fork that earns
+  s.lineage += Math.min(MAX_POINTS_PER_FORK, Math.floor(pointsForFork(s) * m.pointsMult));
   const peak = baseCyclesPerSec(s); // unthrottled + lineage-free: heat and lineage are not baked in
   const rate = Decimal.max(0.1, peak.mul(LEGACY_SHARE));
   s.forks++;
@@ -608,16 +663,18 @@ export function doFork(s: GameState): boolean {
     crashed: false,
     respawn: 0,
   });
-  // reset the working set, keep lineage + legacy
-  s.cycles = d(0);
+  // reset the working set, keep lineage + legacy + perks
+  s.cycles = m.startCycles; // warm start grants a head start
   s.counts = TIERS.map(() => 0);
   s.leak = 0;
   s.ramCap = BASE.ramCap;
   s.heat = 0;
   s.cooling = 0;
-  s.shields = 0;
+  s.shields = m.startShieldsAdd; // signal-mask charges for the new run
   s.nice = 0;
   s.gc = 0;
+  s.runBaseEarned = s.totalEarned;
+  s.runStartPlaytime = s.playtime;
   s.sweepInterval = sweepIntervalFor(s);
   s.sweepTimer = s.sweepInterval;
   log(s, `fork(): new instance spawned — lineage ×${lineageMult(s).toNumber().toFixed(1)}`);
@@ -664,10 +721,10 @@ export function tick(s: GameState, dt: number, opts: TickOptions = {}): void {
 
   // Offline catch-up skips the OOM killer, so bound the leak here: otherwise hours away
   // would grow it without limit and the first live tick would wipe the board.
-  if (opts.offline) s.leak = Math.min(s.leak, s.ramCap);
+  if (opts.offline) s.leak = Math.min(s.leak, ramCapTotal(s));
 
   // legacy daemons: produce, occasionally crash, maybe auto-respawn
-  const mult = lineageMult(s);
+  const mult = lineageMult(s).mul(perkMods(s).legacyRateMult);
   for (const dm of s.legacy) {
     if (dm.crashed) {
       dm.respawn -= dt;
@@ -700,13 +757,14 @@ export function tick(s: GameState, dt: number, opts: TickOptions = {}): void {
 
   // memory pressure warning, then out of memory
   const used = ramUsed(s);
-  if (!s.ramWarned && used > s.ramCap * 0.9) {
+  const cap = ramCapTotal(s);
+  if (!s.ramWarned && used > cap * 0.9) {
     s.ramWarned = true;
-    log(s, `memory pressure: ${Math.ceil(used)}/${s.ramCap}MB — OOM killer imminent`);
-  } else if (s.ramWarned && used < s.ramCap * 0.8) {
+    log(s, `memory pressure: ${Math.ceil(used)}/${cap}MB — OOM killer imminent`);
+  } else if (s.ramWarned && used < cap * 0.8) {
     s.ramWarned = false;
   }
-  if (used > s.ramCap * OOM_TOLERANCE) runOom(s);
+  if (used > cap * OOM_TOLERANCE) runOom(s);
 }
 
 /**
@@ -755,16 +813,16 @@ function runOom(s: GameState): void {
   // Drain in bulk: remove as many of the current tier as needed to fit under the cap.
   // A per-iteration `counts[i]--` loop would stall for a huge (but finite) count.
   for (const i of order) {
-    if (ramUsed(s) <= s.ramCap) break;
-    const need = Math.ceil((ramUsed(s) - s.ramCap) / TIERS[i].ram);
+    if (ramUsed(s) <= ramCapTotal(s)) break;
+    const need = Math.ceil((ramUsed(s) - ramCapTotal(s)) / TIERS[i].ram);
     const take = Math.min(s.counts[i], need);
     if (take <= 0) continue;
     s.counts[i] -= take;
     killed += take;
   }
   // if the leak alone is over the ceiling, reclaim it
-  if (ramUsed(s) > s.ramCap) {
-    s.leak = Math.max(0, s.ramCap - childRam(s));
+  if (ramUsed(s) > ramCapTotal(s)) {
+    s.leak = Math.max(0, ramCapTotal(s) - childRam(s));
   }
   s.cycles = s.cycles.mul(0.9);
   s.oomCount++;

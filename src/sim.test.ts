@@ -15,6 +15,7 @@ import {
   buyGc,
   buyMalloc,
   buyNice,
+  buyPerk,
   buyShield,
   canSpawn,
   childOutput,
@@ -24,6 +25,7 @@ import {
   directiveById,
   doFork,
   estimateVictims,
+  forkCost,
   freeMemory,
   gcCost,
   heatEquilibrium,
@@ -36,12 +38,14 @@ import {
   pickNextDirective,
   priorityOf,
   priorityOrder,
+  ramCapTotal,
   ramUsed,
   sanitizeSacrificeOrder,
   shieldCost,
   spawn,
   survivalMult,
   sweepIntervalFor,
+  sweepVictimMult,
   synergyMult,
   tick,
   tierCost,
@@ -1149,5 +1153,119 @@ describe("progression", () => {
     playGreedy(s, 3600);
     expect(s.heat).toBeGreaterThan(HEAT_THROTTLE_AT);
     expect(s.heat).toBeLessThan(100);
+  });
+});
+
+describe("lineage perks", () => {
+  it("newGame starts with no points and no perks", () => {
+    const s = newGame();
+    expect(s.lineage).toBe(0);
+    expect(s.perks).toEqual({});
+    expect(s.runBaseEarned.toNumber()).toBe(0);
+    expect(s.runStartPlaytime).toBe(0);
+  });
+
+  it("buyPerk spends points, adds a level, and refuses when broke or gated", () => {
+    const s = newGame();
+    expect(buyPerk(s, "spin")).toBe(false); // 0 points
+    s.lineage = 2;
+    expect(buyPerk(s, "spin")).toBe(true);
+    expect(s.lineage).toBe(0);
+    expect(s.perks.spin).toBe(1);
+    expect(buyPerk(s, "spin")).toBe(false); // maxLevel 1 already reached
+    s.lineage = 5;
+    expect(buyPerk(s, "tailcall")).toBe(true); // prereq `spin` owned, costs 5
+    expect(s.lineage).toBe(0);
+    s.lineage = 4;
+    expect(buyPerk(s, "vec")).toBe(false); // prereq owned but costs 10
+    s.lineage = 10;
+    expect(buyPerk(s, "vec")).toBe(true);
+  });
+});
+
+describe("perk effects on the economy", () => {
+  it("incomeMult raises cps; vec doubles the root term", () => {
+    const plain = newGame();
+    const perked = newGame();
+    perked.perks = { spin: 1 }; // +10% on BOTH children and root
+    expect(cyclesPerSec(perked).toNumber()).toBeCloseTo(cyclesPerSec(plain).toNumber() * 1.1, 6);
+    perked.perks = { vec: 1 };
+    expect(cyclesPerSec(perked).toNumber()).toBeCloseTo(2, 6); // root 1 -> 2, no children
+  });
+  it("tailcall reduces tierCost; oomguard raises the effective RAM cap", () => {
+    const s = newGame();
+    const cost0 = tierCost(s, 0).toNumber();
+    s.perks = { tailcall: 1 };
+    expect(tierCost(s, 0).toNumber()).toBeLessThan(cost0);
+    expect(ramCapTotal(newGame())).toBe(BASE.ramCap);
+    const oom = newGame();
+    oom.perks = { oomguard: 1 };
+    expect(ramCapTotal(oom)).toBe(BASE.ramCap + 8);
+  });
+  it("heatsink lowers the heat equilibrium; renice reduces sweep victims but respects the floor", () => {
+    const s = newGame();
+    s.counts = TIERS.map(() => 4);
+    const eq = heatEquilibrium(s);
+    s.perks = { heatsink: 1 };
+    expect(heatEquilibrium(s)).toBeLessThan(eq);
+    const many = newGame();
+    many.counts = TIERS.map(() => 10);
+    many.nice = 40;
+    many.perks = { renice: 1, reaper: 20 }; // drive niceAdd hard against the 0.3 floor
+    expect(sweepVictimMult(many)).toBeGreaterThanOrEqual(0.3);
+    expect(estimateVictims(many)).toBeGreaterThanOrEqual(0);
+  });
+  it("cheapfork reduces forkCost but never below the floor", () => {
+    const s = newGame();
+    s.forks = 3;
+    const full = forkCost(s).toNumber();
+    s.perks = { cheapfork: 1 };
+    expect(forkCost(s).toNumber()).toBeCloseTo(full / 1.1, 6);
+    expect(forkCost(s).toNumber()).toBeGreaterThanOrEqual(full * 0.25 - 1e-9);
+  });
+});
+
+describe("doFork with perks", () => {
+  it("awards points from the run, snapshots the run, and keeps perks + points", () => {
+    const s = newGame();
+    s.perks = { echo: 1 }; // pointsMult = 1 + 0.05*sqrt(1) = 1.05
+    s.lineage = 7; // must survive the fork
+    s.totalEarned = d(1e6); // == forkCost(0), so canFork is true
+    s.playtime = 600; // runSeconds 600 -> base 5; 5*1.05 -> 5
+    expect(doFork(s)).toBe(true);
+    expect(s.lineage).toBe(12);
+    expect(s.perks.echo).toBe(1);
+    expect(s.runBaseEarned.toNumber()).toBeCloseTo(1e6, 6);
+    expect(s.runStartPlaytime).toBeCloseTo(600, 6);
+  });
+  it("applies start-of-run grants", () => {
+    const s = newGame();
+    s.perks = { sigblock: 1, startup: 1 };
+    s.totalEarned = d(1e6);
+    s.playtime = 600;
+    doFork(s);
+    expect(s.shields).toBe(1);
+    expect(s.cycles.toNumber()).toBe(1000);
+  });
+  it("still resets the working set", () => {
+    const s = newGame();
+    s.counts = [5, 0, 0, 0, 0];
+    s.totalEarned = d(1e6);
+    s.playtime = 600;
+    doFork(s);
+    expect(s.counts.every((n) => n === 0)).toBe(true);
+  });
+});
+
+describe("perk effects on legacy daemons", () => {
+  it("applies the cache perk's legacyRateMult to legacy income", () => {
+    const s = newGame();
+    s.legacy = [{ name: "legacy-1", rate: d(1000), crashed: false, respawn: 0 }];
+    s.perks = { cache: 1 }; // legacyRateMult = 1 + 0.05*sqrt(1) = 1.05
+    const before = s.cycles.toNumber();
+    tick(s, 0.001); // tiny dt: the 0.2%/s crash roll is effectively impossible
+    const gained = s.cycles.toNumber() - before;
+    // root income (1/s) + legacy (1000 * 1.05 /s), over 0.001 s
+    expect(gained).toBeCloseTo((1 + 1000 * 1.05) * 0.001, 6);
   });
 });

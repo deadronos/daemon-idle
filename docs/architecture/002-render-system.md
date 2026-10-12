@@ -32,6 +32,8 @@ Three cheap diffs avoid needless DOM churn:
   (`legacyPanel.dataset.sig`); live rates are refreshed in place each frame.
 - **Sacrifice order:** rows rebuilt only when the joined `sacrificeOrder` changes
   (`priorityPanel.dataset.sig`).
+- **Prestige panel:** node buttons rebuilt only when lineage or the owned perks change
+  (`perkPanel.dataset.sig`); the next-fork preview is refreshed each frame.
 
 ## DOM binding
 
@@ -67,6 +69,18 @@ call `movePriority(state, tier, -1 | 1)` and re-render; `▲` is disabled on the
 (`priorityPanel.dataset.sig`). A `.hint` caption explains that only priority-based sweeps
 honour this order — scavenger and group-kill ignore it. The panel never reorders state
 itself; `main.ts` delegates the swap to `sim.ts`.
+
+## Prestige panel
+
+The `prestige` panel (`#perkSection`) is hidden until `forks >= 1` (the first fork creates
+claimable points). `renderPerks()` builds three columns — `growth | survival | lineage` —
+from `PERKS`, ordered within a branch by prerequisite depth. Each node is an `ActionButton`
+line showing the name, current level, next cost (`perkCost`), and effect; it is disabled
+unless `canBuyPerk` is true, and clicking it calls `buyPerk` and re-renders. The header shows
+`lineage: N pt` and a `next fork grants ≈ P pt` preview
+(`floor(pointsForFork(state) * perkMods(state).pointsMult)`). Node buttons are rebuilt only
+when lineage or the owned perks change (`perkPanel.dataset.sig`); the preview text updates
+every frame. See [doc 009](./009-prestige-perk-tree.md) for the tree itself.
 
 ## Meters
 

@@ -7,6 +7,7 @@ import {
   decode,
   encode,
   loadFrom,
+  sanitizePerks,
 } from "./persistence";
 import { BASE, SAVE_VERSION, newGame, tick } from "./sim";
 
@@ -202,5 +203,67 @@ describe("offline progress", () => {
     tick(s, 0.01); // first live tick must not OOM the board away
     expect(s.oomCount).toBe(0);
     expect(s.counts).toEqual([0, 5, 0, 0, 0]);
+  });
+});
+
+describe("perk persistence", () => {
+  it("round-trips the new fields", () => {
+    const s = newGame();
+    s.lineage = 12;
+    s.perks = { spin: 1, pipeline: 4 };
+    s.runBaseEarned = d(1e6);
+    s.runStartPlaytime = 123;
+    const out = decode(encode(s));
+    expect(out.lineage).toBe(12);
+    expect(out.perks).toEqual({ spin: 1, pipeline: 4 });
+    expect(out.runBaseEarned.toNumber()).toBe(1e6);
+    expect(out.runStartPlaytime).toBe(123);
+  });
+
+  it("sanitizes corrupt perks without throwing", () => {
+    expect(sanitizePerks({ spin: 99, pipeline: 3.7, ghost: 5, tailcall: "x" })).toEqual({
+      spin: 1,
+      pipeline: 3,
+    });
+    expect(sanitizePerks(null)).toEqual({});
+    expect(sanitizePerks([1, 2])).toEqual({});
+  });
+
+  it("does NOT re-divide legacy rates for a v2 save under SAVE_VERSION 3", () => {
+    // A v2 save's legacy rates are already lineage-free; re-dividing the k>=1 entry
+    // would corrupt it. Only a pre-versioning save (no saveVersion) may be divided.
+    const raw = JSON.stringify({
+      saveVersion: 2,
+      legacy: [
+        { name: "legacy-1", rate: "22", crashed: false, respawn: 0 },
+        { name: "legacy-2", rate: "33", crashed: false, respawn: 0 },
+      ],
+    });
+    const s = decode(raw);
+    expect(s.legacy[0].rate.toNumber()).toBeCloseTo(22, 5);
+    expect(s.legacy[1].rate.toNumber()).toBeCloseTo(33, 5);
+  });
+
+  it("still divides baked lineage out of a pre-versioning save", () => {
+    const raw = JSON.stringify({
+      legacy: [
+        { name: "legacy-1", rate: "22", crashed: false, respawn: 0 },
+        { name: "legacy-2", rate: "33", crashed: false, respawn: 0 },
+      ],
+    });
+    const s = decode(raw);
+    expect(s.legacy[1].rate.toNumber()).toBeCloseTo(33 / 1.1, 5);
+  });
+});
+
+describe("offline progress with perks", () => {
+  it("applies perk income multipliers during offline catch-up", () => {
+    const perked = newGame();
+    perked.perks = { spin: 1 }; // +10% income
+    const plain = newGame();
+    applyOffline(perked, 60);
+    applyOffline(plain, 60);
+    expect(plain.cycles.toNumber()).toBeCloseTo(60, 3); // root 1/s
+    expect(perked.cycles.toNumber()).toBeCloseTo(66, 3); // 1.1/s
   });
 });

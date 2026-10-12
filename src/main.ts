@@ -7,6 +7,7 @@ import {
   buyGc,
   buyMalloc,
   buyNice,
+  buyPerk,
   buyShield,
   canFork,
   canSpawn,
@@ -26,6 +27,7 @@ import {
   newGame,
   niceCost,
   nudgeDaemon,
+  ramCapTotal,
   ramUsed,
   shieldCost,
   spawn,
@@ -34,6 +36,15 @@ import {
   tierCost,
 } from "./sim";
 import { d } from "./bignum";
+import {
+  PERKS,
+  canBuyPerk,
+  perkById,
+  perkCost,
+  perkMods,
+  pointsForFork,
+  type PerkDef,
+} from "./perks";
 import { type Alert, checkNumericHealth } from "./diagnostics";
 import { consoleSink, logFeedSink, makeReporter } from "./report";
 import { fmt, fmtRate, fmtTime } from "./format";
@@ -93,6 +104,10 @@ const el = {
   upgradePanel: $("upgradePanel"),
   legacyPanel: $("legacyPanel"),
   priorityPanel: $("priorityPanel"),
+  perkSection: $("perkSection"),
+  lineageText: $("lineageText"),
+  lineageNext: $("lineageNext"),
+  perkPanel: $("perkPanel"),
   log: $("log"),
 };
 
@@ -206,7 +221,7 @@ function render(force = false): void {
 
   // RAM meter
   const used = ramUsed(state);
-  const cap = state.ramCap;
+  const cap = ramCapTotal(state);
   const child = childRam(state);
   el.ramText.textContent =
     `${Math.ceil(used)} / ${cap} MB` +
@@ -239,7 +254,7 @@ function render(force = false): void {
   for (let i = 0; i < spawnButtons.length; i++) {
     const b = spawnButtons[i];
     const ok = b.enabled();
-    const ramFull = ramUsed(state) + TIERS[i].ram > state.ramCap;
+    const ramFull = ramUsed(state) + TIERS[i].ram > ramCapTotal(state);
     b.el.disabled = !ok;
     const costEl = b.el.querySelector(".cost") as HTMLElement;
     costEl.textContent = `${state.counts[i]}  ·  ${fmt(b.cost())}${ramFull ? "  ⚠ ram" : ""}`;
@@ -258,6 +273,7 @@ function render(force = false): void {
 
   renderLegacy();
   renderPriority();
+  renderPerks();
   renderLog(force);
 }
 
@@ -296,7 +312,10 @@ function renderLegacy(): void {
   state.legacy.forEach((dm, i) => {
     const row = el.legacyPanel.children[i];
     const rateEl = row?.querySelector(".rate");
-    if (rateEl && !dm.crashed) rateEl.textContent = fmtRate(dm.rate.mul(lineageMult(state)));
+    if (rateEl && !dm.crashed)
+      rateEl.textContent = fmtRate(
+        dm.rate.mul(lineageMult(state)).mul(perkMods(state).legacyRateMult),
+      );
   });
 }
 
@@ -339,6 +358,122 @@ function renderPriority(): void {
       row.append(name, up, down);
       el.priorityPanel.appendChild(row);
     });
+  }
+}
+
+/** Human-readable effect of a node, from its `mod`/`perLevel`. */
+function perkEffectText(p: PerkDef): string {
+  const v = p.perLevel;
+  let text: string;
+  switch (p.mod) {
+    case "incomeMult":
+      text = `+${Math.round(v * 100)}% income`;
+      break;
+    case "rootMult":
+      text = `root ×${1 + v}`;
+      break;
+    case "tierCostMult":
+      text = `−${Math.round(v * 100)}% tier cost`;
+      break;
+    case "niceAdd":
+      text = `+${v} nice`;
+      break;
+    case "ramCapAdd":
+      text = `+${v} MB ram`;
+      break;
+    case "heatGenMult":
+      text = `−${Math.round(v * 100)}% heat`;
+      break;
+    case "startShieldsAdd":
+      text = `+${v} start shield`;
+      break;
+    case "forkCostMult":
+      text = `−${Math.round(v * 100)}% fork cost`;
+      break;
+    case "pointsMult":
+      text = `+${Math.round(v * 100)}% points`;
+      break;
+    case "legacyRateMult":
+      text = `legacy ×${1 + v}`;
+      break;
+    case "startCycles":
+      text = `+${v} start cycles`;
+      break;
+  }
+  return p.maxLevel === Infinity ? `${text} · √L` : text;
+}
+
+/** Depth of a node in its branch's prerequisite chain (branch roots are 0). */
+function perkDepth(p: PerkDef): number {
+  let depth = 0;
+  let cur: PerkDef | undefined = p;
+  while (cur?.requires) {
+    const next = PERKS.find((q) => q.id === cur!.requires);
+    if (!next) break;
+    depth++;
+    cur = next;
+    if (depth > PERKS.length) break; // cycle guard; the roster is a DAG
+  }
+  return depth;
+}
+
+/**
+ * The prestige / perk-tree panel. Hidden until the player has forked at least once
+ * (fork #1 creates the first claimable points). Nodes are rebuilt only when lineage or
+ * the owned perks change; the "next fork" preview updates every frame.
+ */
+function renderPerks(): void {
+  const show = state.forks >= 1;
+  el.perkSection.hidden = !show;
+  if (!show) return;
+
+  el.lineageText.textContent = `${state.lineage} pt`;
+  el.lineageNext.textContent = String(
+    Math.floor(pointsForFork(state) * perkMods(state).pointsMult),
+  );
+
+  const owned = Object.entries(state.perks)
+    .filter(([, lvl]) => lvl > 0)
+    .map(([id, lvl]) => `${id}${lvl}`)
+    .sort()
+    .join(",");
+  const sig = `${state.lineage}|${owned}`;
+  if (el.perkPanel.dataset.sig === sig) return;
+  el.perkPanel.dataset.sig = sig;
+  el.perkPanel.innerHTML = "";
+
+  for (const branch of ["growth", "survival", "lineage"] as const) {
+    const col = document.createElement("div");
+    col.className = "perk-branch";
+    const head = document.createElement("div");
+    head.className = "perk-branch-head";
+    head.textContent = branch;
+    col.appendChild(head);
+
+    const nodes = PERKS.filter((p) => p.branch === branch).sort(
+      (a, b) => perkDepth(a) - perkDepth(b),
+    );
+    for (const p of nodes) {
+      const level = state.perks[p.id] ?? 0;
+      const cost = perkCost(state, p.id);
+      const b = document.createElement("button");
+      b.className = "act perk";
+      const effect = perkEffectText(p);
+      const req = p.requires ? `  ← ${perkById(p.requires)?.name ?? p.requires}` : "";
+      b.innerHTML =
+        `<span class="name">${p.name} <small>${effect}${req}</small></span>` +
+        `<span class="cost"></span>`;
+      b.disabled = !canBuyPerk(state, p.id);
+      const costEl = b.querySelector(".cost") as HTMLElement;
+      costEl.textContent = `L${level}  ·  ${cost}pt${p.maxLevel === Infinity ? "  ∞" : ""}`;
+      costEl.classList.toggle("ok", !b.disabled);
+      b.addEventListener("click", () => {
+        buyPerk(state, p.id);
+        render(true);
+      });
+      col.appendChild(b);
+    }
+    el.perkPanel.appendChild(col);
   }
 }
 

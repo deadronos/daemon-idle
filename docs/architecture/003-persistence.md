@@ -35,17 +35,22 @@ Every save stamps `state.lastSave = Date.now()` first.
    are therefore filled with fresh defaults — additive state changes are safe. A non-object
    JSON value (`null`, `42`, `"x"`, `true`) is treated as `{}`, so it decodes to a fresh
    game instead of throwing.
-3. **Version migration:** if the parsed `saveVersion` is missing or `< SAVE_VERSION`, the
-   migration chain runs (see [Save versioning](#save-versioning)) and the result is stamped
-   `saveVersion = SAVE_VERSION`.
+3. **Version migration:** `decode()` runs a **staged** chain — one step per version it
+   upgrades *from* (`if (from < 2) …`, `if (from < 3) …`, with
+   `from = parsed.saveVersion | 0`) — then stamps `saveVersion = SAVE_VERSION`. Staged steps
+   matter: a single `saveVersion < SAVE_VERSION` check would re-run older steps on newer saves
+   (see [Save versioning](#save-versioning)).
 4. **Coercion (harden):** `decode()` sanitizes every field before it reaches the sim:
-   - `cycles` / `totalEarned` / each legacy `rate` → `coerceDecimal` (finite number,
-     numeric string, or `Decimal`; else the fallback). `d("abc")` is lenient and yields
-     `0`; `NaN`/`Infinity` coerce to the fallback.
+   - `cycles` / `totalEarned` / `runBaseEarned` / each legacy `rate` → `coerceDecimal` (finite
+     number, numeric string, or `Decimal`; else the fallback). `d("abc")` is lenient and
+     yields `0`; `NaN`/`Infinity` coerce to the fallback.
    - `counts` → `sanitizeCounts`: one `coerceCount` per tier (capped at
      `MAX_SANE_COUNT = 1_000_000`), a non-array becomes zeros.
    - `legacy` → `sanitizeLegacy`: non-object entries are dropped; `name` defaults to
      `"legacy"`, `rate`/`respawn` coerced.
+   - `perks` → `sanitizePerks`: for each `PERKS` entry, clamp the level to `[0, maxLevel]` and
+     drop zeros; unknown ids never survive because the result is rebuilt from the roster.
+   - `lineage` → `coerceCount`.
    - `log` → mapped to strings if it is an array, else `[]`.
    - `sacrificeOrder` → `sanitizeSacrificeOrder` (valid permutation, else the default).
 5. **Numeric clamps (`sanitizeNumericState`):** every bounded field is made finite and
@@ -64,6 +69,8 @@ Every save stamps `state.lastSave = Date.now()` first.
    | `rngState`                                              | `(finite \| 0) \|\| 1` (nonzero int32)    |
    | `ramWarned`                                             | `Boolean(…)`                              |
    | `lastSave`                                              | finite, else `Date.now()`                 |
+   | `lineage`                                               | `coerceCount`                             |
+   | `runStartPlaytime`                                      | `max(0, …)`                               |
    | `counts[i]`                                             | `coerceCount`, capped at `MAX_SANE_COUNT` |
 
 6. If more than `OFFLINE_MIN_S = 5` seconds elapsed since `lastSave`, apply offline
@@ -74,13 +81,14 @@ Every save stamps `state.lastSave = Date.now()` first.
 ## Save versioning
 
 `GameState.saveVersion` records the semantics of the persisted fields; `newGame()` stamps
-it at `SAVE_VERSION = 2`. `encode()` spreads the field, so it round-trips. On load,
-`decode()` compares the parsed value against `SAVE_VERSION` and, when it is missing or
-older, applies the migration chain to the coerced `legacy` array before the numeric clamps.
+it at `SAVE_VERSION = 3`. `encode()` spreads the field, so it round-trips. On load,
+`decode()` reads the parsed value into `from` and runs each staged migration whose `from`
+is older, before the numeric clamps.
 
 | from              | to  | migration                                                                    |
 | ----------------- | --- | ---------------------------------------------------------------------------- |
 | (missing) / `< 2` | 2   | For each legacy daemon at array index `k`, divide its `rate` by `1 + k*0.1`. |
+| `< 3`             | 3   | Additive only: the new fields come from `newGame()` defaults; no-op.         |
 
 **Why v2:** the old `doFork` snapshotted a new daemon's rate from `rawCyclesPerSec`, which
 already included the lineage multiplier `1 + forks*0.1` — so the `k`-th daemon's rate had
@@ -88,7 +96,14 @@ already included the lineage multiplier `1 + forks*0.1` — so the `k`-th daemon
 lineage-free rates; the migration divides the baked factor back out of pre-v2 saves so
 their legacy income matches a fresh fork's.
 
-The chain is append-only: to migrate further, add the next step and bump `SAVE_VERSION`.
+**Why v3:** the perk tree added `lineage`, `perks`, `runBaseEarned`, and `runStartPlaytime`.
+The change is additive — `decode` merges the save over `newGame()` defaults and then coerces
+the fields — so the v3 step is a no-op placeholder. It exists to keep the chain staged: had
+the v2 step stayed keyed to `from < SAVE_VERSION`, bumping to 3 would have re-divided already
+lineage-free legacy rates on every v2 save. A test pins both directions.
+
+The chain is append-only: to migrate further, add the next `if (from < N)` step and bump
+`SAVE_VERSION`.
 
 ## Offline progress
 
@@ -102,9 +117,9 @@ latch + OOM killer (tick-order steps 6–8, see [doc 001](./001-simulation-core.
 idling is never punished — the process table is never reaped and RAM pressure never fires —
 and, because `heatMult ≥ 0.5` and the root always produces, cycles are strictly monotonic.
 
-Because the offline path skips the OOM killer, it also **clamps the leak to `ramCap`**
-after the leak/`gc` step (`s.leak = Math.min(s.leak, s.ramCap)`). Without that bound, hours
-away with `gc = 0` would grow the leak without limit and the first live tick would
+Because the offline path skips the OOM killer, it also **clamps the leak to `ramCapTotal`**
+after the leak/`gc` step (`s.leak = Math.min(s.leak, ramCapTotal(s))`). Without that bound,
+hours away with `gc = 0` would grow the leak without limit and the first live tick would
 immediately OOM the board — contradicting "idling is never punished". The clamp means a
 returning player is at worst at the RAM ceiling, never arbitrarily past it.
 
