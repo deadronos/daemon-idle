@@ -123,3 +123,17 @@ describe("pointsForFork", () => {
     expect(p).toBe(Math.floor(2 * (Math.sqrt(1000 / 300) + DEPTH_CAP)) + 1);
   });
 });
+
+describe("sink soft cap", () => {
+  it("is self-limiting: marginal benefit/cost strictly falls and drops below tier-1 perks", () => {
+    const costAt = (l: number) => perkCost(base({ perks: { recursion: l } }), "recursion");
+    const benefit = (l: number) => 0.05 * Math.sqrt(l); // pointsMult increment over baseline 1
+    const marginal = (l: number) => (benefit(l) - benefit(l - 1)) / costAt(l - 1);
+
+    for (let l = 2; l < 40; l++) expect(marginal(l + 1)).toBeLessThan(marginal(l));
+
+    const echoRatio = 0.05 / perkCost(base(), "echo"); // a tier-1 distinct perk: +5% for 2pt
+    expect(marginal(25)).toBeLessThan(echoRatio);
+    expect(marginal(25)).toBeLessThan(marginal(1));
+  });
+});

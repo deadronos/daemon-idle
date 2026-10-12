@@ -255,3 +255,15 @@ describe("perk persistence", () => {
     expect(s.legacy[1].rate.toNumber()).toBeCloseTo(33 / 1.1, 5);
   });
 });
+
+describe("offline progress with perks", () => {
+  it("applies perk income multipliers during offline catch-up", () => {
+    const perked = newGame();
+    perked.perks = { spin: 1 }; // +10% income
+    const plain = newGame();
+    applyOffline(perked, 60);
+    applyOffline(plain, 60);
+    expect(plain.cycles.toNumber()).toBeCloseTo(60, 3); // root 1/s
+    expect(perked.cycles.toNumber()).toBeCloseTo(66, 3); // 1.1/s
+  });
+});

@@ -1256,3 +1256,16 @@ describe("doFork with perks", () => {
     expect(s.counts.every((n) => n === 0)).toBe(true);
   });
 });
+
+describe("perk effects on legacy daemons", () => {
+  it("applies the cache perk's legacyRateMult to legacy income", () => {
+    const s = newGame();
+    s.legacy = [{ name: "legacy-1", rate: d(1000), crashed: false, respawn: 0 }];
+    s.perks = { cache: 1 }; // legacyRateMult = 1 + 0.05*sqrt(1) = 1.05
+    const before = s.cycles.toNumber();
+    tick(s, 0.001); // tiny dt: the 0.2%/s crash roll is effectively impossible
+    const gained = s.cycles.toNumber() - before;
+    // root income (1/s) + legacy (1000 * 1.05 /s), over 0.001 s
+    expect(gained).toBeCloseTo((1 + 1000 * 1.05) * 0.001, 6);
+  });
+});

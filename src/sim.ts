@@ -724,7 +724,7 @@ export function tick(s: GameState, dt: number, opts: TickOptions = {}): void {
   if (opts.offline) s.leak = Math.min(s.leak, ramCapTotal(s));
 
   // legacy daemons: produce, occasionally crash, maybe auto-respawn
-  const mult = lineageMult(s);
+  const mult = lineageMult(s).mul(perkMods(s).legacyRateMult);
   for (const dm of s.legacy) {
     if (dm.crashed) {
       dm.respawn -= dt;

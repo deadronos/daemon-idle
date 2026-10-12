@@ -36,7 +36,15 @@ import {
   tierCost,
 } from "./sim";
 import { d } from "./bignum";
-import { PERKS, canBuyPerk, perkCost, perkMods, pointsForFork, type PerkDef } from "./perks";
+import {
+  PERKS,
+  canBuyPerk,
+  perkById,
+  perkCost,
+  perkMods,
+  pointsForFork,
+  type PerkDef,
+} from "./perks";
 import { type Alert, checkNumericHealth } from "./diagnostics";
 import { consoleSink, logFeedSink, makeReporter } from "./report";
 import { fmt, fmtRate, fmtTime } from "./format";
@@ -304,7 +312,10 @@ function renderLegacy(): void {
   state.legacy.forEach((dm, i) => {
     const row = el.legacyPanel.children[i];
     const rateEl = row?.querySelector(".rate");
-    if (rateEl && !dm.crashed) rateEl.textContent = fmtRate(dm.rate.mul(lineageMult(state)));
+    if (rateEl && !dm.crashed)
+      rateEl.textContent = fmtRate(
+        dm.rate.mul(lineageMult(state)).mul(perkMods(state).legacyRateMult),
+      );
   });
 }
 
@@ -348,6 +359,48 @@ function renderPriority(): void {
       el.priorityPanel.appendChild(row);
     });
   }
+}
+
+/** Human-readable effect of a node, from its `mod`/`perLevel`. */
+function perkEffectText(p: PerkDef): string {
+  const v = p.perLevel;
+  let text: string;
+  switch (p.mod) {
+    case "incomeMult":
+      text = `+${Math.round(v * 100)}% income`;
+      break;
+    case "rootMult":
+      text = `root ×${1 + v}`;
+      break;
+    case "tierCostMult":
+      text = `−${Math.round(v * 100)}% tier cost`;
+      break;
+    case "niceAdd":
+      text = `+${v} nice`;
+      break;
+    case "ramCapAdd":
+      text = `+${v} MB ram`;
+      break;
+    case "heatGenMult":
+      text = `−${Math.round(v * 100)}% heat`;
+      break;
+    case "startShieldsAdd":
+      text = `+${v} start shield`;
+      break;
+    case "forkCostMult":
+      text = `−${Math.round(v * 100)}% fork cost`;
+      break;
+    case "pointsMult":
+      text = `+${Math.round(v * 100)}% points`;
+      break;
+    case "legacyRateMult":
+      text = `legacy ×${1 + v}`;
+      break;
+    case "startCycles":
+      text = `+${v} start cycles`;
+      break;
+  }
+  return p.maxLevel === Infinity ? `${text} · √L` : text;
 }
 
 /** Depth of a node in its branch's prerequisite chain (branch roots are 0). */
@@ -405,8 +458,10 @@ function renderPerks(): void {
       const cost = perkCost(state, p.id);
       const b = document.createElement("button");
       b.className = "act perk";
+      const effect = perkEffectText(p);
+      const req = p.requires ? `  ← ${perkById(p.requires)?.name ?? p.requires}` : "";
       b.innerHTML =
-        `<span class="name">${p.name} <small>${p.desc}</small></span>` +
+        `<span class="name">${p.name} <small>${effect}${req}</small></span>` +
         `<span class="cost"></span>`;
       b.disabled = !canBuyPerk(state, p.id);
       const costEl = b.querySelector(".cost") as HTMLElement;
