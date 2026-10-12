@@ -398,9 +398,16 @@ describe("offline legacy contribution", () => {
     expect(s.legacy[0].crashed).toBe(false);
   });
 
+  it("keeps a crashed daemon down offline without the unlock", () => {
+    const s = newGame();
+    s.legacy = [{ name: "legacy-1", rate: d(1000), crashed: true, respawn: 1 }];
+    applyOffline(s, 1);
+    expect(s.legacy[0].crashed).toBe(true);
+  });
+
   it("folds offline legacy output into the cycles total", () => {
     const withLegacy = newGame();
-    withLegacy.unlocks[UNLOCK.legacyRespawn] = true;
+    // No unlock needed: production does not depend on it (only respawn does).
     withLegacy.legacy = Array.from({ length: 10 }, (_, i) => ({
       name: `legacy-${i + 1}`,
       rate: d(1000),

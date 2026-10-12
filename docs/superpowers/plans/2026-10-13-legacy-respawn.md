@@ -159,8 +159,9 @@ describe("legacy auto-respawn unlock", () => {
 ```ts
 // persistence.test.ts — add UNLOCK to the imports (from ./milestones) and update the
 // existing "stays within tolerance with a legacy daemon" test:
-//   replace  s.gc = 5; // auto-respawn, so crashes are transient
-//   with     s.unlocks[UNLOCK.legacyRespawn] = true; // auto-respawn, so crashes are transient
+//   KEEP    s.gc = 5; // leak-flush: without it the online arm's leak OOMs over 3600s
+//   ADD     s.unlocks[UNLOCK.legacyRespawn] = true; // auto-respawn, so crashes are transient
+//   (Replacing gc outright gave ~933% divergence; both arms now carry gc + unlock.)
 
 describe("offline legacy contribution", () => {
   it("respawns a crashed daemon offline once the unlock is granted", () => {

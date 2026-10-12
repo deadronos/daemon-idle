@@ -119,8 +119,10 @@ pre-crashed daemon respawns offline **only** once the unlock is granted.
   the unlock is granted (deterministic — the respawn branch has no `Math.random`).
 - **Offline fold-in:** `applyOffline` with many legacy daemons earns far more than the same gap
   with none — the output is in the cycles total.
-- **Existing test updated:** the #24 tolerance test's `s.gc = 5` becomes
-  `s.unlocks[UNLOCK.legacyRespawn] = true`.
+- **Existing test updated:** the #24 tolerance test's `s.gc = 5` is **kept** (its leak-flush
+  keeps the online arm from OOMing over 3600 s) **and** the `legacy-respawn` unlock is added —
+  both arms carry the same `gc` + unlock, so crashes stay transient and the test still measures
+  offline-vs-online equivalence. (Replacing `gc` outright caused ~933% divergence.)
 
 ## Docs impact (lockstep)
 

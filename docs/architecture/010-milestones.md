@@ -43,13 +43,13 @@ simply never calls `hasUnlock`.
 
 ## The starter set
 
-| id            | metric           | `at` | unlocks |
-| ------------- | ---------------- | ---- | ------- |
-| `first-blood` | `sweepsSurvived` | 1    | `nice`  |
-| `grown-up`    | `ramCap`         | 24   | `gc`    |
-| `bulk-buy`    | `totalEarned`    | 1e5  | `buy-max` |
-| `hands-off`   | `forks`          | 1    | `auto-nice`, `auto-malloc`, `auto-free` |
-| `legacy-respawn` | `forks`       | 2    | `legacy-respawn` |
+| id               | metric           | `at` | unlocks                                 |
+| ---------------- | ---------------- | ---- | --------------------------------------- |
+| `first-blood`    | `sweepsSurvived` | 1    | `nice`                                  |
+| `grown-up`       | `ramCap`         | 24   | `gc`                                    |
+| `bulk-buy`       | `totalEarned`    | 1e5  | `buy-max`                               |
+| `hands-off`      | `forks`          | 1    | `auto-nice`, `auto-malloc`, `auto-free` |
+| `legacy-respawn` | `forks`          | 2    | `legacy-respawn`                        |
 
 `nice` and `gc` are the only upgrades gated; `free()`, `malloc`, `cooling`, shields, and
 `fork()` are available from the start. `bulk-buy` gates the spawn-panel `buy max` toggle
