@@ -4,7 +4,21 @@
 // Mutating actions (`buyPerk`) and the formula integration live in `src/sim.ts`.
 
 import { d, type Decimal } from "./bignum";
-import { PERKS, FORK_COST_FLOOR, perkById, type PerkId, type PerkMods } from "./config/perks";
+import {
+  PERKS,
+  FORK_COST_FLOOR,
+  T_REF,
+  E_REF,
+  DEPTH_GAIN,
+  FLAT_BASE,
+  MIN_RUN_SECONDS,
+  MIN_RUN_EARNED,
+  DEPTH_CAP,
+  MAX_POINTS_PER_FORK,
+  perkById,
+  type PerkId,
+  type PerkMods,
+} from "./config/perks";
 
 export * from "./config/perks";
 
@@ -99,4 +113,23 @@ export function perkMods(s: PerkInput): PerkMods {
 
   m.forkCostMult = Math.max(FORK_COST_FLOOR, m.forkCostMult);
   return m;
+}
+
+/**
+ * Lineage points a fork should award for the run just played: a flat base (only for a
+ * qualifying run) plus a sqrt-scaled depth blend of run duration and run earnings. Pure
+ * and RNG-free. The earnings term is computed in `Decimal` and clamped before it reaches a
+ * JS number, so a run past `1e308` cannot yield `Infinity`.
+ */
+export function pointsForFork(s: PerkInput): number {
+  const runSeconds = Math.max(0, s.playtime - s.runStartPlaytime);
+  const rawEarned = s.totalEarned.sub(s.runBaseEarned);
+  const runEarned = rawEarned.gt(0) ? rawEarned : d(0);
+
+  const timeFactor = Math.sqrt(runSeconds / T_REF);
+  const earnFactor = Math.min(DEPTH_CAP, Math.max(0, runEarned.div(E_REF).sqrt().toNumber()));
+  const depth = timeFactor + earnFactor;
+  const qualifies = runSeconds >= MIN_RUN_SECONDS && runEarned.gte(d(MIN_RUN_EARNED));
+  const points = Math.floor(DEPTH_GAIN * depth) + (qualifies ? FLAT_BASE : 0);
+  return Math.min(MAX_POINTS_PER_FORK, points);
 }

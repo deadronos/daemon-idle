@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vite-plus/test";
 import { d } from "./bignum";
-import { PERKS, type PerkInput, perkById, perkCost, canBuyPerk, perkMods, MOD_KIND } from "./perks";
+import {
+  PERKS,
+  type PerkInput,
+  perkById,
+  perkCost,
+  canBuyPerk,
+  perkMods,
+  MOD_KIND,
+  pointsForFork,
+  DEPTH_CAP,
+  MAX_POINTS_PER_FORK,
+} from "./perks";
 
 const base = (over: Partial<PerkInput> = {}): PerkInput => ({
   perks: {},
@@ -83,5 +94,32 @@ describe("perkMods", () => {
 
   it("makes `vec` double the root multiplier", () => {
     expect(perkMods(base({ perks: { vec: 1 } })).rootMult.toNumber()).toBe(2);
+  });
+});
+
+describe("pointsForFork", () => {
+  it("grants nothing for an instant fork", () => {
+    expect(pointsForFork(base())).toBe(0);
+  });
+
+  it("gates only the flat base; a sub-threshold run gets depth alone", () => {
+    const below = base({ playtime: 30, totalEarned: d(1e6) }); // 30s < 60 -> no flat base
+    expect(pointsForFork(below)).toBe(Math.floor(2 * (Math.sqrt(30 / 300) + 1))); // 2
+    const above = base({ playtime: 300, totalEarned: d(1e6) }); // qualifies -> +1
+    expect(pointsForFork(above)).toBe(Math.floor(2 * (Math.sqrt(1) + 1)) + 1); // 5
+  });
+
+  it("increases monotonically with deeper, longer runs", () => {
+    const shallow = pointsForFork(base({ playtime: 300, totalEarned: d(1e6) }));
+    const deep = pointsForFork(base({ playtime: 900, totalEarned: d(1e9) }));
+    expect(deep).toBeGreaterThan(shallow);
+  });
+
+  it("clamps a huge Decimal runEarned and never returns Infinity", () => {
+    const s = base({ playtime: 1000, totalEarned: d("1e1000") });
+    const p = pointsForFork(s);
+    expect(Number.isFinite(p)).toBe(true);
+    expect(p).toBeLessThanOrEqual(MAX_POINTS_PER_FORK);
+    expect(p).toBe(Math.floor(2 * (Math.sqrt(1000 / 300) + DEPTH_CAP)) + 1);
   });
 });
