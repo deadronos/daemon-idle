@@ -1252,3 +1252,76 @@ describe("automation state", () => {
     expect(s.freeThreshold).toBe(16);
   });
 });
+
+describe("runAutomation", () => {
+  it("auto-malloc buys when toggled, unlocked, and affordable", () => {
+    const s = newGame();
+    s.cycles = d(1e6);
+    s.unlocks = { [UNLOCK.autoMalloc]: true };
+    s.autoMalloc = true;
+    tick(s, 0);
+    expect(s.ramCap).toBe(BASE.ramCap + MALLOC_STEP);
+  });
+  it("does nothing when toggled off or locked", () => {
+    const off = newGame();
+    off.cycles = d(1e6);
+    off.unlocks = { [UNLOCK.autoMalloc]: true }; // toggled off
+    tick(off, 0);
+    expect(off.ramCap).toBe(BASE.ramCap);
+    const locked = newGame();
+    locked.cycles = d(1e6);
+    locked.autoMalloc = true; // not unlocked
+    tick(locked, 0);
+    expect(locked.ramCap).toBe(BASE.ramCap);
+  });
+  it("auto-nice needs both hands-off and first-blood", () => {
+    const s = newGame();
+    s.cycles = d(1e6);
+    s.autoNice = true;
+    s.unlocks = { [UNLOCK.autoNice]: true }; // missing the nice unlock
+    tick(s, 0);
+    expect(s.nice).toBe(0);
+    s.unlocks = { [UNLOCK.autoNice]: true, [UNLOCK.nice]: true };
+    tick(s, 0);
+    expect(s.nice).toBe(1);
+  });
+  it("auto-free fires at the threshold and not below", () => {
+    const s = newGame();
+    s.ramCap = 100; // keep the leak below the OOM threshold so only auto-free acts
+    s.unlocks = { [UNLOCK.autoFree]: true };
+    s.autoFree = true;
+    s.freeThreshold = 10;
+    s.leak = 9;
+    tick(s, 0);
+    expect(s.leak).toBe(9); // below
+    s.leak = 10;
+    tick(s, 0);
+    expect(s.leak).toBe(0); // at the threshold
+  });
+  it("buys at most one level per tick", () => {
+    const s = newGame();
+    s.cycles = d(1e9);
+    s.unlocks = { [UNLOCK.autoMalloc]: true };
+    s.autoMalloc = true;
+    tick(s, 0);
+    expect(s.ramCap).toBe(BASE.ramCap + MALLOC_STEP);
+    tick(s, 0);
+    expect(s.ramCap).toBe(BASE.ramCap + 2 * MALLOC_STEP);
+  });
+  it("does not run on offline ticks", () => {
+    const s = newGame();
+    s.cycles = d(1e6);
+    s.unlocks = { [UNLOCK.autoMalloc]: true };
+    s.autoMalloc = true;
+    tick(s, 0, { offline: true });
+    expect(s.ramCap).toBe(BASE.ramCap);
+  });
+  it("never drives cycles negative", () => {
+    const s = newGame();
+    s.cycles = mallocCost(s); // exactly affordable
+    s.unlocks = { [UNLOCK.autoMalloc]: true };
+    s.autoMalloc = true;
+    tick(s, 0);
+    expect(s.cycles.gte(0)).toBe(true);
+  });
+});

@@ -592,6 +592,13 @@ export function spawnMax(s: GameState, i: number): boolean {
   return true;
 }
 
+/** Earned automation: at most one action of each kind per tick, live ticks only. */
+export function runAutomation(s: GameState): void {
+  if (hasUnlock(s, UNLOCK.autoFree) && s.autoFree && s.leak >= s.freeThreshold) freeMemory(s);
+  if (hasUnlock(s, UNLOCK.autoMalloc) && s.autoMalloc && s.cycles.gte(mallocCost(s))) buyMalloc(s);
+  if (hasUnlock(s, UNLOCK.autoNice) && s.autoNice && s.cycles.gte(niceCost(s))) buyNice(s);
+}
+
 export function buyNice(s: GameState): boolean {
   if (!hasUnlock(s, UNLOCK.nice)) return false;
   const cost = niceCost(s);
@@ -752,6 +759,9 @@ export function tick(s: GameState, dt: number, opts: TickOptions = {}): void {
 
   // Offline catch-up skips the sweep and the OOM machinery: idling must not punish.
   if (opts.offline) return;
+
+  // earned automation — live only, at most one action of each kind per tick
+  runAutomation(s);
 
   // cleanup sweep — cadence escalates with progress; the countdown previews it
   s.sweepInterval = sweepIntervalFor(s);

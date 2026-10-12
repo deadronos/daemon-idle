@@ -51,6 +51,14 @@ export const MILESTONES: MilestoneDef[] = [
     at: 1e5,
     unlocks: ["buy-max"],
   },
+  {
+    id: "hands-off",
+    name: "hands-off",
+    desc: "fork once",
+    metric: "forks",
+    at: 1,
+    unlocks: ["auto-nice", "auto-malloc", "auto-free"],
+  },
 ];
 
 /**
