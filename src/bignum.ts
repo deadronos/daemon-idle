@@ -14,6 +14,3 @@ export type Num = Decimal;
 export function d(value: Decimal | number | string): Decimal {
   return value instanceof Decimal ? value : new Decimal(value);
 }
-
-export const D0 = new Decimal(0);
-export const D1 = new Decimal(1);

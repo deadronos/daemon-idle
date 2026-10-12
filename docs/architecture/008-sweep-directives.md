@@ -13,7 +13,6 @@ described in [doc 001](./001-simulation-core.md).
 interface SweepDirective {
   id: DirectiveId;
   name: string; // shown on the countdown and in the sweep log line
-  flavor: string; // short description
   unlockAt: number; // minimum sweepsSurvived before it can be drawn
   ignoresNice: boolean; // when true, sweepVictimMult is not applied
   budget(s: GameState, totalChildren: number): number;
@@ -81,6 +80,37 @@ never more than are owned.
   is still redrawn.
 - The tick only calls a sweep when `sweepTimer <= 0`, then resets it to `sweepInterval`;
   see the tick order in [doc 001](./001-simulation-core.md).
+
+## Cadence escalation
+
+The interval between sweeps is **derived from progress**, not fixed at load time.
+`sweepIntervalFor(s)` shrinks it from `BASE.sweepInterval` (60 s) toward a hard floor as
+`sweepsSurvived` climbs, and `nice` softens the escalation (stretching the interval back
+toward 60 s):
+
+```
+progress        = min(1, sweepsSurvived / SWEEP_ESCALATE_SWEEPS)
+sweepInterval   = max(SWEEP_INTERVAL_MIN,
+                      BASE.sweepInterval
+                      - (BASE.sweepInterval - SWEEP_INTERVAL_MIN) * progress * sweepVictimMult)
+SWEEP_INTERVAL_MIN     = 10   // cadence floor (s)
+SWEEP_ESCALATE_SWEEPS  = 60   // sweeps survived to reach the floor
+```
+
+So the cadence is 60 s at 0 sweeps, 35 s at 30, and the 10 s floor at ≥60 sweeps. `nice`
+reuses the same victim multiplier (`max(0.3, 1 - nice * 0.03)`), so it can hold the cadence
+up to ~45 s at the escalation horizon — buying `nice` trades offence for cadence. The
+function is deterministic (no `Math.random`) and monotone in `sweepsSurvived`.
+
+`tick` recomputes `s.sweepInterval = sweepIntervalFor(s)` every frame, just before it
+decrements `s.sweepTimer`. When the timer fires, `runSweep` increments `s.sweepsSurvived`,
+but the post-sweep reset (`s.sweepTimer = s.sweepInterval`) reuses the interval cached
+**before** that increment — so the reset cadence lags the sweep it just ran by one step and
+catches up on the next frame. The field is therefore a cache the render layer already reads:
+the countdown (`sweepTimer` / `sweepInterval`) previews the new cadence with **no render
+change**. `doFork` clears the working set, so it resets both `s.sweepInterval` and
+`s.sweepTimer` to `sweepIntervalFor(s)` (not the raw `BASE.sweepInterval`) — the bar can
+never overshoot the escalated interval by a cycle.
 
 ## Seeded draw (`nextRng`, `pickNextDirective`)
 

@@ -35,10 +35,14 @@ legacy rate):
 - non-finite → `error`, `player`.
 - `> RUNAWAY` (1e100) → `warn`, `dev`.
 
-Bounded **number** values (`ramUsed`, `leak`, `playtime`, `sweepTimer`):
+Bounded **number** values (`ramUsed`, `leak`, `playtime`, `sweepTimer`, `heat`, `cooling`,
+`shields`, `ramCap`, `forks`, and each `counts[i]`):
 
 - non-finite → `error`, `player`.
 - `> Number.MAX_SAFE_INTEGER` → `warn`, `dev`.
+
+Each `counts` entry is checked with its index in the code: `numeric.nan.counts.N` (for
+example `numeric.nan.counts.2`).
 
 After the bignum migration, "value exceeds double precision" is **not** an alert — large
 Decimals are expected. See ADR 0003.
@@ -53,7 +57,8 @@ Decimals are expected. See ADR 0003.
 
 ## Testing
 
-`src/diagnostics.test.ts` covers the pure rules (quiet on a healthy state, NaN/Infinity
-errors, the runaway warn, and no false positive on a large-but-sane value). The shell wiring
-is verified in a browser: poisoning `window.daemon.cycles` with NaN shows the banner, the
-log line, and a console error.
+`src/diagnostics.test.ts` covers the pure rules: quiet on a healthy state, NaN/Infinity
+errors on the Decimal fields and on the bounded ones (non-finite `heat`, `cooling`,
+`shields`, `ramCap`, `forks`, and each indexed `counts[i]`), the runaway warn, and no false
+positive on a large-but-sane value. The shell wiring is verified in a browser: poisoning
+`window.daemon.cycles` with NaN shows the banner, the log line, and a console error.

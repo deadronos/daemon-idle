@@ -36,4 +36,39 @@ describe("checkNumericHealth", () => {
     s.totalEarned = d("1e30");
     expect(checkNumericHealth(s)).toEqual([]);
   });
+
+  it("flags a non-finite heat as a player error", () => {
+    const s = newGame();
+    s.heat = Number.NaN;
+    const heat = checkNumericHealth(s).find((a) => a.code === "numeric.nan.heat");
+    expect(heat?.level).toBe("error");
+    expect(heat?.audience).toBe("player");
+  });
+
+  it("flags non-finite cooling and shields", () => {
+    const s = newGame();
+    s.cooling = Number.POSITIVE_INFINITY;
+    s.shields = Number.NaN;
+    const codes = checkNumericHealth(s).map((a) => a.code);
+    expect(codes).toContain("numeric.nan.cooling");
+    expect(codes).toContain("numeric.nan.shields");
+  });
+
+  it("flags non-finite ramCap and forks", () => {
+    const s = newGame();
+    s.ramCap = Number.POSITIVE_INFINITY;
+    s.forks = Number.NaN;
+    const codes = checkNumericHealth(s).map((a) => a.code);
+    expect(codes).toContain("numeric.nan.ramCap");
+    expect(codes).toContain("numeric.nan.forks");
+  });
+
+  it("flags each non-finite counts entry", () => {
+    const s = newGame();
+    s.counts[0] = Number.NaN;
+    s.counts[2] = Number.POSITIVE_INFINITY;
+    const codes = checkNumericHealth(s).map((a) => a.code);
+    expect(codes).toContain("numeric.nan.counts.0");
+    expect(codes).toContain("numeric.nan.counts.2");
+  });
 });

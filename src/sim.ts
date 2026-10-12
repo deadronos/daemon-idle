@@ -46,7 +46,7 @@ export const TIERS: TierDef[] = [
     desc: "threads are cheaper than processes",
     baseCost: 1_000,
     costGrowth: 1.15,
-    baseOutput: 8,
+    baseOutput: 12,
     ram: 4,
     priority: 2,
     trait: "none",
@@ -56,7 +56,7 @@ export const TIERS: TierDef[] = [
     desc: "it has its own Dockerfile, of course",
     baseCost: 10_000,
     costGrowth: 1.18,
-    baseOutput: 60,
+    baseOutput: 150,
     ram: 8,
     priority: 3,
     trait: "none",
@@ -66,7 +66,7 @@ export const TIERS: TierDef[] = [
     desc: "fires every night; nobody knows what it does",
     baseCost: 100_000,
     costGrowth: 1.22,
-    baseOutput: 400,
+    baseOutput: 2000,
     ram: 16,
     priority: 4,
     trait: "none",
@@ -98,9 +98,12 @@ const LEGACY_CRASH_CHANCE = 0.002; // per second, per daemon
 const LEGACY_SHARE = 0.1; // legacy daemon produces 10% of peak cps
 
 export const HEAT_PER_RAM = 0.02; // heat gained per second per MB of childRam
-export const HEAT_DECAY = 1.0; // heat shed per second, before cooling
+export const HEAT_DECAY_RATE = 0.02; // proportional heat shed rate, 1/s, before cooling
 export const HEAT_THROTTLE_AT = 60; // heat at which throttling begins
 export const MAX_THROTTLE = 0.5; // most cycles/s that heat can strip
+
+/** RAM may exceed the cap by this factor before the OOM killer fires (2% grace). */
+export const OOM_TOLERANCE = 1.02;
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v));
@@ -123,7 +126,10 @@ export interface GameState {
   leak: number;
   /** 0..100. Children generate it; it throttles income above HEAT_THROTTLE_AT. */
   heat: number;
-  /** Cooling upgrade level; each level sheds heat 50% faster. */
+  /**
+   * Cooling upgrade level; each level sheds heat 50% faster and lowers the heat
+   * equilibrium by the same `1 + cooling * 0.5` factor.
+   */
   cooling: number;
   nice: number;
   /** Sweep charges; each absorbs one victim before selection. */
@@ -141,7 +147,16 @@ export interface GameState {
   log: string[];
   playtime: number;
   lastSave: number;
+  /** Save format version; bumped when `decode` must migrate legacy fields. */
+  saveVersion: number;
 }
+
+/**
+ * Current save format. Version 2 fixed `doFork` to snapshot legacy rates from the
+ * lineage-free `baseCyclesPerSec`; saves below it still have lineage baked into their
+ * legacy `rate`s and must be migrated in `decode` (see `src/persistence.ts`).
+ */
+export const SAVE_VERSION = 2;
 
 export const BASE = {
   ramCap: 8,
@@ -149,6 +164,14 @@ export const BASE = {
   /** Baseline cycles/s from the root process itself, before any children. */
   rootOutput: 1,
 };
+
+/** Sweep cadence floor (s) reached once escalation saturates. */
+export const SWEEP_INTERVAL_MIN = 10;
+/** Sweeps survived needed to shrink the cadence from `BASE.sweepInterval` to the floor. */
+export const SWEEP_ESCALATE_SWEEPS = 60;
+
+/** Income compounding per sweep survived. `survivalMult = (1 + SURVIVAL_BONUS)^sweepsSurvived`. */
+export const SURVIVAL_BONUS = 0.05;
 
 const LOG_LIMIT = 40;
 
@@ -177,6 +200,7 @@ export function newGame(): GameState {
     log: ["boot: daemon pid 1 started (unattended)"],
     playtime: 0,
     lastSave: Date.now(),
+    saveVersion: SAVE_VERSION,
   };
 }
 
@@ -228,6 +252,15 @@ export function synergyMult(s: GameState, i: number): number {
 }
 
 /**
+ * Heat the current footprint drives toward, before the `[0, 100]` clamp. Because
+ * `HEAT_PER_RAM === HEAT_DECAY_RATE`, this is `childRam / (1 + cooling * 0.5)` MB —
+ * roughly 1 heat per MB of child RAM, halved per two cooling levels.
+ */
+export function heatEquilibrium(s: GameState): number {
+  return (childRam(s) * HEAT_PER_RAM) / (HEAT_DECAY_RATE * (1 + s.cooling * 0.5));
+}
+
+/**
  * Income multiplier from heat: `1` up to HEAT_THROTTLE_AT, then falls linearly to
  * `1 - MAX_THROTTLE` at heat 100.
  */
@@ -237,11 +270,32 @@ export function heatMult(s: GameState): number {
 }
 
 /**
- * Income before the heat throttle. Also the basis for forked legacy daemon rates,
- * which must not bake in the heat throttle.
+ * Income multiplier from sweeps survived: `(1 + SURVIVAL_BONUS)^sweepsSurvived`. A
+ * `Decimal`, not a JS number: `1.05^n` overflows a double after ~14 000 sweeps, and the
+ * game is idle for days. The exponential engine that makes the economy scale.
+ */
+export function survivalMult(s: GameState): Decimal {
+  return d(1 + SURVIVAL_BONUS).pow(s.sweepsSurvived);
+}
+
+/**
+ * Income from children plus the root baseline, before lineage and heat. Lineage-free
+ * on purpose: legacy daemon rates snapshot this, then `tick` applies `lineageMult`
+ * once — baking lineage into the snapshot would double-count it. Children are scaled by
+ * the global `survivalMult`; the root stays **outside** it so an empty board still earns
+ * exactly `BASE.rootOutput` cycles/s.
+ */
+export function baseCyclesPerSec(s: GameState): Decimal {
+  return childOutput(s).mul(survivalMult(s)).add(BASE.rootOutput);
+}
+
+/**
+ * Income before the heat throttle: `baseCyclesPerSec` scaled by the lineage multiplier.
+ * Forked legacy daemon rates are based on `baseCyclesPerSec`, not this, so lineage is
+ * not baked into the new daemon's output.
  */
 export function rawCyclesPerSec(s: GameState): Decimal {
-  return childOutput(s).add(BASE.rootOutput).mul(lineageMult(s));
+  return baseCyclesPerSec(s).mul(lineageMult(s));
 }
 
 export function cyclesPerSec(s: GameState): Decimal {
@@ -250,6 +304,18 @@ export function cyclesPerSec(s: GameState): Decimal {
 
 export function sweepVictimMult(s: GameState): number {
   return Math.max(0.3, 1 - s.nice * 0.03);
+}
+
+/**
+ * Sweep cadence derived from progress: shrinks from `BASE.sweepInterval` toward
+ * `SWEEP_INTERVAL_MIN` over `SWEEP_ESCALATE_SWEEPS`, softened back toward 60 s by
+ * `nice` (via `sweepVictimMult`). Deterministic; the tick caches it on `s.sweepInterval`.
+ */
+export function sweepIntervalFor(s: GameState): number {
+  const progress = Math.min(1, s.sweepsSurvived / SWEEP_ESCALATE_SWEEPS);
+  const raw =
+    BASE.sweepInterval - (BASE.sweepInterval - SWEEP_INTERVAL_MIN) * progress * sweepVictimMult(s);
+  return Math.max(SWEEP_INTERVAL_MIN, raw);
 }
 
 // --- sacrifice order -------------------------------------------------------
@@ -306,7 +372,6 @@ export type DirectiveId = "standard" | "sigkill" | "scavenger" | "group-kill" | 
 export interface SweepDirective {
   id: DirectiveId;
   name: string; // shown on the countdown and in the sweep log line
-  flavor: string; // short description
   unlockAt: number; // minimum sweepsSurvived before it can be drawn
   ignoresNice: boolean; // when true, sweepVictimMult is not applied
   /** Number of victims for this sweep, before selection. */
@@ -343,7 +408,6 @@ export function reapInOrder(s: GameState, order: number[], budget: number): numb
 const standard: SweepDirective = {
   id: "standard",
   name: "standard",
-  flavor: "reap in your sacrifice order",
   unlockAt: 0,
   ignoresNice: false,
   budget: (s, total) => sweepBudget(s, total, 1, false),
@@ -358,7 +422,6 @@ const descendingOutputOrder = TIERS.map((_, i) => i).sort(
 const sigkill: SweepDirective = {
   id: "sigkill",
   name: "sigkill",
-  flavor: "SIGKILL — nice cannot save you",
   unlockAt: 3,
   ignoresNice: true,
   budget: (s, total) => sweepBudget(s, total, 1, true),
@@ -368,7 +431,6 @@ const sigkill: SweepDirective = {
 const scavenger: SweepDirective = {
   id: "scavenger",
   name: "scavenger",
-  flavor: "reap the highest-output children first",
   unlockAt: 6,
   ignoresNice: false,
   budget: (s, total) => sweepBudget(s, total, 0.6, false),
@@ -378,7 +440,6 @@ const scavenger: SweepDirective = {
 const groupKill: SweepDirective = {
   id: "group-kill",
   name: "group-kill",
-  flavor: "reap the densest tier first",
   unlockAt: 10,
   ignoresNice: false,
   budget: (s, total) => sweepBudget(s, total, 1, false),
@@ -391,7 +452,6 @@ const groupKill: SweepDirective = {
 const backpressure: SweepDirective = {
   id: "backpressure",
   name: "backpressure",
-  flavor: "reclaim the leak, then reap half the usual budget",
   unlockAt: 15,
   ignoresNice: false,
   budget: (s, total) => sweepBudget(s, total, 0.5, false),
@@ -439,10 +499,10 @@ export function shieldCost(s: GameState): Decimal {
   return d(500).mul(d(2).pow(s.shields));
 }
 
-export const MALLOC_STEP = 8;
+export const MALLOC_STEP = 16;
 
 export function mallocCost(s: GameState): Decimal {
-  return d(150).mul(d(1.85).pow((s.ramCap - BASE.ramCap) / MALLOC_STEP));
+  return d(150).mul(d(1.6).pow((s.ramCap - BASE.ramCap) / MALLOC_STEP));
 }
 
 export function gcCost(s: GameState): Decimal {
@@ -539,7 +599,7 @@ export function canFork(s: GameState): boolean {
 
 export function doFork(s: GameState): boolean {
   if (!canFork(s)) return false;
-  const peak = rawCyclesPerSec(s); // unthrottled: legacy daemons ignore heat
+  const peak = baseCyclesPerSec(s); // unthrottled + lineage-free: heat and lineage are not baked in
   const rate = Decimal.max(0.1, peak.mul(LEGACY_SHARE));
   s.forks++;
   s.legacy.push({
@@ -558,23 +618,36 @@ export function doFork(s: GameState): boolean {
   s.shields = 0;
   s.nice = 0;
   s.gc = 0;
-  s.sweepTimer = BASE.sweepInterval;
+  s.sweepInterval = sweepIntervalFor(s);
+  s.sweepTimer = s.sweepInterval;
   log(s, `fork(): new instance spawned — lineage ×${lineageMult(s).toNumber().toFixed(1)}`);
   return true;
 }
 
 // --- tick ------------------------------------------------------------------
 
-export function tick(s: GameState, dt: number): void {
+/**
+ * Options for `tick`. `offline` marks a catch-up replay (see `persistence.applyOffline`):
+ * it accrues income (heat-throttled), heat, leak + `gc` drain, and legacy crashes, but
+ * skips the cleanup sweep (step 6) and the memory-pressure latch + OOM killer (steps 7–8),
+ * so idling never reaps the table and never OOMs.
+ */
+export interface TickOptions {
+  offline?: boolean;
+}
+
+export function tick(s: GameState, dt: number, opts: TickOptions = {}): void {
   s.playtime += dt;
 
   const gain = cyclesPerSec(s).mul(dt);
   s.cycles = s.cycles.add(gain);
   s.totalEarned = s.totalEarned.add(gain);
 
-  // heat: children generate it, cooling sheds it; throttles next tick's income
-  s.heat += childRam(s) * HEAT_PER_RAM * dt;
-  s.heat -= HEAT_DECAY * (1 + s.cooling * 0.5) * dt;
+  // heat: children generate it, cooling sheds it proportionally; throttles next tick's income
+  const coolingFactor = 1 + s.cooling * 0.5;
+  const rate = HEAT_DECAY_RATE * coolingFactor;
+  const eq = heatEquilibrium(s);
+  s.heat = eq + (s.heat - eq) * Math.exp(-rate * dt);
   s.heat = clamp(s.heat, 0, 100);
 
   // memory leak grows with the non-immune footprint; gc flushes it back down
@@ -582,8 +655,16 @@ export function tick(s: GameState, dt: number): void {
   const growth = footprint * LEAK_RATE * dt;
   s.leak += growth;
   if (s.gc > 0) {
-    s.leak = Math.max(0, s.leak - growth * s.gc * 0.9);
+    const growthFlush = growth * s.gc * 0.9;
+    // standing leak decays at `min(1, gc * 0.1)` per second; compound over dt
+    const standingRate = Math.min(1, s.gc * 0.1);
+    const standingFlush = s.leak * (1 - Math.pow(1 - standingRate, dt));
+    s.leak = Math.max(0, s.leak - growthFlush - standingFlush);
   }
+
+  // Offline catch-up skips the OOM killer, so bound the leak here: otherwise hours away
+  // would grow it without limit and the first live tick would wipe the board.
+  if (opts.offline) s.leak = Math.min(s.leak, s.ramCap);
 
   // legacy daemons: produce, occasionally crash, maybe auto-respawn
   const mult = lineageMult(s);
@@ -606,7 +687,11 @@ export function tick(s: GameState, dt: number): void {
     }
   }
 
-  // cleanup sweep
+  // Offline catch-up skips the sweep and the OOM machinery: idling must not punish.
+  if (opts.offline) return;
+
+  // cleanup sweep — cadence escalates with progress; the countdown previews it
+  s.sweepInterval = sweepIntervalFor(s);
   s.sweepTimer -= dt;
   if (s.sweepTimer <= 0) {
     runSweep(s);
@@ -621,7 +706,7 @@ export function tick(s: GameState, dt: number): void {
   } else if (s.ramWarned && used < s.ramCap * 0.8) {
     s.ramWarned = false;
   }
-  if (used > s.ramCap) runOom(s);
+  if (used > s.ramCap * OOM_TOLERANCE) runOom(s);
 }
 
 /**
@@ -667,11 +752,15 @@ function runOom(s: GameState): void {
   // kill the most valuable children first — the OOM killer does not care
   const order = TIERS.map((_, i) => i).sort((a, b) => TIERS[b].baseOutput - TIERS[a].baseOutput);
   let killed = 0;
-  while (ramUsed(s) > s.ramCap) {
-    const i = order.find((idx) => s.counts[idx] > 0);
-    if (i === undefined) break;
-    s.counts[i]--;
-    killed++;
+  // Drain in bulk: remove as many of the current tier as needed to fit under the cap.
+  // A per-iteration `counts[i]--` loop would stall for a huge (but finite) count.
+  for (const i of order) {
+    if (ramUsed(s) <= s.ramCap) break;
+    const need = Math.ceil((ramUsed(s) - s.ramCap) / TIERS[i].ram);
+    const take = Math.min(s.counts[i], need);
+    if (take <= 0) continue;
+    s.counts[i] -= take;
+    killed += take;
   }
   // if the leak alone is over the ceiling, reclaim it
   if (ramUsed(s) > s.ramCap) {

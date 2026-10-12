@@ -97,6 +97,12 @@ export function checkNumericHealth(s: GameState): Alert[] {
   checkNumber("leak", s.leak);
   checkNumber("playtime", s.playtime);
   checkNumber("sweepTimer", s.sweepTimer);
+  checkNumber("heat", s.heat);
+  checkNumber("cooling", s.cooling);
+  checkNumber("shields", s.shields);
+  checkNumber("ramCap", s.ramCap);
+  checkNumber("forks", s.forks);
+  s.counts.forEach((n, i) => checkNumber(`counts.${i}`, n));
 
   return alerts;
 }

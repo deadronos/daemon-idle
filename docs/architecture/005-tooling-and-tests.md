@@ -37,13 +37,17 @@ Tests are colocated as `src/*.test.ts` and import from **`vite-plus/test`** (not
 
 `src/sim.test.ts` covers the pure simulation: bootstrap income, per-tier cost curves (each
 tier's own `costGrowth`) and upgrade cost curves, spawn gating (cycles + RAM), cross-tier
-synergy, the cleanup sweep (priority order and `nice`) plus the sweep directive roster (one
-test per directive — `standard`, `sigkill`, `scavenger`, `group-kill`, `backpressure` — with
-`standard` reproducing the original sweep exactly), directive scheduling (escalation pool
-membership, seeded determinism, no back-to-back repeat, advance-with-an-empty-table, and the
-corrupt-id fallback), heat/cooling, SIGTERM shields, `estimateVictims`, the memory leak and
-`gc`, the OOM killer, prestige, and big-number range. `src/diagnostics.test.ts` covers the
-watchdog rules.
+synergy, the global survival multiplier, the cleanup sweep (priority order and `nice`) plus
+the sweep directive roster (one test per directive — `standard`, `sigkill`, `scavenger`,
+`group-kill`, `backpressure` — with `standard` reproducing the original sweep exactly),
+directive scheduling (escalation pool membership, seeded determinism, no back-to-back
+repeat, advance-with-an-empty-table, and the corrupt-id fallback), sweep cadence
+escalation, heat/cooling, SIGTERM shields, `estimateVictims`, the memory leak and `gc`, the
+OOM killer, prestige (including the fork-time `sweepInterval` reset), legacy-daemon lineage,
+big-number range, and multi-seed progression (a greedy session reaches the upper tiers).
+`src/persistence.test.ts` covers save hardening (`decode` coercion and numeric clamps, the
+non-object-JSON guard, save-version migration) and offline progress (no table reaping, no
+OOM, the leak bound). `src/diagnostics.test.ts` covers the watchdog rules.
 
 ### Writing a sim test
 
