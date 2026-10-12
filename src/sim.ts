@@ -152,6 +152,14 @@ export interface GameState {
   unlocks: Record<string, true>;
   /** `buy max` toggle preference (is a bulk-buy capability unlocked). */
   buyMax: boolean;
+  /** Auto-buy `nice` when affordable (needs the `auto-nice` unlock). */
+  autoNice: boolean;
+  /** Auto-buy `malloc` when affordable (needs the `auto-malloc` unlock). */
+  autoMalloc: boolean;
+  /** Auto-`free()` the leak at `freeThreshold` (needs the `auto-free` unlock). */
+  autoFree: boolean;
+  /** Leak MB at which auto-free fires. */
+  freeThreshold: number;
   log: string[];
   playtime: number;
   lastSave: number;
@@ -164,9 +172,10 @@ export interface GameState {
  * lineage-free `baseCyclesPerSec`; saves below it still have lineage baked into their
  * legacy `rate`s and must be migrated in `decode` (see `src/persistence.ts`).
  * Version 3 added the milestone records (`milestonesDone`, `unlocks`).
- * Version 4 added the `buyMax` toggle. Versions 3–4 are additive only.
+ * Version 4 added the `buyMax` toggle. Version 5 added the automation toggles
+ * (`autoNice`, `autoMalloc`, `autoFree`) and `freeThreshold`. Versions 3–5 are additive.
  */
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 export const BASE = {
   ramCap: 8,
@@ -210,6 +219,10 @@ export function newGame(): GameState {
     milestonesDone: {},
     unlocks: {},
     buyMax: false,
+    autoNice: false,
+    autoMalloc: false,
+    autoFree: false,
+    freeThreshold: 16,
     log: ["boot: daemon pid 1 started (unattended)"],
     playtime: 0,
     lastSave: Date.now(),

@@ -1244,3 +1244,11 @@ describe("buyMax toggle state", () => {
     expect(newGame().buyMax).toBe(false);
   });
 });
+
+describe("automation state", () => {
+  it("defaults the toggles off and the threshold to 16", () => {
+    const s = newGame();
+    expect([s.autoNice, s.autoMalloc, s.autoFree]).toEqual([false, false, false]);
+    expect(s.freeThreshold).toBe(16);
+  });
+});

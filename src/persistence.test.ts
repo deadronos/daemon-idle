@@ -250,3 +250,19 @@ describe("buyMax persistence", () => {
     expect(decode("{}").buyMax).toBe(false);
   });
 });
+
+describe("automation persistence", () => {
+  it("round-trips the fields and coerces/clamps corrupt values", () => {
+    const s = newGame();
+    s.autoNice = true;
+    s.autoFree = true;
+    s.freeThreshold = 40;
+    const out = decode(encode(s));
+    expect(out.autoNice).toBe(true);
+    expect(out.autoFree).toBe(true);
+    expect(out.freeThreshold).toBe(40);
+    expect(decode('{"autoMalloc":1,"freeThreshold":-5}').autoMalloc).toBe(true);
+    expect(decode('{"freeThreshold":-5}').freeThreshold).toBe(0);
+    expect(decode("{}").freeThreshold).toBe(16);
+  });
+});
