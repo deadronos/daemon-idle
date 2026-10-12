@@ -6,6 +6,7 @@
 
 import { d, Decimal } from "./bignum";
 import { type PerkId } from "./config/perks";
+import { type MilestoneId } from "./config/milestones";
 import {
   canBuyPerk,
   perkById,
@@ -14,6 +15,7 @@ import {
   pointsForFork,
   MAX_POINTS_PER_FORK,
 } from "./perks";
+import { evaluateMilestones, hasUnlock, milestoneById, UNLOCK } from "./milestones";
 
 export interface TierDef {
   name: string;
@@ -161,6 +163,20 @@ export interface GameState {
   runBaseEarned: Decimal;
   /** `playtime` at the last fork (base for the per-run duration). */
   runStartPlaytime: number;
+  /** Milestones that have fired (sticky). */
+  milestonesDone: Record<MilestoneId, true>;
+  /** Unlock ids granted by milestones; features gate via `hasUnlock`. */
+  unlocks: Record<string, true>;
+  /** `buy max` toggle preference (is a bulk-buy capability unlocked). */
+  buyMax: boolean;
+  /** Auto-buy `nice` when affordable (needs the `auto-nice` unlock). */
+  autoNice: boolean;
+  /** Auto-buy `malloc` when affordable (needs the `auto-malloc` unlock). */
+  autoMalloc: boolean;
+  /** Auto-`free()` the leak at `freeThreshold` (needs the `auto-free` unlock). */
+  autoFree: boolean;
+  /** Leak MB at which auto-free fires. */
+  freeThreshold: number;
   log: string[];
   playtime: number;
   lastSave: number;
@@ -173,9 +189,11 @@ export interface GameState {
  * lineage-free `baseCyclesPerSec`; saves below it still have lineage baked into their
  * legacy `rate`s and must be migrated in `decode` (see `src/persistence.ts`).
  * Version 3 added the lineage/perk fields (`lineage`, `perks`, `runBaseEarned`,
- * `runStartPlaytime`); that migration is additive only.
+ * `runStartPlaytime`) and the milestone records (`milestonesDone`, `unlocks`) — both additive.
+ * Version 4 added the `buyMax` toggle. Version 5 added the automation toggles
+ * (`autoNice`, `autoMalloc`, `autoFree`) and `freeThreshold`. Versions 3–5 are additive.
  */
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 5;
 
 export const BASE = {
   ramCap: 8,
@@ -220,6 +238,13 @@ export function newGame(): GameState {
     perks: {},
     runBaseEarned: d(0),
     runStartPlaytime: 0,
+    milestonesDone: {},
+    unlocks: {},
+    buyMax: false,
+    autoNice: false,
+    autoMalloc: false,
+    autoFree: false,
+    freeThreshold: 16,
     log: ["boot: daemon pid 1 started (unattended)"],
     playtime: 0,
     lastSave: Date.now(),
@@ -576,7 +601,50 @@ export function spawn(s: GameState, i: number): boolean {
   return true;
 }
 
+/** Largest number of units of tier `i` buyable now, bounded by `cycles` and RAM. Pure. */
+export function maxAffordable(s: GameState, i: number): number {
+  const def = TIERS[i];
+  if (!def) return 0;
+  const room = Math.floor((ramCapTotal(s) - ramUsed(s)) / def.ram);
+  if (room <= 0) return 0;
+  const next = tierCost(s, i); // cost of the next unit
+  const growth = def.costGrowth;
+  let k = 0;
+  if (s.cycles.gt(0)) {
+    // solve next * (growth^k - 1) / (growth - 1) <= cycles  ->  k
+    const ratio = s.cycles.mul(growth - 1).div(next).add(1);
+    k = Math.floor(ratio.ln().div(Math.log(growth)).toNumber());
+  }
+  if (!Number.isFinite(k) || k < 0) k = 0;
+  k = Math.min(k, room);
+  const total = (n: number) => next.mul(d(growth).pow(n).sub(1)).div(growth - 1);
+  while (k > 0 && total(k).gt(s.cycles)) k--; // absorb Decimal rounding
+  while (k + 1 <= room && total(k + 1).lte(s.cycles)) k++;
+  return k;
+}
+
+/** Buy the maximum affordable units of tier `i` in one action. Gated by the `buy-max` unlock. */
+export function spawnMax(s: GameState, i: number): boolean {
+  if (!hasUnlock(s, UNLOCK.buyMax)) return false;
+  const k = maxAffordable(s, i);
+  if (k <= 0) return false;
+  const growth = TIERS[i].costGrowth;
+  const total = tierCost(s, i).mul(d(growth).pow(k).sub(1)).div(growth - 1);
+  s.cycles = s.cycles.sub(total);
+  s.counts[i] += k;
+  log(s, `spawn x${k}: ${TIERS[i].name}`);
+  return true;
+}
+
+/** Earned automation: at most one action of each kind per tick, live ticks only. */
+export function runAutomation(s: GameState): void {
+  if (hasUnlock(s, UNLOCK.autoFree) && s.autoFree && s.leak >= s.freeThreshold) freeMemory(s);
+  if (hasUnlock(s, UNLOCK.autoMalloc) && s.autoMalloc && s.cycles.gte(mallocCost(s))) buyMalloc(s);
+  if (hasUnlock(s, UNLOCK.autoNice) && s.autoNice && s.cycles.gte(niceCost(s))) buyNice(s);
+}
+
 export function buyNice(s: GameState): boolean {
+  if (!hasUnlock(s, UNLOCK.nice)) return false;
   const cost = niceCost(s);
   if (s.cycles.lt(cost)) return false;
   s.cycles = s.cycles.sub(cost);
@@ -604,6 +672,7 @@ export function buyMalloc(s: GameState): boolean {
 }
 
 export function buyGc(s: GameState): boolean {
+  if (!hasUnlock(s, UNLOCK.gc)) return false;
   const cost = gcCost(s);
   if (s.cycles.lt(cost)) return false;
   s.cycles = s.cycles.sub(cost);
@@ -747,6 +816,9 @@ export function tick(s: GameState, dt: number, opts: TickOptions = {}): void {
   // Offline catch-up skips the sweep and the OOM machinery: idling must not punish.
   if (opts.offline) return;
 
+  // earned automation — live only, at most one action of each kind per tick
+  runAutomation(s);
+
   // cleanup sweep — cadence escalates with progress; the countdown previews it
   s.sweepInterval = sweepIntervalFor(s);
   s.sweepTimer -= dt;
@@ -765,6 +837,12 @@ export function tick(s: GameState, dt: number, opts: TickOptions = {}): void {
     s.ramWarned = false;
   }
   if (used > cap * OOM_TOLERANCE) runOom(s);
+
+  // milestones: evaluate once per live tick (after the offline early-return), fire-once
+  for (const id of evaluateMilestones(s)) {
+    const def = milestoneById(id);
+    if (def && def.unlocks.length > 0) log(s, `milestone: ${def.name} — unlocked`);
+  }
 }
 
 /**

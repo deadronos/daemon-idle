@@ -32,6 +32,13 @@ cosmetics, which use `Math.random`).
 | `oomCount`       | number         | Times the OOM killer has fired.                 |
 | `ramWarned`      | boolean        | Latches the ≥90% memory-pressure warning.       |
 | `legacy`         | LegacyDaemon[] | Background producers left by forks.             |
+| `milestonesDone` | Record<MilestoneId, true> | Milestones that have fired (sticky).  |
+| `unlocks`        | Record<string, true> | Unlock ids granted; gate via `hasUnlock`. |
+| `buyMax`         | boolean        | `buy max` spawn toggle preference.              |
+| `autoNice`       | boolean        | Auto-buy `nice` when affordable (unlock-gated). |
+| `autoMalloc`     | boolean        | Auto-buy `malloc` when affordable (unlock-gated). |
+| `autoFree`       | boolean        | Auto-`free()` the leak at `freeThreshold`.      |
+| `freeThreshold`  | number         | Leak MB at which auto-free fires.               |
 | `log`            | string[]       | Terminal feed, newest first, capped at 40.      |
 | `playtime`       | number         | Seconds simulated (includes offline).           |
 | `lastSave`       | number         | Epoch ms of last save; drives offline progress. |
@@ -210,13 +217,21 @@ Order matters — later steps observe the effects of earlier ones.
 7. Memory-pressure check: if `ramUsed > 0.9 * ramCapTotal` and not already warned, log once;
    clear the latch below `0.8 * ramCapTotal`.
 8. If `ramUsed > ramCapTotal * OOM_TOLERANCE`, run the OOM killer.
+9. Evaluate milestones (see [doc 010](./010-milestones.md)): fire any whose metric threshold is
+   met, granting their unlock flags.
+
+Between the offline early-return and the sweep, a live tick also runs **earned automation**
+(`runAutomation`): auto-`free` (when `leak >= freeThreshold`), then auto-`malloc`, then
+auto-`nice`, each at most once per tick and each gated by `toggle ∧ hasUnlock(…)`. Running
+before the sweep lets auto-`nice` reduce this tick's victims, and before the OOM check lets
+auto-`malloc` raise the ceiling in time. It is live-only, so offline catch-up never auto-buys.
 
 `tick(s, dt, { offline: true })` is the offline catch-up path (see
 [doc 003](./003-persistence.md)): it runs steps 1–5 only, so an idle gap still earns
-(heat-throttled) income and runs legacy daemons but **never reaps the table (step 6) and
-never OOMs (steps 7–8)**. The sweep timer is therefore **frozen, not decremented**, while
-offline: it resumes counting down from where it left off. The default `opts` is `{}` (live
-play), so the non-offline path is unchanged.
+(heat-throttled) income and runs legacy daemons but **never reaps the table (step 6), never
+OOMs (steps 7–8), and never fires milestones (step 9)**. The sweep timer is therefore
+**frozen, not decremented**, while offline: it resumes counting down from where it left off.
+The default `opts` is `{}` (live play), so the non-offline path is unchanged.
 
 ## Sacrifice order
 
@@ -256,9 +271,9 @@ re-crosses `+2%`, so the `*0.9` penalty no longer compounds tick-over-tick.
 
 | Upgrade           | Cost                        | Effect                                       |
 | ----------------- | --------------------------- | -------------------------------------------- |
-| `nice(+1)`        | `250 * 2.2^n`               | −3% sweep victims per level (floor 30%).     |
+| `nice(+1)`        | `250 * 2.2^n`               | −3% sweep victims per level (floor 30%). Gated by `first-blood` (doc 010). |
 | `malloc(+1)`      | `150 * 1.6^((ramCap-8)/16)` | +16 MB ceiling.                              |
-| `gc(+1)`          | `400 * 3^n`                 | Faster automatic leak flushing.              |
+| `gc(+1)`          | `400 * 3^n`                 | Faster automatic leak flushing. Gated by `grown-up` (doc 010). |
 | `cooling(+1)`     | `1000 * 2.5^n`              | Heat sheds faster and its equilibrium drops. |
 | `free()`          | 0                           | Zero the leak.                               |
 | `SIGTERM handler` | `500 * 2^shields`           | +1 charge; each absorbs one sweep victim.    |
@@ -280,6 +295,20 @@ aggregate, `perkMods(s)`, which the formulas above read in place: `incomeMult`/`
 (`forkCost`, floored), `pointsMult` and `legacyRateMult` (`doFork`). `buyPerk` spends lineage;
 `canBuyPerk` gates on prerequisite, level cap, and affordability. `baseCyclesPerSec` stays
 perk-free so the legacy snapshot is clean.
+
+## Milestones
+
+Named, one-shot goals (`MILESTONES` in `src/config/milestones.ts`) that fire when a metric
+threshold is reached and grant named unlocks. State is two sticky records (`milestonesDone`,
+`unlocks`); `evaluateMilestones` runs at the end of a live tick; features gate via
+`hasUnlock(s, id)` — `nice` and `gc` are the starter gates. Full contract in
+[doc 010](./010-milestones.md).
+
+The bulk-spawn ability is also gated: `maxAffordable(s, i)` returns the largest number of
+tier-`i` units buyable now (bounded by both `cycles` and `ramCapTotal`, solved in closed form
+with a rounding correction), and `spawnMax(s, i)` bulk-buys that many in one action. `spawnMax`
+refuses until `hasUnlock(s, "buy-max")` (the `bulk-buy` milestone); the persisted `buyMax`
+boolean is only the toggle *preference*, not the capability.
 
 ## Invariants
 

@@ -8,6 +8,8 @@ import {
   encode,
   loadFrom,
   sanitizePerks,
+  sanitizeMilestones,
+  sanitizeUnlocks,
 } from "./persistence";
 import { BASE, SAVE_VERSION, newGame, tick } from "./sim";
 
@@ -265,5 +267,65 @@ describe("offline progress with perks", () => {
     applyOffline(plain, 60);
     expect(plain.cycles.toNumber()).toBeCloseTo(60, 3); // root 1/s
     expect(perked.cycles.toNumber()).toBeCloseTo(66, 3); // 1.1/s
+  });
+});
+
+describe("milestone persistence", () => {
+  it("round-trips the two records", () => {
+    const s = newGame();
+    s.milestonesDone = { "first-blood": true };
+    s.unlocks = { nice: true, "auto-nice": true };
+    const out = decode(encode(s));
+    expect(out.milestonesDone).toEqual({ "first-blood": true });
+    expect(out.unlocks).toEqual({ nice: true, "auto-nice": true });
+  });
+  it("drops unknown milestone ids and garbage unlocks", () => {
+    expect(
+      sanitizeMilestones({ "first-blood": true, ghost: true, "grown-up": false }),
+    ).toEqual({ "first-blood": true });
+    expect(sanitizeMilestones(null)).toEqual({});
+    expect(sanitizeUnlocks({ nice: true, bad: false, zero: 0 })).toEqual({ nice: true });
+    expect(sanitizeUnlocks([1, 2])).toEqual({});
+    expect(sanitizeUnlocks("x")).toEqual({});
+  });
+  it("loads a pre-version save with empty records", () => {
+    const s = decode('{"cycles":"0","totalEarned":"0"}');
+    expect(s.milestonesDone).toEqual({});
+    expect(s.unlocks).toEqual({});
+    expect(s.saveVersion).toBe(SAVE_VERSION);
+  });
+});
+
+describe("sanitizeUnlocks cap", () => {
+  it("caps the number of unlock keys kept", () => {
+    const raw: Record<string, true> = {};
+    for (let i = 0; i < 300; i++) raw[`u${i}`] = true;
+    expect(Object.keys(sanitizeUnlocks(raw)).length).toBe(256);
+  });
+});
+
+describe("buyMax persistence", () => {
+  it("round-trips and coerces a corrupt value to boolean", () => {
+    const s = newGame();
+    s.buyMax = true;
+    expect(decode(encode(s)).buyMax).toBe(true);
+    expect(decode('{"buyMax":"nope"}').buyMax).toBe(true); // truthy
+    expect(decode("{}").buyMax).toBe(false);
+  });
+});
+
+describe("automation persistence", () => {
+  it("round-trips the fields and coerces/clamps corrupt values", () => {
+    const s = newGame();
+    s.autoNice = true;
+    s.autoFree = true;
+    s.freeThreshold = 40;
+    const out = decode(encode(s));
+    expect(out.autoNice).toBe(true);
+    expect(out.autoFree).toBe(true);
+    expect(out.freeThreshold).toBe(40);
+    expect(decode('{"autoMalloc":1,"freeThreshold":-5}').autoMalloc).toBe(true);
+    expect(decode('{"freeThreshold":-5}').freeThreshold).toBe(0);
+    expect(decode("{}").freeThreshold).toBe(16);
   });
 });

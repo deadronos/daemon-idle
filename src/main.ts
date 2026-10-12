@@ -31,6 +31,7 @@ import {
   ramUsed,
   shieldCost,
   spawn,
+  spawnMax,
   sweepVictimMult,
   tick,
   tierCost,
@@ -45,6 +46,15 @@ import {
   pointsForFork,
   type PerkDef,
 } from "./perks";
+import {
+  MILESTONES,
+  METRICS,
+  hasUnlock,
+  milestoneProgress,
+  orderedMilestones,
+  UNLOCK,
+  type MetricId,
+} from "./milestones";
 import { type Alert, checkNumericHealth } from "./diagnostics";
 import { consoleSink, logFeedSink, makeReporter } from "./report";
 import { fmt, fmtRate, fmtTime } from "./format";
@@ -108,6 +118,14 @@ const el = {
   lineageText: $("lineageText"),
   lineageNext: $("lineageNext"),
   perkPanel: $("perkPanel"),
+  milestonePanel: $("milestonePanel"),
+  buyMaxWrap: $("buyMaxWrap"),
+  buyMaxToggle: $<HTMLInputElement>("buyMaxToggle"),
+  autoWrap: $("autoWrap"),
+  autoNiceToggle: $<HTMLInputElement>("autoNiceToggle"),
+  autoMallocToggle: $<HTMLInputElement>("autoMallocToggle"),
+  autoFreeToggle: $<HTMLInputElement>("autoFreeToggle"),
+  freeThresholdInput: $<HTMLInputElement>("freeThresholdInput"),
   log: $("log"),
 };
 
@@ -128,7 +146,8 @@ const spawnButtons: ActionButton[] = TIERS.map((tier, i) => {
     `<span class="name">${tier.name} <small>${tier.desc}</small></span>` +
     `<span class="cost"></span>`;
   b.addEventListener("click", () => {
-    spawn(state, i);
+    if (state.buyMax && hasUnlock(state, UNLOCK.buyMax)) spawnMax(state, i);
+    else spawn(state, i);
     render(true);
   });
   el.spawnPanel.appendChild(b);
@@ -139,6 +158,28 @@ const spawnButtons: ActionButton[] = TIERS.map((tier, i) => {
     enabled: () => canSpawn(state, i),
     run: () => spawn(state, i),
   };
+});
+
+el.buyMaxToggle.addEventListener("change", () => {
+  state.buyMax = el.buyMaxToggle.checked;
+  render(true);
+});
+
+el.autoNiceToggle.addEventListener("change", () => {
+  state.autoNice = el.autoNiceToggle.checked;
+  render(true);
+});
+el.autoMallocToggle.addEventListener("change", () => {
+  state.autoMalloc = el.autoMallocToggle.checked;
+  render(true);
+});
+el.autoFreeToggle.addEventListener("change", () => {
+  state.autoFree = el.autoFreeToggle.checked;
+  render(true);
+});
+el.freeThresholdInput.addEventListener("change", () => {
+  state.freeThreshold = Math.max(0, Math.floor(Number(el.freeThresholdInput.value) || 0));
+  render(true);
 });
 
 const upgradeButtons: ActionButton[] = [];
@@ -168,9 +209,11 @@ addUpgrade(
 );
 addUpgrade(
   () =>
-    `nice(+1)  ·  reap ${Math.round((1 - sweepVictimMult(state)) * 100)}% fewer  ·  lvl ${state.nice}`,
+    hasUnlock(state, UNLOCK.nice)
+      ? `nice(+1)  ·  reap ${Math.round((1 - sweepVictimMult(state)) * 100)}% fewer  ·  lvl ${state.nice}`
+      : `🔒 nice  ·  ${unlockSource(UNLOCK.nice)}`,
   () => niceCost(state),
-  () => state.cycles.gte(niceCost(state)),
+  () => hasUnlock(state, UNLOCK.nice) && state.cycles.gte(niceCost(state)),
   () => buyNice(state),
 );
 addUpgrade(
@@ -187,9 +230,14 @@ addUpgrade(
   () => buyShield(state),
 );
 addUpgrade(
-  () => (state.gc === 0 ? "gc  ·  auto-flush the leak" : `gc  ·  auto-flush lvl ${state.gc}`),
+  () =>
+    hasUnlock(state, UNLOCK.gc)
+      ? state.gc === 0
+        ? "gc  ·  auto-flush the leak"
+        : `gc  ·  auto-flush lvl ${state.gc}`
+      : `🔒 gc  ·  ${unlockSource(UNLOCK.gc)}`,
   () => gcCost(state),
-  () => state.cycles.gte(gcCost(state)),
+  () => hasUnlock(state, UNLOCK.gc) && state.cycles.gte(gcCost(state)),
   () => buyGc(state),
 );
 addUpgrade(
@@ -211,7 +259,6 @@ addUpgrade(
 // --- render ----------------------------------------------------------------
 
 let lastLogSig = "";
-
 function render(force = false): void {
   el.cycles.textContent = fmt(state.cycles);
   el.cps.textContent = fmt(cyclesPerSec(state));
@@ -251,13 +298,24 @@ function render(force = false): void {
   el.shieldText.textContent = String(state.shields);
 
   // action buttons
+  el.buyMaxWrap.hidden = !hasUnlock(state, UNLOCK.buyMax);
+  el.buyMaxToggle.checked = state.buyMax;
+  el.autoWrap.hidden = !hasUnlock(state, UNLOCK.autoNice);
+  el.autoNiceToggle.checked = state.autoNice;
+  el.autoMallocToggle.checked = state.autoMalloc;
+  el.autoFreeToggle.checked = state.autoFree;
+  // don't clobber a field the user is typing into (change fires on blur/Enter only)
+  if (document.activeElement !== el.freeThresholdInput) {
+    el.freeThresholdInput.value = String(state.freeThreshold);
+  }
+  const maxOn = state.buyMax && hasUnlock(state, UNLOCK.buyMax);
   for (let i = 0; i < spawnButtons.length; i++) {
     const b = spawnButtons[i];
     const ok = b.enabled();
     const ramFull = ramUsed(state) + TIERS[i].ram > ramCapTotal(state);
     b.el.disabled = !ok;
     const costEl = b.el.querySelector(".cost") as HTMLElement;
-    costEl.textContent = `${state.counts[i]}  ·  ${fmt(b.cost())}${ramFull ? "  ⚠ ram" : ""}`;
+    costEl.textContent = `${state.counts[i]}  ·  ${fmt(b.cost())}${maxOn ? "  ×max" : ""}${ramFull ? "  ⚠ ram" : ""}`;
     costEl.classList.toggle("ok", ok);
   }
 
@@ -274,6 +332,7 @@ function render(force = false): void {
   renderLegacy();
   renderPriority();
   renderPerks();
+  renderMilestones();
   renderLog(force);
 }
 
@@ -317,6 +376,78 @@ function renderLegacy(): void {
         dm.rate.mul(lineageMult(state)).mul(perkMods(state).legacyRateMult),
       );
   });
+}
+
+const METRIC_UNIT: Partial<Record<MetricId, string>> = {
+  totalEarned: "cycles",
+  sweepsSurvived: "sweeps",
+  forks: "forks",
+  playtime: "s",
+  children: "children",
+  ramCap: "MB",
+};
+
+/** Name of the milestone that grants `unlockId` (for the locked-upgrade hint). */
+function unlockSource(unlockId: string): string {
+  return MILESTONES.find((m) => m.unlocks.includes(unlockId))?.name ?? "locked";
+}
+
+/**
+ * The milestones panel: pending first (closest to firing on top), achieved dimmed below.
+ * Rows are rebuilt only when the done/unlock sets change; progress refreshes each frame.
+ */
+function renderMilestones(): void {
+  const ordered = orderedMilestones(state);
+  const sig = `${ordered.map((m) => m.id).join(",")}|${Object.keys(state.unlocks).sort().join(",")}`;
+  if (el.milestonePanel.dataset.sig !== sig) {
+    el.milestonePanel.dataset.sig = sig;
+    el.milestonePanel.innerHTML = "";
+    for (const m of ordered) {
+      const row = document.createElement("div");
+      row.className = "milestone";
+      row.dataset.milestone = m.id;
+
+      const head = document.createElement("div");
+      head.className = "milestone-head";
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = m.name;
+      const status = document.createElement("span");
+      status.className = "status";
+      head.append(name, status);
+
+      const bar = document.createElement("div");
+      bar.className = "bar";
+      const fill = document.createElement("div");
+      fill.className = "fill";
+      bar.appendChild(fill);
+
+      const desc = document.createElement("p");
+      desc.className = "hint";
+      desc.textContent = m.desc;
+
+      row.append(head, bar, desc);
+      el.milestonePanel.appendChild(row);
+    }
+  }
+
+  for (const m of ordered) {
+    const row = el.milestonePanel.querySelector(`[data-milestone="${m.id}"]`);
+    if (!row) continue;
+    const doneNow = Boolean(state.milestonesDone[m.id]);
+    row.classList.toggle("done", doneNow);
+    const fill = row.querySelector(".fill") as HTMLElement;
+    const status = row.querySelector(".status") as HTMLElement;
+    if (doneNow) {
+      fill.style.width = "100%";
+      status.textContent = `✓ unlocked: ${m.unlocks.join(", ")}`;
+    } else {
+      const value = Math.floor(METRICS[m.metric](state));
+      fill.style.width = `${Math.min(100, milestoneProgress(state, m) * 100)}%`;
+      const unit = METRIC_UNIT[m.metric] ? ` ${METRIC_UNIT[m.metric]}` : "";
+      status.textContent = `${value} / ${m.at}${unit}`;
+    }
+  }
 }
 
 function renderPriority(): void {

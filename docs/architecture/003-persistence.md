@@ -37,9 +37,9 @@ Every save stamps `state.lastSave = Date.now()` first.
    game instead of throwing.
 3. **Version migration:** `decode()` runs a **staged** chain — one step per version it
    upgrades *from* (`if (from < 2) …`, `if (from < 3) …`, with
-   `from = parsed.saveVersion | 0`) — then stamps `saveVersion = SAVE_VERSION`. Staged steps
-   matter: a single `saveVersion < SAVE_VERSION` check would re-run older steps on newer saves
-   (see [Save versioning](#save-versioning)).
+   `from = coerceFinite(parsed.saveVersion, 0)`) — then stamps `saveVersion = SAVE_VERSION`.
+   Staged steps matter: a single `saveVersion < SAVE_VERSION` check would re-run older steps
+   on newer saves (see [Save versioning](#save-versioning)).
 4. **Coercion (harden):** `decode()` sanitizes every field before it reaches the sim:
    - `cycles` / `totalEarned` / `runBaseEarned` / each legacy `rate` → `coerceDecimal` (finite
      number, numeric string, or `Decimal`; else the fallback). `d("abc")` is lenient and
@@ -51,6 +51,14 @@ Every save stamps `state.lastSave = Date.now()` first.
    - `perks` → `sanitizePerks`: for each `PERKS` entry, clamp the level to `[0, maxLevel]` and
      drop zeros; unknown ids never survive because the result is rebuilt from the roster.
    - `lineage` → `coerceCount`.
+   - `milestonesDone` → `sanitizeMilestones`: keep only ids present in `MILESTONES` (stale ids
+     never survive); a non-object yields `{}`.
+   - `unlocks` → `sanitizeUnlocks`: keep string keys with a truthy value, capped at
+     `MAX_UNLOCKS = 256` (open-ended — later issues add ids); an array or other non-object
+     yields `{}`.
+   - `buyMax` → `Boolean(...)`.
+   - `autoNice` / `autoMalloc` / `autoFree` → `Boolean(...)`.
+   - `freeThreshold` → `max(0, coerceFinite(…, 16))`.
    - `log` → mapped to strings if it is an array, else `[]`.
    - `sacrificeOrder` → `sanitizeSacrificeOrder` (valid permutation, else the default).
 5. **Numeric clamps (`sanitizeNumericState`):** every bounded field is made finite and
@@ -81,14 +89,16 @@ Every save stamps `state.lastSave = Date.now()` first.
 ## Save versioning
 
 `GameState.saveVersion` records the semantics of the persisted fields; `newGame()` stamps
-it at `SAVE_VERSION = 3`. `encode()` spreads the field, so it round-trips. On load,
+it at `SAVE_VERSION = 5`. `encode()` spreads the field, so it round-trips. On load,
 `decode()` reads the parsed value into `from` and runs each staged migration whose `from`
 is older, before the numeric clamps.
 
 | from              | to  | migration                                                                    |
 | ----------------- | --- | ---------------------------------------------------------------------------- |
 | (missing) / `< 2` | 2   | For each legacy daemon at array index `k`, divide its `rate` by `1 + k*0.1`. |
-| `< 3`             | 3   | Additive only: the new fields come from `newGame()` defaults; no-op.         |
+| `< 3`             | 3   | Additive only: the perk fields + milestone records come from `newGame()` defaults; no-op. |
+| `< 4`             | 4   | Additive only: `buyMax` comes from `newGame()` defaults; no-op.              |
+| `< 5`             | 5   | Additive only: the automation toggles + `freeThreshold`; no-op.              |
 
 **Why v2:** the old `doFork` snapshotted a new daemon's rate from `rawCyclesPerSec`, which
 already included the lineage multiplier `1 + forks*0.1` — so the `k`-th daemon's rate had
@@ -96,11 +106,20 @@ already included the lineage multiplier `1 + forks*0.1` — so the `k`-th daemon
 lineage-free rates; the migration divides the baked factor back out of pre-v2 saves so
 their legacy income matches a fresh fork's.
 
-**Why v3:** the perk tree added `lineage`, `perks`, `runBaseEarned`, and `runStartPlaytime`.
-The change is additive — `decode` merges the save over `newGame()` defaults and then coerces
-the fields — so the v3 step is a no-op placeholder. It exists to keep the chain staged: had
-the v2 step stayed keyed to `from < SAVE_VERSION`, bumping to 3 would have re-divided already
-lineage-free legacy rates on every v2 save. A test pins both directions.
+**Why v3:** the perk tree added `lineage`, `perks`, `runBaseEarned`, `runStartPlaytime`, and
+the milestone system added `milestonesDone` and `unlocks`. Both changes are additive —
+`decode` merges the save over `newGame()` defaults and rebuilds the roster-backed records — so
+the v3 step is a no-op placeholder. It exists to keep the chain staged: had the v2 step stayed
+keyed to `from < SAVE_VERSION`, bumping to 3 would have re-divided already lineage-free legacy
+rates on every v2 save. A test pins both directions.
+
+**Why v4:** buy-max added the `buyMax` toggle. Additive too — `newGame()` defaults it to
+`false` and `decode` coerces it with `Boolean(...)` — so the v4 step is likewise a no-op
+placeholder.
+
+**Why v5:** automation added `autoNice`, `autoMalloc`, `autoFree`, and `freeThreshold`.
+Additive — the booleans default `false` and coerce with `Boolean(...)`, and `freeThreshold`
+defaults `16` and is clamped `>= 0` — so the v5 step is a no-op placeholder.
 
 The chain is append-only: to migrate further, add the next `if (from < N)` step and bump
 `SAVE_VERSION`.

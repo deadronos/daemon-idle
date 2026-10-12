@@ -394,3 +394,91 @@ button.act .cost.ok {
     grid-template-columns: 1fr;
   }
 }
+
+/* milestones */
+.milestones {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.milestone {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+}
+
+.milestone-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.milestone .name {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.milestone .status {
+  font-size: 11px;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+.milestone .bar {
+  height: 6px;
+  margin: 6px 0 4px;
+}
+
+.milestone .hint {
+  margin: 0;
+}
+
+.milestone.done {
+  opacity: 0.55;
+}
+
+/* buy-max toggle */
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-size: 12px;
+  opacity: 0.85;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* a normal `display` rule outranks the UA `[hidden]` rule — restore it explicitly */
+.toggle[hidden] {
+  display: none;
+}
+
+/* automation group */
+.automation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin: 0 0 8px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.automation label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.automation input[type="number"] {
+  width: 56px;
+}
+
+.automation[hidden] {
+  display: none;
+}

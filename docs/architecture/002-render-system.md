@@ -58,7 +58,20 @@ Both panels share an `ActionButton` shape:
   while `state.cycles` is below the cost.
 
 `enabled()` gates the button; `run()` performs the action; both call back into `sim.ts`.
-Cost text is tinted green (`.ok`) when affordable.
+Cost text is tinted green (`.ok`) when affordable. The `nice` and `gc` buttons render disabled
+with a `🔒 <milestone name>` hint until their milestone fires (see
+[doc 010](./010-milestones.md)) — the lock is a sim rule, so `enabled()` checks `hasUnlock`.
+
+The spawn panel also has a **`buy max` toggle** (`#buyMaxToggle`), shown only once
+`hasUnlock(state, "buy-max")`. While it is on, a spawn click calls `spawnMax` (buy the maximum
+affordable units) instead of `spawn`, and the cost line gains a `×max` marker; the preference is
+the persisted `state.buyMax`.
+
+The upgrades panel has an **`automation` group** (`#autoWrap`), shown only once
+`hasUnlock(state, "auto-nice")`: three checkboxes (`auto-nice`, `auto-malloc`, `auto-free`) bound
+to `state.autoNice`/`autoMalloc`/`autoFree`, plus a number input for `state.freeThreshold`. The
+group uses a `[hidden]`-safe rule (`.automation[hidden] { display: none }`) so the attribute is
+not defeated by the flex layout.
 
 ## Sacrifice order panel
 
@@ -81,6 +94,16 @@ unless `canBuyPerk` is true, and clicking it calls `buyPerk` and re-renders. The
 (`floor(pointsForFork(state) * perkMods(state).pointsMult)`). Node buttons are rebuilt only
 when lineage or the owned perks change (`perkPanel.dataset.sig`); the preview text updates
 every frame. See [doc 009](./009-prestige-perk-tree.md) for the tree itself.
+
+## Milestones panel
+
+The `milestones` panel (`#milestonePanel`) lists `MILESTONES` pending-first by
+`milestoneProgress` descending, then achieved ones dimmed below. Each row shows the name,
+description, and — for a pending goal — a progress bar and `value / at`; an achieved goal
+shows `✓ unlocked: <ids>`. Rows are rebuilt only when the `milestonesDone` + `unlocks`
+signature changes (`milestonePanel.dataset.sig`); the progress numbers refresh each frame.
+Rows are never interactive (milestones fire from state, not clicks). The locked `nice`/`gc`
+buttons in the upgrades panel point at their milestone by name.
 
 ## Meters
 

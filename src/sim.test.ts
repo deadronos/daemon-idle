@@ -32,6 +32,7 @@ import {
   heatMult,
   lineageMult,
   mallocCost,
+  maxAffordable,
   movePriority,
   newGame,
   niceCost,
@@ -43,6 +44,7 @@ import {
   sanitizeSacrificeOrder,
   shieldCost,
   spawn,
+  spawnMax,
   survivalMult,
   sweepIntervalFor,
   sweepVictimMult,
@@ -51,6 +53,7 @@ import {
   tierCost,
   unlockedDirectives,
 } from "./sim";
+import { UNLOCK } from "./milestones";
 
 // --- bootstrap -------------------------------------------------------------
 
@@ -672,7 +675,7 @@ describe("directive scheduling", () => {
     expect(() => tick(s, 0.01)).not.toThrow();
     // the fallback was actually applied: standard budget at severity 0.15, nice 0
     expect(s.counts[0]).toBe(8); // 10 - round(10 * 0.15 * 1) = 8
-    expect(s.log[0]).toMatch(/^cleanup sweep \[standard\]:/);
+    expect(s.log.some((l) => l.startsWith("cleanup sweep [standard]:"))).toBe(true);
   });
 
   it("applies the drawn directive end-to-end (scavenger reaps the highest-output tier)", () => {
@@ -1267,5 +1270,189 @@ describe("perk effects on legacy daemons", () => {
     const gained = s.cycles.toNumber() - before;
     // root income (1/s) + legacy (1000 * 1.05 /s), over 0.001 s
     expect(gained).toBeCloseTo((1 + 1000 * 1.05) * 0.001, 6);
+  });
+});
+
+describe("milestone gating", () => {
+  it("newGame starts with no milestones and no unlocks", () => {
+    const s = newGame();
+    expect(s.milestonesDone).toEqual({});
+    expect(s.unlocks).toEqual({});
+  });
+  it("gates nice until `first-blood` fires, then allows it", () => {
+    const s = newGame();
+    s.cycles = d(1e9);
+    expect(buyNice(s)).toBe(false); // locked
+    s.sweepsSurvived = 1;
+    tick(s, 0); // evaluateMilestones runs at the end of a live tick
+    expect(s.unlocks[UNLOCK.nice]).toBe(true);
+    expect(buyNice(s)).toBe(true);
+  });
+  it("gates gc until `grown-up` fires, then allows it", () => {
+    const s = newGame();
+    s.cycles = d(1e9);
+    expect(buyGc(s)).toBe(false); // locked
+    s.ramCap = 24;
+    tick(s, 0);
+    expect(buyGc(s)).toBe(true);
+  });
+  it("does not fire milestones during an offline tick", () => {
+    const s = newGame();
+    s.sweepsSurvived = 1;
+    tick(s, 0, { offline: true });
+    expect(s.milestonesDone["first-blood"]).toBeUndefined();
+    tick(s, 0);
+    expect(s.milestonesDone["first-blood"]).toBe(true);
+  });
+});
+
+describe("maxAffordable", () => {
+  it("matches a brute-force spawn loop for small counts", () => {
+    const s = newGame();
+    s.cycles = d(1e4);
+    const brute = newGame();
+    brute.cycles = d(1e4);
+    let n = 0;
+    while (spawn(brute, 0)) n++;
+    expect(maxAffordable(s, 0)).toBe(n);
+    expect(n).toBeGreaterThan(0);
+  });
+  it("is limited by RAM when cycles are plentiful", () => {
+    const s = newGame();
+    s.cycles = d("1e100");
+    expect(maxAffordable(s, 0)).toBe(BASE.ramCap); // tier 0 costs 1 MB, base cap 8
+  });
+  it("returns 0 when unaffordable or out of RAM", () => {
+    const s = newGame();
+    s.cycles = d(0);
+    expect(maxAffordable(s, 0)).toBe(0);
+    const full = newGame();
+    full.cycles = d("1e100");
+    full.counts[0] = BASE.ramCap; // fills RAM exactly
+    expect(maxAffordable(full, 0)).toBe(0);
+  });
+});
+
+describe("spawnMax", () => {
+  it("refuses while buy-max is locked", () => {
+    const s = newGame();
+    s.cycles = d(1e6);
+    expect(spawnMax(s, 0)).toBe(false);
+  });
+  it("bulk-buys the max affordable once unlocked, without overspending", () => {
+    const s = newGame();
+    s.cycles = d(1e6);
+    s.unlocks = { [UNLOCK.buyMax]: true };
+    const expected = maxAffordable(s, 0); // pure, safe to read before the action
+    expect(spawnMax(s, 0)).toBe(true);
+    expect(s.counts[0]).toBe(expected);
+    expect(s.cycles.gte(0)).toBe(true);
+    expect(ramUsed(s)).toBeLessThanOrEqual(s.ramCap);
+  });
+  it("returns false with nothing affordable", () => {
+    const s = newGame();
+    s.cycles = d(0);
+    s.unlocks = { [UNLOCK.buyMax]: true };
+    expect(spawnMax(s, 0)).toBe(false);
+  });
+});
+
+describe("buyMax toggle state", () => {
+  it("defaults to false", () => {
+    expect(newGame().buyMax).toBe(false);
+  });
+});
+
+describe("automation state", () => {
+  it("defaults the toggles off and the threshold to 16", () => {
+    const s = newGame();
+    expect([s.autoNice, s.autoMalloc, s.autoFree]).toEqual([false, false, false]);
+    expect(s.freeThreshold).toBe(16);
+  });
+});
+
+describe("runAutomation", () => {
+  it("auto-malloc buys when toggled, unlocked, and affordable", () => {
+    const s = newGame();
+    s.cycles = d(1e6);
+    s.unlocks = { [UNLOCK.autoMalloc]: true };
+    s.autoMalloc = true;
+    tick(s, 0);
+    expect(s.ramCap).toBe(BASE.ramCap + MALLOC_STEP);
+  });
+  it("does nothing when toggled off or locked", () => {
+    const off = newGame();
+    off.cycles = d(1e6);
+    off.unlocks = { [UNLOCK.autoMalloc]: true }; // toggled off
+    tick(off, 0);
+    expect(off.ramCap).toBe(BASE.ramCap);
+    const locked = newGame();
+    locked.cycles = d(1e6);
+    locked.autoMalloc = true; // not unlocked
+    tick(locked, 0);
+    expect(locked.ramCap).toBe(BASE.ramCap);
+  });
+  it("auto-nice needs both hands-off and first-blood", () => {
+    const s = newGame();
+    s.cycles = d(1e6);
+    s.autoNice = true;
+    s.unlocks = { [UNLOCK.autoNice]: true }; // missing the nice unlock
+    tick(s, 0);
+    expect(s.nice).toBe(0);
+    s.unlocks = { [UNLOCK.autoNice]: true, [UNLOCK.nice]: true };
+    tick(s, 0);
+    expect(s.nice).toBe(1);
+  });
+  it("auto-free fires at the threshold and not below", () => {
+    const s = newGame();
+    s.ramCap = 100; // keep the leak below the OOM threshold so only auto-free acts
+    s.unlocks = { [UNLOCK.autoFree]: true };
+    s.autoFree = true;
+    s.freeThreshold = 10;
+    s.leak = 9;
+    tick(s, 0);
+    expect(s.leak).toBe(9); // below
+    s.leak = 10;
+    tick(s, 0);
+    expect(s.leak).toBe(0); // at the threshold
+  });
+  it("buys at most one level per tick", () => {
+    const s = newGame();
+    s.cycles = d(1e9);
+    s.unlocks = { [UNLOCK.autoMalloc]: true };
+    s.autoMalloc = true;
+    tick(s, 0);
+    expect(s.ramCap).toBe(BASE.ramCap + MALLOC_STEP);
+    tick(s, 0);
+    expect(s.ramCap).toBe(BASE.ramCap + 2 * MALLOC_STEP);
+  });
+  it("does not run on offline ticks", () => {
+    const s = newGame();
+    s.cycles = d(1e6);
+    s.unlocks = { [UNLOCK.autoMalloc]: true };
+    s.autoMalloc = true;
+    tick(s, 0, { offline: true });
+    expect(s.ramCap).toBe(BASE.ramCap);
+  });
+  it("never drives cycles negative", () => {
+    const s = newGame();
+    s.cycles = mallocCost(s); // exactly affordable
+    s.unlocks = { [UNLOCK.autoMalloc]: true };
+    s.autoMalloc = true;
+    tick(s, 0);
+    expect(s.cycles.gte(0)).toBe(true);
+  });
+});
+
+describe("auto-free boundary", () => {
+  it("fires on any leak when the threshold is 0", () => {
+    const s = newGame();
+    s.ramCap = 100;
+    s.unlocks = { [UNLOCK.autoFree]: true };
+    s.autoFree = true;
+    s.freeThreshold = 0;
+    s.leak = 0.001;
+    tick(s, 0);
+    expect(s.leak).toBe(0);
   });
 });
