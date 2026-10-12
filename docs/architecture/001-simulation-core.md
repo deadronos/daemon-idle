@@ -38,34 +38,41 @@ with a boot line. `BASE` holds the tunable constants shared across the file.
 ### Numeric types
 
 Unbounded values (`cycles`, `totalEarned`, tier/upgrade costs, child output, legacy rates,
-the lineage multiplier) are `Decimal` from `src/bignum.ts`. Bounded values (`counts`,
-`ramCap`, `leak`, `heat`, `cooling`, `nice`, `shields`, `gc`, timers, `playtime`) stay plain
-`number`.
+the lineage multiplier, the survival multiplier) are `Decimal` from `src/bignum.ts`. Bounded
+values (`counts`, `ramCap`, `leak`, `heat`, `cooling`, `nice`, `shields`, `gc`, timers,
+`playtime`) stay plain `number`.
 See [ADR 0003](../decisions/0003-bignum-break-eternity.md).
 
 ## Tiers
 
 Five child types, defined in the `TIERS` array. Each tier has its own `costGrowth`: the
 cost of the next unit multiplies by that factor per purchase, so tiers have distinct cost
-curves. `baseOutput` is cycles/s at lineage ×1; `priority` is only the source of the
-**default** sacrifice order (`DEFAULT_SACRIFICE_ORDER`, see below) — the live sweep order is
-the player-controlled `sacrificeOrder`. `trait` tags a tier's identity; `"leak-immune"`
-tiers (currently only the noop loop) consume RAM but never feed the leak.
+curves. `baseOutput` is cycles/s per unit at lineage ×1 and `survivalMult` ×1; `priority` is
+only the source of the **default** sacrifice order (`DEFAULT_SACRIFICE_ORDER`, see below) —
+the live sweep order is the player-controlled `sacrificeOrder`. `trait` tags a tier's
+identity; `"leak-immune"` tiers (currently only the noop loop) consume RAM but never feed the
+leak.
 
 | #   | name          | baseCost | costGrowth | baseOutput | ram | priority | trait       |
 | --- | ------------- | -------- | ---------- | ---------- | --- | -------- | ----------- |
 | 0   | noop loop     | 10       | 1.12       | 0.1        | 1   | 0        | leak-immune |
 | 1   | fork()        | 100      | 1.15       | 1          | 2   | 1        | none        |
-| 2   | worker thread | 1,000    | 1.15       | 8          | 4   | 2        | none        |
-| 3   | microservice  | 10,000   | 1.18       | 60         | 8   | 3        | none        |
-| 4   | cron daemon   | 100,000  | 1.22       | 400        | 16  | 4        | none        |
+| 2   | worker thread | 1,000    | 1.15       | 12         | 4   | 2        | none        |
+| 3   | microservice  | 10,000   | 1.18       | 150        | 8   | 3        | none        |
+| 4   | cron daemon   | 100,000  | 1.22       | 2,000      | 16  | 4        | none        |
 
 Cost of the next unit of tier `i`: `baseCost[i] * costGrowth[i]^counts[i]`.
+
+`baseOutput` is chosen so **payback does not worsen with tier**: `baseCost / baseOutput` is
+100 / 100 / 83.3 / 66.7 / 50 s for tiers 0–4 — flat-to-improving, so cheap spam no longer
+wins. (Output is linear in count; the exponential growth comes from the global
+`survivalMult`, below.)
 
 ## Income
 
 ```
-baseCyclesPerSec = childOutput + BASE.rootOutput
+survivalMult     = (1 + SURVIVAL_BONUS)^sweepsSurvived     // SURVIVAL_BONUS = 0.05
+baseCyclesPerSec = childOutput * survivalMult + BASE.rootOutput
 rawCyclesPerSec  = baseCyclesPerSec * lineageMult
 cyclesPerSec     = rawCyclesPerSec * heatMult
 childOutput      = Σ counts[i] * baseOutput[i] * synergyMult(i)
@@ -75,14 +82,23 @@ heatMult         = 1 - MAX_THROTTLE * clamp((heat - HEAT_THROTTLE_AT) / (100 - H
 
 - `BASE.rootOutput = 1` — the root process itself yields 1 cycle/s. **This is the
   bootstrap:** without it a fresh game earns nothing and can never afford the first child.
-- `baseCyclesPerSec = childOutput + BASE.rootOutput` — income before lineage and heat.
-  Lineage-free on purpose: legacy daemon rates snapshot this (see [doc 004](./004-prestige-and-legacy.md)),
-  so applying lineage here too would double-count it.
+- `survivalMult = (1.05)^sweepsSurvived` — the **exponential engine**. Each sweep survived
+  compounds children income by 5%, so the same signal that raises sweep severity also
+  raises the economy. It is a `Decimal` (not a JS `number`): `1.05^n` overflows a double
+  after ~14 000 sweeps and the game is idle for days. Because the multiplier is **global**,
+  it scales every tier identically and composition is still decided by the base stats, RAM
+  efficiency, and `SYNERGY`.
+- The root is **outside** `survivalMult`: an empty board still earns exactly 1 cycle/s, so
+  the bootstrap invariant holds no matter how many sweeps have been survived.
+- `baseCyclesPerSec = childOutput * survivalMult + BASE.rootOutput` — income before lineage
+  and heat. Lineage-free on purpose: legacy daemon rates snapshot this (see
+  [doc 004](./004-prestige-and-legacy.md)), so applying lineage here too would double-count
+  it; the snapshot therefore inherits the compounded `survivalMult` at fork time.
 - `lineageMult = 1 + forks * 0.1` multiplies _all_ income (children, root, legacy).
 - `heatMult` throttles children + root income only, and only above `HEAT_THROTTLE_AT = 60`
   (see [Heat](#heat)). Legacy daemons are entirely unaffected by heat: their per-tick income
   is not part of `cyclesPerSec`, and their fork-time rate is seeded from the unthrottled,
-  lineage-free `baseCyclesPerSec = childOutput + BASE.rootOutput`.
+  lineage-free `baseCyclesPerSec = childOutput * survivalMult + BASE.rootOutput`.
 
 ### Cross-tier synergy
 
@@ -109,7 +125,7 @@ ramUsed  = childRam + leak
 ```
 
 A spawn is allowed only if `cycles >= cost` **and** `ramUsed + ram[i] <= ramCap`.
-`malloc(+1)` raises `ramCap` by `MALLOC_STEP = 8`.
+`malloc(+1)` raises `ramCap` by `MALLOC_STEP = 16`.
 
 ## The leak
 
@@ -227,12 +243,16 @@ re-crosses `+2%`, so the `*0.9` penalty no longer compounds tick-over-tick.
 | Upgrade           | Cost                        | Effect                                       |
 | ----------------- | --------------------------- | -------------------------------------------- |
 | `nice(+1)`        | `250 * 2.2^n`               | −3% sweep victims per level (floor 30%).     |
-| `malloc(+1)`      | `150 * 1.85^((ramCap-8)/8)` | +8 MB ceiling.                               |
+| `malloc(+1)`      | `150 * 1.6^((ramCap-8)/16)` | +16 MB ceiling.                              |
 | `gc(+1)`          | `400 * 3^n`                 | Faster automatic leak flushing.              |
 | `cooling(+1)`     | `1000 * 2.5^n`              | Heat sheds faster and its equilibrium drops. |
 | `free()`          | 0                           | Zero the leak.                               |
 | `SIGTERM handler` | `500 * 2^shields`           | +1 charge; each absorbs one sweep victim.    |
 | `fork()`          | `1e6 * 10^forks`            | Prestige — see doc 004.                      |
+
+`malloc` is the real gate to the upper tiers: its `1.6` growth and `+16 MB` step let RAM
+scale fast enough to reach the cron daemon within a session, instead of leaving it
+unreachable under the old `1.85` / `+8`.
 
 The sweep now has more pressure axes (directives, sacrifice order, shields, heat throttling,
 cross-tier synergy), so `nice` and `malloc` grow slightly slower to keep the early game playable.

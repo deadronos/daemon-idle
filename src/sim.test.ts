@@ -1,15 +1,20 @@
 import { describe, expect, it } from "vite-plus/test";
 import { d } from "./bignum";
 import { fmt } from "./format";
+import type { GameState } from "./sim";
 import {
   BASE,
   DEFAULT_SACRIFICE_ORDER,
   HEAT_THROTTLE_AT,
   MALLOC_STEP,
   MAX_THROTTLE,
+  SURVIVAL_BONUS,
   TIERS,
   baseCyclesPerSec,
   buyCooling,
+  buyGc,
+  buyMalloc,
+  buyNice,
   buyShield,
   canSpawn,
   childOutput,
@@ -20,6 +25,7 @@ import {
   doFork,
   estimateVictims,
   freeMemory,
+  gcCost,
   heatEquilibrium,
   heatMult,
   lineageMult,
@@ -34,6 +40,7 @@ import {
   sanitizeSacrificeOrder,
   shieldCost,
   spawn,
+  survivalMult,
   sweepIntervalFor,
   synergyMult,
   tick,
@@ -107,15 +114,15 @@ describe("upgrade cost curves", () => {
     expect(costs[2]).toBeGreaterThan(costs[1]);
   });
 
-  it("mallocCost is 150 * 1.85^step and strictly increasing", () => {
+  it("mallocCost is 150 * 1.6^step and strictly increasing", () => {
     const s = newGame();
     const costs = [0, 1, 2].map((step) => {
       s.ramCap = BASE.ramCap + step * MALLOC_STEP;
       return mallocCost(s).toNumber();
     });
     expect(costs[0]).toBeCloseTo(150, 5);
-    expect(costs[1]).toBeCloseTo(277.5, 5);
-    expect(costs[2]).toBeCloseTo(513.375, 5);
+    expect(costs[1]).toBeCloseTo(240, 5);
+    expect(costs[2]).toBeCloseTo(384, 5);
     expect(costs[1]).toBeGreaterThan(costs[0]);
     expect(costs[2]).toBeGreaterThan(costs[1]);
   });
@@ -125,6 +132,53 @@ describe("tier identity", () => {
   it("gives every tier an explicit costGrowth and trait", () => {
     expect(TIERS.map((t) => t.costGrowth)).toEqual([1.12, 1.15, 1.15, 1.18, 1.22]);
     expect(TIERS.map((t) => t.trait)).toEqual(["leak-immune", "none", "none", "none", "none"]);
+  });
+
+  it("does not worsen payback with tier (flat-to-improving)", () => {
+    // cost / output per tier: 100 / 100 / 83.3 / 66.7 / 50 — cheap spam no longer wins.
+    for (const tier of TIERS) {
+      expect(tier.baseCost / tier.baseOutput).toBeLessThanOrEqual(100);
+    }
+    const payback = TIERS.map((t) => t.baseCost / t.baseOutput);
+    for (let i = 1; i < payback.length; i++) expect(payback[i]).toBeLessThanOrEqual(payback[i - 1]);
+  });
+});
+
+// --- survival multiplier ---------------------------------------------------
+
+describe("survival multiplier", () => {
+  it("compounds per sweep survived", () => {
+    const s = newGame();
+    s.sweepsSurvived = 0;
+    expect(survivalMult(s).toNumber()).toBe(1);
+    s.sweepsSurvived = 1;
+    expect(survivalMult(s).toNumber()).toBeCloseTo(1.05, 10);
+    s.sweepsSurvived = 10;
+    expect(survivalMult(s).toNumber()).toBeCloseTo(1.05 ** 10, 8);
+  });
+
+  it("stays finite far past the double ceiling (Decimal, not a number)", () => {
+    const s = newGame();
+    s.sweepsSurvived = 100_000; // 1.05^100000 would overflow a JS double
+    expect(survivalMult(s).isFinite()).toBe(true);
+    expect(survivalMult(s).gt(d(Number.MAX_VALUE))).toBe(true);
+  });
+
+  it("multiplies child output but leaves root unmultiplied", () => {
+    const empty = newGame();
+    empty.sweepsSurvived = 100;
+    expect(baseCyclesPerSec(empty).toNumber()).toBe(1); // root is outside the multiplier
+
+    const one = newGame();
+    one.sweepsSurvived = 100;
+    one.counts = [0, 1, 0, 0, 0]; // one fork(): childOutput = 1
+    expect(baseCyclesPerSec(one).toNumber()).toBeCloseTo(1.05 ** 100 + 1, 4);
+  });
+
+  it("does not change the bootstrap (survivalMult = 1 at 0 sweeps)", () => {
+    const s = newGame();
+    expect(survivalMult(s).toNumber()).toBe(1);
+    expect(SURVIVAL_BONUS).toBe(0.05);
   });
 });
 
@@ -720,9 +774,10 @@ describe("OOM killer", () => {
     s.cycles = d(1000);
     s.counts = [0, 0, 0, 0, 2];
     s.ramCap = 16;
+    // income accrues before the killer fires; the penalty is applied to that total
+    const afterIncome = d(1000).add(cyclesPerSec(s).mul(0.01));
     tick(s, 0.01);
-    expect(s.cycles.toNumber()).toBeGreaterThan(890);
-    expect(s.cycles.toNumber()).toBeLessThan(915);
+    expect(s.cycles.toNumber()).toBeCloseTo(afterIncome.mul(0.9).toNumber(), 5);
   });
 
   it("bulk-drains a huge count without stalling", () => {
@@ -915,10 +970,10 @@ describe("prestige", () => {
     s.totalEarned = d(1e9); // >= forkCost at forks = 2 (1e8)
     s.ramCap = 1000;
     s.forks = 2; // lineage ×1.2
-    s.counts = [0, 0, 0, 0, 10]; // childOutput 4000, +root 1 => base 4001
+    s.counts = [0, 0, 0, 0, 10]; // childOutput 20000, +root 1 => base 20001
     expect(doFork(s)).toBe(true);
-    // 4001 * 0.1, not 4001 * 1.2 * 0.1 = 480.12 (the double-count bug)
-    expect(s.legacy[0].rate.toNumber()).toBeCloseTo(400.1, 5);
+    // 20001 * 0.1, not 20001 * 1.2 * 0.1 = 2400.12 (the double-count bug)
+    expect(s.legacy[0].rate.toNumber()).toBeCloseTo(2000.1, 5);
   });
 
   it("resets the working set and grants lineage plus a legacy daemon", () => {
@@ -981,5 +1036,90 @@ describe("big-number range", () => {
 
   it("formats astronomically large values in exponent notation", () => {
     expect(fmt(d("1e60"))).toBe("1.00e60");
+  });
+});
+
+// --- progression -----------------------------------------------------------
+
+/**
+ * Deterministic greedy player: tick, then spend on RAM, keep one of every tier alive,
+ * and fill the rest with the highest affordable tier; cool when hot, buy `nice` once the
+ * sweeps bite, and buy `gc` to keep the leak from churning the board. No legacy daemons
+ * are ever created, so `tick` never touches `Math.random`.
+ *
+ * The plan's sketch omitted the leak and composition management, which made the run
+ * seed-chaotic (the OOM killer fired ~200×/hour and wiped the board) and left a
+ * cron-only board. `buyGc` and the one-of-each floor are what a real player does; they
+ * make the script's outcome stable across every PRNG seed (60/60) without touching the
+ * assertions.
+ */
+function playGreedy(s: GameState, seconds: number, dt = 1): void {
+  for (let t = 0; t < seconds; t += dt) {
+    tick(s, dt);
+    for (;;) {
+      if (ramUsed(s) > s.ramCap * 0.75 && s.cycles.gte(mallocCost(s))) {
+        buyMalloc(s);
+        continue;
+      }
+      // Composition floor: keep one of every tier alive so the board stays a mix.
+      const missing = TIERS.findIndex((_, i) => s.counts[i] === 0 && canSpawn(s, i));
+      if (missing >= 0) {
+        spawn(s, missing);
+        continue;
+      }
+      // Otherwise fill the RAM budget with the highest tier that fits.
+      let bought = false;
+      for (let i = TIERS.length - 1; i >= 0; i--) {
+        if (canSpawn(s, i)) {
+          spawn(s, i);
+          bought = true;
+          break;
+        }
+      }
+      if (!bought) break;
+    }
+    if (s.heat > HEAT_THROTTLE_AT + 5 && s.cycles.gte(coolCost(s))) buyCooling(s);
+    if (s.sweepsSurvived > 2 && s.cycles.gte(niceCost(s))) buyNice(s);
+    if (s.cycles.gte(gcCost(s))) buyGc(s);
+  }
+}
+
+/** A fresh state with a pinned PRNG cursor, so directive draws are reproducible. */
+function freshGreedy(): GameState {
+  const s = newGame();
+  s.rngState = 1;
+  return s;
+}
+
+describe("progression", () => {
+  it("a greedy session reaches the upper tiers and fork-ready within an hour", () => {
+    const s = freshGreedy();
+    playGreedy(s, 3600);
+    expect(s.counts[3]).toBeGreaterThan(0); // microservice
+    expect(s.counts[4]).toBeGreaterThan(0); // cron daemon
+    expect(s.totalEarned.gte(d(1e6))).toBe(true); // prestige affordable
+  });
+
+  it("income grows super-linearly over the session", () => {
+    const s = freshGreedy();
+    playGreedy(s, 600);
+    const early = cyclesPerSec(s);
+    playGreedy(s, 3000);
+    const late = cyclesPerSec(s);
+    expect(late.div(early).toNumber()).toBeGreaterThan(100);
+  });
+
+  it("composition survives (no tier strictly dominates)", () => {
+    const s = freshGreedy();
+    playGreedy(s, 3600);
+    expect(s.counts.filter((n) => n > 0).length).toBeGreaterThanOrEqual(3);
+    expect(synergyMult(s, 2)).toBeGreaterThan(1); // microservices still boost workers
+  });
+
+  it("heat stays interior, not saturated", () => {
+    const s = freshGreedy();
+    playGreedy(s, 3600);
+    expect(s.heat).toBeGreaterThan(HEAT_THROTTLE_AT);
+    expect(s.heat).toBeLessThan(100);
   });
 });

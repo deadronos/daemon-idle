@@ -79,9 +79,13 @@ the next sweep?_
 
 ### Numbers (first pass)
 
-- Root: `1 cycle/s`. Child tier _n_: cost and output scale ~`1.15^n` (classic idle curve).
-- Sweep interval: starts at 60s, shrinks toward ~10s as tier rises, then a hard floor
-  softened by priority upgrades.
+- Root: `1 cycle/s`. Child tier _n_: cost grows geometrically (~`1.15^n`), output grows
+  linearly, and per-tier payback is **flat-to-improving** (100 / 100 / 83 / 67 / 50 s) so
+  cheap spam no longer wins.
+- Income also carries a **global multiplier that compounds ×1.05 per sweep survived** — the
+  exponential engine. It is a `Decimal`, so it never overflows however long you idle.
+- Sweep interval: starts at 60s, shrinks toward the 10s floor as sweeps survived rises
+  (escalation is now real), softened by priority upgrades.
 - Sweep budget: `k` victims where `k` grows with tier; victims = lowest priority, ties
   broken by newest PID.
 - OOM trigger: footprint > RAM → kills the top-3 output children + 10% cycle penalty.

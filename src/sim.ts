@@ -46,7 +46,7 @@ export const TIERS: TierDef[] = [
     desc: "threads are cheaper than processes",
     baseCost: 1_000,
     costGrowth: 1.15,
-    baseOutput: 8,
+    baseOutput: 12,
     ram: 4,
     priority: 2,
     trait: "none",
@@ -56,7 +56,7 @@ export const TIERS: TierDef[] = [
     desc: "it has its own Dockerfile, of course",
     baseCost: 10_000,
     costGrowth: 1.18,
-    baseOutput: 60,
+    baseOutput: 150,
     ram: 8,
     priority: 3,
     trait: "none",
@@ -66,7 +66,7 @@ export const TIERS: TierDef[] = [
     desc: "fires every night; nobody knows what it does",
     baseCost: 100_000,
     costGrowth: 1.22,
-    baseOutput: 400,
+    baseOutput: 2000,
     ram: 16,
     priority: 4,
     trait: "none",
@@ -157,6 +157,9 @@ export const BASE = {
 export const SWEEP_INTERVAL_MIN = 10;
 /** Sweeps survived needed to shrink the cadence from `BASE.sweepInterval` to the floor. */
 export const SWEEP_ESCALATE_SWEEPS = 60;
+
+/** Income compounding per sweep survived. `survivalMult = (1 + SURVIVAL_BONUS)^sweepsSurvived`. */
+export const SURVIVAL_BONUS = 0.05;
 
 const LOG_LIMIT = 40;
 
@@ -254,12 +257,23 @@ export function heatMult(s: GameState): number {
 }
 
 /**
+ * Income multiplier from sweeps survived: `(1 + SURVIVAL_BONUS)^sweepsSurvived`. A
+ * `Decimal`, not a JS number: `1.05^n` overflows a double after ~14 000 sweeps, and the
+ * game is idle for days. The exponential engine that makes the economy scale.
+ */
+export function survivalMult(s: GameState): Decimal {
+  return d(1 + SURVIVAL_BONUS).pow(s.sweepsSurvived);
+}
+
+/**
  * Income from children plus the root baseline, before lineage and heat. Lineage-free
  * on purpose: legacy daemon rates snapshot this, then `tick` applies `lineageMult`
- * once — baking lineage into the snapshot would double-count it.
+ * once — baking lineage into the snapshot would double-count it. Children are scaled by
+ * the global `survivalMult`; the root stays **outside** it so an empty board still earns
+ * exactly `BASE.rootOutput` cycles/s.
  */
 export function baseCyclesPerSec(s: GameState): Decimal {
-  return childOutput(s).add(BASE.rootOutput);
+  return childOutput(s).mul(survivalMult(s)).add(BASE.rootOutput);
 }
 
 /**
@@ -286,8 +300,7 @@ export function sweepVictimMult(s: GameState): number {
 export function sweepIntervalFor(s: GameState): number {
   const progress = Math.min(1, s.sweepsSurvived / SWEEP_ESCALATE_SWEEPS);
   const raw =
-    BASE.sweepInterval -
-    (BASE.sweepInterval - SWEEP_INTERVAL_MIN) * progress * sweepVictimMult(s);
+    BASE.sweepInterval - (BASE.sweepInterval - SWEEP_INTERVAL_MIN) * progress * sweepVictimMult(s);
   return Math.max(SWEEP_INTERVAL_MIN, raw);
 }
 
@@ -478,10 +491,10 @@ export function shieldCost(s: GameState): Decimal {
   return d(500).mul(d(2).pow(s.shields));
 }
 
-export const MALLOC_STEP = 8;
+export const MALLOC_STEP = 16;
 
 export function mallocCost(s: GameState): Decimal {
-  return d(150).mul(d(1.85).pow((s.ramCap - BASE.ramCap) / MALLOC_STEP));
+  return d(150).mul(d(1.6).pow((s.ramCap - BASE.ramCap) / MALLOC_STEP));
 }
 
 export function gcCost(s: GameState): Decimal {
