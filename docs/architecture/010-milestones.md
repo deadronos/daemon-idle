@@ -6,7 +6,7 @@ pure logic in `src/milestones.ts`; the two persisted records, the `tick` evaluat
 gates live in `src/sim.ts`.
 
 Milestones gate **content**. Numeric rewards (micro-multipliers) are the achievements
-subsystem's job (tracked separately); a milestone never changes income directly.
+subsystem's job (doc [011](./011-achievements.md)); a milestone never changes income directly.
 
 ## The two records
 
@@ -92,9 +92,9 @@ Rules live in `sim.ts`: `buyNice`/`buyGc` return `false` while
 
 Both records are plain objects (no `Decimal`), defaulted to `{}` in `newGame()`, and rebuilt
 on load: `sanitizeMilestones` keeps only ids present in `MILESTONES`; `sanitizeUnlocks` keeps
-string keys with truthy values (open-ended — later issues add ids). `SAVE_VERSION` is 6, with
-additive `if (from < 3)` / `if (from < 4)` / `if (from < 5)` / `if (from < 6)` migration steps
-(doc 003).
+string keys with truthy values (open-ended — later issues add ids). `SAVE_VERSION` is 7, with
+additive `if (from < 3)` / `if (from < 4)` / `if (from < 5)` / `if (from < 6)` / `if (from < 7)`
+migration steps (doc 003).
 
 ## Extending
 

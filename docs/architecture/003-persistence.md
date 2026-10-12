@@ -53,6 +53,8 @@ Every save stamps `state.lastSave = Date.now()` first.
    - `lineage` → `coerceCount`.
    - `milestonesDone` → `sanitizeMilestones`: keep only ids present in `MILESTONES` (stale ids
      never survive); a non-object yields `{}`.
+   - `achievementsDone` → `sanitizeAchievements`: keep only ids present in `ACHIEVEMENTS` (stale
+     ids never survive); a non-object or array yields `{}`.
    - `unlocks` → `sanitizeUnlocks`: keep string keys with a truthy value, capped at
      `MAX_UNLOCKS = 256` (open-ended — later issues add ids); an array or other non-object
      yields `{}`.
@@ -89,7 +91,7 @@ Every save stamps `state.lastSave = Date.now()` first.
 ## Save versioning
 
 `GameState.saveVersion` records the semantics of the persisted fields; `newGame()` stamps
-it at `SAVE_VERSION = 6`. `encode()` spreads the field, so it round-trips. On load,
+it at `SAVE_VERSION = 7`. `encode()` spreads the field, so it round-trips. On load,
 `decode()` reads the parsed value into `from` and runs each staged migration whose `from`
 is older, before the numeric clamps.
 
@@ -100,6 +102,7 @@ is older, before the numeric clamps.
 | `< 4`             | 4   | Additive only: `buyMax` comes from `newGame()` defaults; no-op.              |
 | `< 5`             | 5   | Additive only: the automation toggles + `freeThreshold`; no-op.              |
 | `< 6`             | 6   | Additive only: `offlineCap` comes from `newGame()` defaults; no-op.          |
+| `< 7`             | 7   | Additive only: `achievementsDone` comes from `newGame()` defaults and is rebuilt by `sanitizeAchievements`; no-op. |
 
 **Why v2:** the old `doFork` snapshotted a new daemon's rate from `rawCyclesPerSec`, which
 already included the lineage multiplier `1 + forks*0.1` — so the `k`-th daemon's rate had
@@ -126,6 +129,11 @@ defaults `16` and is clamped `>= 0` — so the v5 step is a no-op placeholder.
 `newGame()` defaults it to `0` and `decode` coerces it with `coerceCount` — so the v6 step is
 a no-op placeholder.
 
+**Why v7:** achievements added `achievementsDone`, a sticky record of earned roster rows.
+Additive too — `newGame()` defaults it to `{}` and `decode` rebuilds it from `ACHIEVEMENTS`
+with `sanitizeAchievements` (stale ids never survive) — so the v7 step is a no-op placeholder.
+Earned achievements therefore survive a reload, and a pre-v7 save loads with an empty record.
+
 The chain is append-only: to migrate further, add the next `if (from < N)` step and bump
 `SAVE_VERSION`.
 
@@ -151,7 +159,10 @@ stays under the cap, which is exactly what offline promises. With no legacy daem
 `N < sweepInterval` the two are equal (same code; the `offline` branch only skips events, none
 of which fire); with a legacy daemon they match within **~2%** (unseeded `Math.random` crash
 timing). This is the sense in which offline "matches an equivalent online run" — see
-[ADR 0010](../decisions/0010-offline-fidelity.md).
+[ADR 0010](../decisions/0010-offline-fidelity.md). Achievements are **live-only** (doc
+[011](./011-achievements.md)): an online run that earns a micro-multiplier mid-window pulls
+ahead of its offline replay, so a like-for-like comparison holds the `achievementsDone` record
+equal across both.
 
 Because the offline path skips the OOM killer, it also **clamps the leak to `ramCapTotal`**
 after the leak/`gc` step (`s.leak = Math.min(s.leak, ramCapTotal(s))`). Without that bound,
