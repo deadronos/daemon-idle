@@ -136,3 +136,20 @@ describe("hands-off milestone", () => {
     expect(s.unlocks["auto-free"]).toBe(true);
   });
 });
+
+describe("legacy-respawn milestone", () => {
+  it("is defined at forks >= 2 and grants the legacy-respawn unlock", () => {
+    const def = milestoneById("legacy-respawn")!;
+    expect(def.metric).toBe("forks");
+    expect(def.at).toBe(2);
+    expect(def.unlocks).toEqual([UNLOCK.legacyRespawn]);
+    expect(UNLOCK.legacyRespawn).toBe("legacy-respawn");
+  });
+
+  it("fires at two forks", () => {
+    expect(evaluateMilestones(base({ forks: 1 }))).not.toContain("legacy-respawn");
+    const s = base({ forks: 2 });
+    expect(evaluateMilestones(s)).toContain("legacy-respawn");
+    expect(s.unlocks["legacy-respawn"]).toBe(true);
+  });
+});
