@@ -47,6 +47,7 @@ import {
   tierCost,
   unlockedDirectives,
 } from "./sim";
+import { UNLOCK } from "./milestones";
 
 // --- bootstrap -------------------------------------------------------------
 
@@ -668,7 +669,7 @@ describe("directive scheduling", () => {
     expect(() => tick(s, 0.01)).not.toThrow();
     // the fallback was actually applied: standard budget at severity 0.15, nice 0
     expect(s.counts[0]).toBe(8); // 10 - round(10 * 0.15 * 1) = 8
-    expect(s.log[0]).toMatch(/^cleanup sweep \[standard\]:/);
+    expect(s.log.some((l) => /^cleanup sweep \[standard\]:/.test(l))).toBe(true);
   });
 
   it("applies the drawn directive end-to-end (scavenger reaps the highest-output tier)", () => {
@@ -1149,5 +1150,38 @@ describe("progression", () => {
     playGreedy(s, 3600);
     expect(s.heat).toBeGreaterThan(HEAT_THROTTLE_AT);
     expect(s.heat).toBeLessThan(100);
+  });
+});
+
+describe("milestone gating", () => {
+  it("newGame starts with no milestones and no unlocks", () => {
+    const s = newGame();
+    expect(s.milestonesDone).toEqual({});
+    expect(s.unlocks).toEqual({});
+  });
+  it("gates nice until `first-blood` fires, then allows it", () => {
+    const s = newGame();
+    s.cycles = d(1e9);
+    expect(buyNice(s)).toBe(false); // locked
+    s.sweepsSurvived = 1;
+    tick(s, 0); // evaluateMilestones runs at the end of a live tick
+    expect(s.unlocks[UNLOCK.nice]).toBe(true);
+    expect(buyNice(s)).toBe(true);
+  });
+  it("gates gc until `grown-up` fires, then allows it", () => {
+    const s = newGame();
+    s.cycles = d(1e9);
+    expect(buyGc(s)).toBe(false); // locked
+    s.ramCap = 24;
+    tick(s, 0);
+    expect(buyGc(s)).toBe(true);
+  });
+  it("does not fire milestones during an offline tick", () => {
+    const s = newGame();
+    s.sweepsSurvived = 1;
+    tick(s, 0, { offline: true });
+    expect(s.milestonesDone["first-blood"]).toBeUndefined();
+    tick(s, 0);
+    expect(s.milestonesDone["first-blood"]).toBe(true);
   });
 });

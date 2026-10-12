@@ -5,6 +5,8 @@
 // ./bignum. Bounded values (counts, RAM, timers) stay plain numbers.
 
 import { d, Decimal } from "./bignum";
+import { type MilestoneId } from "./config/milestones";
+import { evaluateMilestones, hasUnlock, milestoneById, UNLOCK } from "./milestones";
 
 export interface TierDef {
   name: string;
@@ -144,6 +146,10 @@ export interface GameState {
   oomCount: number;
   ramWarned: boolean;
   legacy: LegacyDaemon[];
+  /** Milestones that have fired (sticky). */
+  milestonesDone: Record<MilestoneId, true>;
+  /** Unlock ids granted by milestones; features gate via `hasUnlock`. */
+  unlocks: Record<string, true>;
   log: string[];
   playtime: number;
   lastSave: number;
@@ -155,8 +161,9 @@ export interface GameState {
  * Current save format. Version 2 fixed `doFork` to snapshot legacy rates from the
  * lineage-free `baseCyclesPerSec`; saves below it still have lineage baked into their
  * legacy `rate`s and must be migrated in `decode` (see `src/persistence.ts`).
+ * Version 3 added the milestone records (`milestonesDone`, `unlocks`); additive only.
  */
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 export const BASE = {
   ramCap: 8,
@@ -197,6 +204,8 @@ export function newGame(): GameState {
     oomCount: 0,
     ramWarned: false,
     legacy: [],
+    milestonesDone: {},
+    unlocks: {},
     log: ["boot: daemon pid 1 started (unattended)"],
     playtime: 0,
     lastSave: Date.now(),
@@ -532,6 +541,7 @@ export function spawn(s: GameState, i: number): boolean {
 }
 
 export function buyNice(s: GameState): boolean {
+  if (!hasUnlock(s, UNLOCK.nice)) return false;
   const cost = niceCost(s);
   if (s.cycles.lt(cost)) return false;
   s.cycles = s.cycles.sub(cost);
@@ -559,6 +569,7 @@ export function buyMalloc(s: GameState): boolean {
 }
 
 export function buyGc(s: GameState): boolean {
+  if (!hasUnlock(s, UNLOCK.gc)) return false;
   const cost = gcCost(s);
   if (s.cycles.lt(cost)) return false;
   s.cycles = s.cycles.sub(cost);
@@ -707,6 +718,12 @@ export function tick(s: GameState, dt: number, opts: TickOptions = {}): void {
     s.ramWarned = false;
   }
   if (used > s.ramCap * OOM_TOLERANCE) runOom(s);
+
+  // milestones: evaluate once per live tick (after the offline early-return), fire-once
+  for (const id of evaluateMilestones(s)) {
+    const def = milestoneById(id);
+    if (def && def.unlocks.length > 0) log(s, `milestone: ${def.name} — unlocked`);
+  }
 }
 
 /**
