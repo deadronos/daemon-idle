@@ -6,6 +6,7 @@
 // finite, sane value before it reaches the simulation.
 
 import { d, Decimal } from "./bignum";
+import { PERKS } from "./config/perks";
 import { fmt, fmtTime } from "./format";
 import {
   type GameState,
@@ -73,6 +74,22 @@ export function sanitizeLegacy(raw: unknown): LegacyDaemon[] {
 }
 
 /**
+ * Perk levels: read each known node's level, clamp to `[0, maxLevel]`, and drop zeros
+ * and unknown ids (the result is rebuilt from `PERKS`, so a stale id never survives).
+ * A non-object (including an array) yields `{}`.
+ */
+export function sanitizePerks(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!raw || typeof raw !== "object") return out;
+  const rec = raw as Record<string, unknown>;
+  for (const p of PERKS) {
+    const level = Math.min(p.maxLevel, coerceCount(rec[p.id]));
+    if (level > 0) out[p.id] = level;
+  }
+  return out;
+}
+
+/**
  * Clamp every bounded numeric field of `s` in place. This is what stops a corrupt
  * save from soft-locking: `sweepInterval` can never be 0 (the `render()` ÷0), `ramCap`
  * never below `BASE.ramCap` (the OOM soft-lock), and no field can stay `NaN`/`Infinity`.
@@ -97,6 +114,8 @@ export function sanitizeNumericState(s: GameState): void {
   s.rngState = coerceFinite(s.rngState, 1) | 0 || 1;
   s.ramWarned = Boolean(s.ramWarned);
   s.lastSave = coerceFinite(s.lastSave, Date.now());
+  s.lineage = coerceCount(s.lineage);
+  s.runStartPlaytime = Math.max(0, coerceFinite(s.runStartPlaytime, 0));
   s.counts = sanitizeCounts(s.counts);
 }
 
@@ -106,6 +125,7 @@ export function encode(s: GameState): string {
     ...s,
     cycles: s.cycles.toString(),
     totalEarned: s.totalEarned.toString(),
+    runBaseEarned: s.runBaseEarned.toString(),
     legacy: s.legacy.map((l) => ({ ...l, rate: l.rate.toString() })),
   });
 }
@@ -123,15 +143,23 @@ export function decode(raw: string): GameState {
   const s: GameState = { ...newGame(), ...parsed };
   s.cycles = coerceDecimal(parsed.cycles, d(0));
   s.totalEarned = coerceDecimal(parsed.totalEarned, d(0));
+  s.runBaseEarned = coerceDecimal(parsed.runBaseEarned, d(0));
   s.legacy = sanitizeLegacy(parsed.legacy);
-  // Pre-versioning saves have lineage baked into each legacy `rate` (the old `doFork`
-  // snapshotted `rawCyclesPerSec`), and `tick` now applies lineage again — so divide the
-  // baked factor back out, keyed by the daemon's lineage index `k`.
-  if (coerceFinite(parsed.saveVersion, 0) < SAVE_VERSION) {
+  s.perks = sanitizePerks(parsed.perks);
+  s.lineage = coerceCount(parsed.lineage);
+  // Staged migrations, each keyed to the version it upgrades *from* (never a single
+  // `saveVersion < SAVE_VERSION` check, which would re-run older steps on newer saves).
+  const from = coerceFinite(parsed.saveVersion, 0);
+  if (from < 2) {
+    // Pre-versioning saves have lineage baked into each legacy `rate` (the old `doFork`
+    // snapshotted `rawCyclesPerSec`), and `tick` now applies lineage again — so divide the
+    // baked factor back out, keyed by the daemon's lineage index `k`.
     s.legacy.forEach((dm, k) => {
       dm.rate = dm.rate.div(d(1 + k * 0.1));
     });
   }
+  // from < 3: the lineage/perk fields are additive only — newGame() defaults already
+  // filled them, so there is nothing else to migrate.
   s.saveVersion = SAVE_VERSION;
   s.log = Array.isArray(s.log) ? s.log.map(String) : [];
   s.sacrificeOrder = sanitizeSacrificeOrder(s.sacrificeOrder);
