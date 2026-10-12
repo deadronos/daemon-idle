@@ -821,14 +821,14 @@ export function tick(s: GameState, dt: number, opts: TickOptions = {}): void {
   // would grow it without limit and the first live tick would wipe the board.
   if (opts.offline) s.leak = Math.min(s.leak, ramCapTotal(s));
 
-  // legacy daemons: produce, occasionally crash, maybe auto-respawn
+  // legacy daemons: produce, occasionally crash, auto-respawn once unlocked
   const mult = lineageMult(s).mul(perkMods(s).legacyRateMult);
   for (const dm of s.legacy) {
     if (dm.crashed) {
       dm.respawn -= dt;
-      if (dm.respawn <= 0 && s.gc > 0) {
+      if (dm.respawn <= 0 && hasUnlock(s, UNLOCK.legacyRespawn)) {
         dm.crashed = false;
-        log(s, `${dm.name} respawned by gc`);
+        log(s, `${dm.name} respawned`);
       }
     } else {
       const legacyGain = dm.rate.mul(dt).mul(mult);

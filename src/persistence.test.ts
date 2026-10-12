@@ -11,6 +11,7 @@ import {
   sanitizeUnlocks,
 } from "./persistence";
 import { BASE, BASE_OFFLINE_CAP_S, SAVE_VERSION, newGame, tick } from "./sim";
+import { UNLOCK } from "./milestones";
 
 describe("decode — save hardening", () => {
   it("round-trips a healthy save", () => {
@@ -367,7 +368,8 @@ describe("applyOffline cap and equivalence", () => {
     for (const s of [online, offline]) {
       s.ramCap = 200; // room for the children, so no OOM in either run
       s.sweepTimer = 1e9;
-      s.gc = 5; // auto-respawn, so crashes are transient
+      s.gc = 5; // flushes the leak so the online run stays under cap
+      s.unlocks[UNLOCK.legacyRespawn] = true; // auto-respawn, so crashes are transient
       s.counts = [0, 0, 0, 0, 4]; // children income dominates the small legacy share
       s.legacy = [{ name: "legacy-1", rate: d(100), crashed: false, respawn: 0 }];
     }
@@ -384,6 +386,32 @@ describe("applyOffline cap and equivalence", () => {
     s.counts = [4, 0, 0, 0, 0];
     applyOffline(s, 600); // > the 60s sweep interval
     expect(s.sweepsSurvived).toBe(0);
+  });
+});
+
+describe("offline legacy contribution", () => {
+  it("respawns a crashed daemon offline once the unlock is granted", () => {
+    const s = newGame();
+    s.unlocks[UNLOCK.legacyRespawn] = true;
+    s.legacy = [{ name: "legacy-1", rate: d(1000), crashed: true, respawn: 1 }];
+    applyOffline(s, 1); // one offline step: the respawn branch has no Math.random
+    expect(s.legacy[0].crashed).toBe(false);
+  });
+
+  it("folds offline legacy output into the cycles total", () => {
+    const withLegacy = newGame();
+    withLegacy.unlocks[UNLOCK.legacyRespawn] = true;
+    withLegacy.legacy = Array.from({ length: 10 }, (_, i) => ({
+      name: `legacy-${i + 1}`,
+      rate: d(1000),
+      crashed: false,
+      respawn: 0,
+    }));
+    const baseline = newGame();
+    applyOffline(withLegacy, 60);
+    applyOffline(baseline, 60);
+    // 10 daemons at 1000/s dwarf the root's 1/s; even heavy crash loss clears 100k
+    expect(withLegacy.cycles.toNumber()).toBeGreaterThan(baseline.cycles.toNumber() + 100_000);
   });
 });
 
