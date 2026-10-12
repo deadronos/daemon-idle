@@ -31,6 +31,10 @@ cosmetics, which use `Math.random`).
 | `milestonesDone` | Record<MilestoneId, true> | Milestones that have fired (sticky).  |
 | `unlocks`        | Record<string, true> | Unlock ids granted; gate via `hasUnlock`. |
 | `buyMax`         | boolean        | `buy max` spawn toggle preference.              |
+| `autoNice`       | boolean        | Auto-buy `nice` when affordable (unlock-gated). |
+| `autoMalloc`     | boolean        | Auto-buy `malloc` when affordable (unlock-gated). |
+| `autoFree`       | boolean        | Auto-`free()` the leak at `freeThreshold`.      |
+| `freeThreshold`  | number         | Leak MB at which auto-free fires.               |
 | `log`            | string[]       | Terminal feed, newest first, capped at 40.      |
 | `playtime`       | number         | Seconds simulated (includes offline).           |
 | `lastSave`       | number         | Epoch ms of last save; drives offline progress. |
@@ -203,6 +207,12 @@ Order matters — later steps observe the effects of earlier ones.
 8. If `ramUsed > ramCap * OOM_TOLERANCE`, run the OOM killer.
 9. Evaluate milestones (see [doc 010](./010-milestones.md)): fire any whose metric threshold is
    met, granting their unlock flags.
+
+Between the offline early-return and the sweep, a live tick also runs **earned automation**
+(`runAutomation`): auto-`free` (when `leak >= freeThreshold`), then auto-`malloc`, then
+auto-`nice`, each at most once per tick and each gated by `toggle ∧ hasUnlock(…)`. Running
+before the sweep lets auto-`nice` reduce this tick's victims, and before the OOM check lets
+auto-`malloc` raise the ceiling in time. It is live-only, so offline catch-up never auto-buys.
 
 `tick(s, dt, { offline: true })` is the offline catch-up path (see
 [doc 003](./003-persistence.md)): it runs steps 1–5 only, so an idle gap still earns

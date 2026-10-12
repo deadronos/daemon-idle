@@ -54,6 +54,8 @@ Every save stamps `state.lastSave = Date.now()` first.
      `MAX_UNLOCKS = 256` (open-ended — later issues add ids); an array or other non-object
      yields `{}`.
    - `buyMax` → `Boolean(...)`.
+   - `autoNice` / `autoMalloc` / `autoFree` → `Boolean(...)`.
+   - `freeThreshold` → `max(0, coerceFinite(…, 16))`.
    - `log` → mapped to strings if it is an array, else `[]`.
    - `sacrificeOrder` → `sanitizeSacrificeOrder` (valid permutation, else the default).
 5. **Numeric clamps (`sanitizeNumericState`):** every bounded field is made finite and
@@ -82,7 +84,7 @@ Every save stamps `state.lastSave = Date.now()` first.
 ## Save versioning
 
 `GameState.saveVersion` records the semantics of the persisted fields; `newGame()` stamps
-it at `SAVE_VERSION = 4`. `encode()` spreads the field, so it round-trips. On load,
+it at `SAVE_VERSION = 5`. `encode()` spreads the field, so it round-trips. On load,
 `decode()` reads the parsed value into `from` and runs each staged migration whose `from`
 is older, before the numeric clamps.
 
@@ -91,6 +93,7 @@ is older, before the numeric clamps.
 | (missing) / `< 2` | 2   | For each legacy daemon at array index `k`, divide its `rate` by `1 + k*0.1`. |
 | `< 3`             | 3   | Additive only: the milestone records come from `newGame()` defaults; no-op.  |
 | `< 4`             | 4   | Additive only: `buyMax` comes from `newGame()` defaults; no-op.              |
+| `< 5`             | 5   | Additive only: the automation toggles + `freeThreshold`; no-op.              |
 
 **Why v2:** the old `doFork` snapshotted a new daemon's rate from `rawCyclesPerSec`, which
 already included the lineage multiplier `1 + forks*0.1` — so the `k`-th daemon's rate had
@@ -105,6 +108,10 @@ so the v3 step is a no-op placeholder that keeps the chain staged.
 **Why v4:** buy-max added the `buyMax` toggle. Additive too — `newGame()` defaults it to
 `false` and `decode` coerces it with `Boolean(...)` — so the v4 step is likewise a no-op
 placeholder.
+
+**Why v5:** automation added `autoNice`, `autoMalloc`, `autoFree`, and `freeThreshold`.
+Additive — the booleans default `false` and coerce with `Boolean(...)`, and `freeThreshold`
+defaults `16` and is clamped `>= 0` — so the v5 step is a no-op placeholder.
 
 The chain is append-only: to migrate further, add the next `if (from < N)` step and bump
 `SAVE_VERSION`.

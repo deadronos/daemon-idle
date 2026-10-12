@@ -65,6 +65,12 @@ The spawn panel also has a **`buy max` toggle** (`#buyMaxToggle`), shown only on
 affordable units) instead of `spawn`, and the cost line gains a `×max` marker; the preference is
 the persisted `state.buyMax`.
 
+The upgrades panel has an **`automation` group** (`#autoWrap`), shown only once
+`hasUnlock(state, "auto-nice")`: three checkboxes (`auto-nice`, `auto-malloc`, `auto-free`) bound
+to `state.autoNice`/`autoMalloc`/`autoFree`, plus a number input for `state.freeThreshold`. The
+group uses a `[hidden]`-safe rule (`.automation[hidden] { display: none }`) so the attribute is
+not defeated by the flex layout.
+
 ## Sacrifice order panel
 
 The `sacrifice order` panel (`#priorityPanel`) lists `state.sacrificeOrder` top-to-bottom,

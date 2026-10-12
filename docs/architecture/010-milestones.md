@@ -48,10 +48,12 @@ tier gates follow a `tier:<index>` convention. A feature that is not gated simpl
 | `first-blood` | `sweepsSurvived` | 1    | `nice`  |
 | `grown-up`    | `ramCap`         | 24   | `gc`    |
 | `bulk-buy`    | `totalEarned`    | 1e5  | `buy-max` |
+| `hands-off`   | `forks`          | 1    | `auto-nice`, `auto-malloc`, `auto-free` |
 
 `nice` and `gc` are the only upgrades gated; `free()`, `malloc`, `cooling`, shields, and
 `fork()` are available from the start. `bulk-buy` gates the spawn-panel `buy max` toggle
-(bulk tier spawns — see [doc 001](./001-simulation-core.md)).
+(bulk tier spawns — see [doc 001](./001-simulation-core.md)); `hands-off` gates the upgrades
+panel's automation group (auto-nice/malloc/free).
 
 ## Metrics and predicate
 
@@ -88,8 +90,8 @@ Rules live in `sim.ts`: `buyNice`/`buyGc` return `false` while
 
 Both records are plain objects (no `Decimal`), defaulted to `{}` in `newGame()`, and rebuilt
 on load: `sanitizeMilestones` keeps only ids present in `MILESTONES`; `sanitizeUnlocks` keeps
-string keys with truthy values (open-ended — later issues add ids). `SAVE_VERSION` is 4, with
-additive `if (from < 3)` / `if (from < 4)` migration steps (doc 003).
+string keys with truthy values (open-ended — later issues add ids). `SAVE_VERSION` is 5, with
+additive `if (from < 3)` / `if (from < 4)` / `if (from < 5)` migration steps (doc 003).
 
 ## Extending
 
