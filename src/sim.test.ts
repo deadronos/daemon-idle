@@ -30,6 +30,7 @@ import {
   heatMult,
   lineageMult,
   mallocCost,
+  maxAffordable,
   movePriority,
   newGame,
   niceCost,
@@ -1183,5 +1184,32 @@ describe("milestone gating", () => {
     expect(s.milestonesDone["first-blood"]).toBeUndefined();
     tick(s, 0);
     expect(s.milestonesDone["first-blood"]).toBe(true);
+  });
+});
+
+describe("maxAffordable", () => {
+  it("matches a brute-force spawn loop for small counts", () => {
+    const s = newGame();
+    s.cycles = d(1e4);
+    const brute = newGame();
+    brute.cycles = d(1e4);
+    let n = 0;
+    while (spawn(brute, 0)) n++;
+    expect(maxAffordable(s, 0)).toBe(n);
+    expect(n).toBeGreaterThan(0);
+  });
+  it("is limited by RAM when cycles are plentiful", () => {
+    const s = newGame();
+    s.cycles = d("1e100");
+    expect(maxAffordable(s, 0)).toBe(BASE.ramCap); // tier 0 costs 1 MB, base cap 8
+  });
+  it("returns 0 when unaffordable or out of RAM", () => {
+    const s = newGame();
+    s.cycles = d(0);
+    expect(maxAffordable(s, 0)).toBe(0);
+    const full = newGame();
+    full.cycles = d("1e100");
+    full.counts[0] = BASE.ramCap; // fills RAM exactly
+    expect(maxAffordable(full, 0)).toBe(0);
   });
 });

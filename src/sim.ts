@@ -540,6 +540,28 @@ export function spawn(s: GameState, i: number): boolean {
   return true;
 }
 
+/** Largest number of units of tier `i` buyable now, bounded by `cycles` and RAM. Pure. */
+export function maxAffordable(s: GameState, i: number): number {
+  const def = TIERS[i];
+  if (!def) return 0;
+  const room = Math.floor((s.ramCap - ramUsed(s)) / def.ram);
+  if (room <= 0) return 0;
+  const next = tierCost(s, i); // cost of the next unit
+  const growth = def.costGrowth;
+  let k = 0;
+  if (s.cycles.gt(0)) {
+    // solve next * (growth^k - 1) / (growth - 1) <= cycles  ->  k
+    const ratio = s.cycles.mul(growth - 1).div(next).add(1);
+    k = Math.floor(ratio.ln().div(Math.log(growth)).toNumber());
+  }
+  if (!Number.isFinite(k) || k < 0) k = 0;
+  k = Math.min(k, room);
+  const total = (n: number) => next.mul(d(growth).pow(n).sub(1)).div(growth - 1);
+  while (k > 0 && total(k).gt(s.cycles)) k--; // absorb Decimal rounding
+  while (k + 1 <= room && total(k + 1).lte(s.cycles)) k++;
+  return k;
+}
+
 export function buyNice(s: GameState): boolean {
   if (!hasUnlock(s, UNLOCK.nice)) return false;
   const cost = niceCost(s);
