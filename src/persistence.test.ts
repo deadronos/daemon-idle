@@ -232,3 +232,11 @@ describe("milestone persistence", () => {
     expect(s.saveVersion).toBe(SAVE_VERSION);
   });
 });
+
+describe("sanitizeUnlocks cap", () => {
+  it("caps the number of unlock keys kept", () => {
+    const raw: Record<string, true> = {};
+    for (let i = 0; i < 300; i++) raw[`u${i}`] = true;
+    expect(Object.keys(sanitizeUnlocks(raw)).length).toBe(256);
+  });
+});

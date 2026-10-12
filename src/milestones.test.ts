@@ -9,6 +9,7 @@ import {
   milestoneById,
   milestoneMet,
   milestoneProgress,
+  orderedMilestones,
   type MilestoneInput,
 } from "./milestones";
 
@@ -106,5 +107,23 @@ describe("evaluateMilestones", () => {
     expect(evaluateMilestones(s)).toEqual([]);
     expect(s.milestonesDone["first-blood"]).toBe(true);
     expect(hasUnlock(s, "nice")).toBe(true);
+  });
+});
+
+describe("orderedMilestones", () => {
+  it("orders pending by progress descending, then achieved last", () => {
+    // ramCap 0 -> both pending at 0 progress -> roster order
+    expect(orderedMilestones(base({ ramCap: 0 })).map((m) => m.id)).toEqual([
+      "first-blood",
+      "grown-up",
+    ]);
+    // ramCap 12 -> grown-up is closer to firing -> moves to the front
+    expect(orderedMilestones(base({ ramCap: 12 })).map((m) => m.id)).toEqual([
+      "grown-up",
+      "first-blood",
+    ]);
+    // achieved goals sort below pending ones
+    const done = base({ ramCap: 12, milestonesDone: { "first-blood": true } });
+    expect(orderedMilestones(done).map((m) => m.id)).toEqual(["grown-up", "first-blood"]);
   });
 });

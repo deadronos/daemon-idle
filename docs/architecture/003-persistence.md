@@ -36,10 +36,10 @@ Every save stamps `state.lastSave = Date.now()` first.
    JSON value (`null`, `42`, `"x"`, `true`) is treated as `{}`, so it decodes to a fresh
    game instead of throwing.
 3. **Version migration:** `decode()` runs a **staged** chain — one step per version it
-   upgrades *from* (`if (from < 2) …`, `if (from < 3) …`, with `from = parsed.saveVersion |
-   0`) — then stamps `saveVersion = SAVE_VERSION`. Staged steps matter: a single
-   `saveVersion < SAVE_VERSION` check would re-run older steps on newer saves
-   (see [Save versioning](#save-versioning)).
+   upgrades *from* (`if (from < 2) …`, `if (from < 3) …`, with
+   `from = coerceFinite(parsed.saveVersion, 0)`) — then stamps `saveVersion = SAVE_VERSION`.
+   Staged steps matter: a single `saveVersion < SAVE_VERSION` check would re-run older steps
+   on newer saves (see [Save versioning](#save-versioning)).
 4. **Coercion (harden):** `decode()` sanitizes every field before it reaches the sim:
    - `cycles` / `totalEarned` / each legacy `rate` → `coerceDecimal` (finite number,
      numeric string, or `Decimal`; else the fallback). `d("abc")` is lenient and yields
@@ -50,8 +50,9 @@ Every save stamps `state.lastSave = Date.now()` first.
      `"legacy"`, `rate`/`respawn` coerced.
    - `milestonesDone` → `sanitizeMilestones`: keep only ids present in `MILESTONES` (stale ids
      never survive); a non-object yields `{}`.
-   - `unlocks` → `sanitizeUnlocks`: keep string keys with a truthy value (open-ended — later
-     issues add ids); an array or other non-object yields `{}`.
+   - `unlocks` → `sanitizeUnlocks`: keep string keys with a truthy value, capped at
+     `MAX_UNLOCKS = 256` (open-ended — later issues add ids); an array or other non-object
+     yields `{}`.
    - `log` → mapped to strings if it is an array, else `[]`.
    - `sacrificeOrder` → `sanitizeSacrificeOrder` (valid permutation, else the default).
 5. **Numeric clamps (`sanitizeNumericState`):** every bounded field is made finite and

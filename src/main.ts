@@ -39,6 +39,7 @@ import {
   METRICS,
   hasUnlock,
   milestoneProgress,
+  orderedMilestones,
   UNLOCK,
   type MetricId,
 } from "./milestones";
@@ -336,13 +337,8 @@ function unlockSource(unlockId: string): string {
  * Rows are rebuilt only when the done/unlock sets change; progress refreshes each frame.
  */
 function renderMilestones(): void {
-  const pending = MILESTONES.filter((m) => !state.milestonesDone[m.id]).sort(
-    (a, b) => milestoneProgress(state, b) - milestoneProgress(state, a),
-  );
-  const done = MILESTONES.filter((m) => state.milestonesDone[m.id]);
-  const ordered = [...pending, ...done];
-
-  const sig = `${Object.keys(state.milestonesDone).sort().join(",")}|${Object.keys(state.unlocks).sort().join(",")}`;
+  const ordered = orderedMilestones(state);
+  const sig = `${ordered.map((m) => m.id).join(",")}|${Object.keys(state.unlocks).sort().join(",")}`;
   if (el.milestonePanel.dataset.sig !== sig) {
     el.milestonePanel.dataset.sig = sig;
     el.milestonePanel.innerHTML = "";

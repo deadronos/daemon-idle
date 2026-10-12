@@ -669,7 +669,7 @@ describe("directive scheduling", () => {
     expect(() => tick(s, 0.01)).not.toThrow();
     // the fallback was actually applied: standard budget at severity 0.15, nice 0
     expect(s.counts[0]).toBe(8); // 10 - round(10 * 0.15 * 1) = 8
-    expect(s.log.some((l) => /^cleanup sweep \[standard\]:/.test(l))).toBe(true);
+    expect(s.log.some((l) => l.startsWith("cleanup sweep [standard]:"))).toBe(true);
   });
 
   it("applies the drawn directive end-to-end (scavenger reaps the highest-output tier)", () => {

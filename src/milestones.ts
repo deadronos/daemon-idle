@@ -65,3 +65,16 @@ export function evaluateMilestones(s: MilestoneInput): MilestoneId[] {
   }
   return fired;
 }
+
+/**
+ * Panel order: pending milestones first, closest-to-firing on top (progress descending), then
+ * achieved ones. Pure, so the UI can recompute it each frame rather than freezing the order
+ * when only progress changes.
+ */
+export function orderedMilestones(s: MilestoneInput): MilestoneDef[] {
+  const pending = MILESTONES.filter((m) => !s.milestonesDone[m.id]).sort(
+    (a, b) => milestoneProgress(s, b) - milestoneProgress(s, a),
+  );
+  const done = MILESTONES.filter((m) => s.milestonesDone[m.id]);
+  return [...pending, ...done];
+}

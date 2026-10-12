@@ -86,14 +86,21 @@ export function sanitizeMilestones(raw: unknown): Record<string, true> {
 }
 
 /**
- * Unlock ids: keep string keys with a truthy value. Open-ended on purpose (later issues add
- * ids), so this is deliberately NOT restricted to the current `UNLOCK` registry.
+ * Unlock ids: keep string keys with a truthy value, capped at `MAX_UNLOCKS`. Open-ended on
+ * purpose (later issues add ids), so this is deliberately NOT restricted to the current
+ * `UNLOCK` registry.
  */
+export const MAX_UNLOCKS = 256;
 export function sanitizeUnlocks(raw: unknown): Record<string, true> {
   const out: Record<string, true> = {};
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
   const rec = raw as Record<string, unknown>;
-  for (const key of Object.keys(rec)) if (rec[key]) out[key] = true;
+  let n = 0;
+  for (const key of Object.keys(rec)) {
+    if (!rec[key]) continue;
+    out[key] = true;
+    if (++n >= MAX_UNLOCKS) break;
+  }
   return out;
 }
 
