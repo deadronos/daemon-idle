@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { d } from "./bignum";
-import { PERKS, type PerkInput, perkById, perkCost, canBuyPerk } from "./perks";
+import { PERKS, type PerkInput, perkById, perkCost, canBuyPerk, perkMods, MOD_KIND } from "./perks";
 
 const base = (over: Partial<PerkInput> = {}): PerkInput => ({
   perks: {},
@@ -46,5 +46,42 @@ describe("canBuyPerk", () => {
     expect(canBuyPerk(base({ lineage: 99 }), "pipeline")).toBe(false); // sink still needs its prereq
     expect(canBuyPerk(base({ perks: { spin: 1, prefetch: 1 }, lineage: 99 }), "pipeline")).toBe(true); // sink repeatable
     expect(canBuyPerk(base({ lineage: 99 }), "nope")).toBe(false); // unknown id
+  });
+});
+
+describe("perkMods", () => {
+  it("is identity with no perks", () => {
+    const m = perkMods(base());
+    expect(m.incomeMult.toNumber()).toBe(1);
+    expect(m.rootMult.toNumber()).toBe(1);
+    expect(m.tierCostMult).toBe(1);
+    expect(m.niceAdd).toBe(0);
+    expect(m.heatGenMult).toBe(1);
+    expect(m.startShieldsAdd).toBe(0);
+    expect(m.forkCostMult).toBe(1);
+    expect(m.pointsMult).toBe(1);
+    expect(m.legacyRateMult.toNumber()).toBe(1);
+    expect(m.startCycles.toNumber()).toBe(0);
+  });
+
+  it("multiplies increase mods, divides reductions, and adds flat mods", () => {
+    const s = base({ perks: { spin: 1, prefetch: 1, tailcall: 1, renice: 1, heatsink: 1 } });
+    const m = perkMods(s);
+    expect(m.incomeMult.toNumber()).toBeCloseTo(1.1 * 1.15, 6);
+    expect(m.tierCostMult).toBeCloseTo(1 / 1.08, 6);
+    expect(m.heatGenMult).toBeCloseTo(1 / 1.1, 6);
+    expect(m.niceAdd).toBe(1);
+  });
+
+  it("uses sqrt for sink levels and floors forkCostMult", () => {
+    expect(perkMods(base({ perks: { pipeline: 4 } })).incomeMult.toNumber()).toBeCloseTo(1 + 0.1 * 2, 6);
+    const cheap = perkMods(base({ perks: { cheapfork: 1 } }));
+    expect(cheap.forkCostMult).toBeLessThan(1);
+    expect(cheap.forkCostMult).toBeGreaterThanOrEqual(0.25);
+    expect(Object.values(MOD_KIND)).toHaveLength(Object.keys(perkMods(base())).length);
+  });
+
+  it("makes `vec` double the root multiplier", () => {
+    expect(perkMods(base({ perks: { vec: 1 } })).rootMult.toNumber()).toBe(2);
   });
 });
