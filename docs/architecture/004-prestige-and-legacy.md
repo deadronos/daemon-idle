@@ -16,10 +16,10 @@ off `fork()` has its own doc — [009 — Prestige Perk Tree](./009-prestige-per
      [doc 009](./009-prestige-perk-tree.md). This runs **before** the reset, so it measures
      the run you just played.
   2. Capture `peak = baseCyclesPerSec(s)` (children × `survivalMult`, plus root,
-     **lineage-free**, unthrottled, and **perk-free** — so neither the lineage multiplier,
-     heat, nor income perks are baked into the legacy rate; the compounded `survivalMult`
-     **is**, which is what makes a late fork leave a strong daemon. Lineage and perks are
-     applied per tick, below).
+     **lineage-free**, unthrottled, **perk-free**, and **achievement-free** — so none of the
+     lineage multiplier, heat, income perks, or achievement multipliers are baked into the
+     legacy rate; the compounded `survivalMult` **is**, which is what makes a late fork leave a
+     strong daemon. Lineage, perks, and achievements are applied per tick, below).
   3. Increment `forks`; push a legacy daemon with
      `rate = max(0.1, peak * LEGACY_SHARE)` where `LEGACY_SHARE = 0.1`.
   4. **Reset the working set:** `counts = zeros`, `leak = 0`, `ramCap = BASE.ramCap`,

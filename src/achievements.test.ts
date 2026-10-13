@@ -64,6 +64,10 @@ describe("achievementMet / achievementProgress", () => {
     expect(achievementProgress(base({ ramCap: 32 }), def)).toBeCloseTo(0.5, 6);
     expect(achievementProgress(base({ ramCap: 128 }), def)).toBe(1);
   });
+  it("stays finite and clamped for a huge totalEarned (Decimal overflow)", () => {
+    const huge: AchievementDef = { id: "h", name: "h", desc: "", metric: "totalEarned", at: 1e9, mult: 0.02 };
+    expect(achievementProgress(base({ totalEarned: d("1e400") }), huge)).toBe(1);
+  });
 });
 
 describe("evaluateAchievements", () => {
@@ -90,7 +94,7 @@ describe("achievementMult", () => {
 describe("orderedAchievements", () => {
   it("orders pending by progress descending, then earned last", () => {
     const idx = (ids: string[], id: string) => ids.indexOf(id);
-    // ramCap 0 -> headroom pending at 0; totalEarned 1e3 -> first-earnings earned
+    // ramCap 8 -> headroom pending at 8/64 = 0.125; totalEarned 1e3 -> first-earnings earned
     const done = orderedAchievements(
       base({ totalEarned: d(1e3), achievementsDone: { "first-earnings": true } }),
     ).map((a) => a.id);
