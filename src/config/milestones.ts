@@ -67,6 +67,22 @@ export const MILESTONES: MilestoneDef[] = [
     at: 2,
     unlocks: ["legacy-respawn"],
   },
+  {
+    id: "tier-5",
+    name: "k8s pod",
+    desc: "earn 10,000,000 cycles",
+    metric: "totalEarned",
+    at: 1e7,
+    unlocks: ["tier:5"],
+  },
+  {
+    id: "tier-6",
+    name: "bare-metal node",
+    desc: "earn 1,000,000,000 cycles",
+    metric: "totalEarned",
+    at: 1e9,
+    unlocks: ["tier:6"],
+  },
 ];
 
 /**
