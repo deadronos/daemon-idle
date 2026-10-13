@@ -195,6 +195,30 @@ export function encode(s: GameState): string {
 }
 
 /**
+ * Ordered, code-only migration steps. Each entry upgrades saves whose `saveVersion` is
+ * strictly older than `from` (keyed to the version it upgrades *from*, so a newer save
+ * never re-runs an older step). Add a new entry with the next `from` and bump
+ * `SAVE_VERSION`; additive versions need no entry.
+ */
+export interface Migration {
+  from: number;
+  describe: string;
+  apply(s: GameState): void;
+}
+
+export const MIGRATIONS: Migration[] = [
+  {
+    from: 2,
+    describe: "divide the lineage baked into pre-v2 legacy rates",
+    apply: (s) => {
+      s.legacy.forEach((dm, k) => {
+        dm.rate = dm.rate.div(d(1 + k * 0.1));
+      });
+    },
+  },
+];
+
+/**
  * Parse a save, merging over fresh defaults, then coerce every field. Throws only if
  * `raw` is not valid JSON (callers fail closed to `newGame()`). A non-object JSON value
  * (`null`, a number, a string) decodes to a fresh game rather than throwing.
@@ -221,17 +245,10 @@ export function decode(raw: string): GameState {
   s.autoFree = Boolean(parsed.autoFree);
   s.freeThreshold = Math.max(0, coerceFinite(parsed.freeThreshold, 16));
   s.offlineCap = coerceCount(parsed.offlineCap);
+  const from = coerceFinite(parsed.saveVersion, 0);
   // Staged migrations, each keyed to the version it upgrades *from* (never a single
   // `saveVersion < SAVE_VERSION` check, which would re-run older steps on newer saves).
-  const from = coerceFinite(parsed.saveVersion, 0);
-  if (from < 2) {
-    // Pre-versioning saves have lineage baked into each legacy `rate` (the old `doFork`
-    // snapshotted `rawCyclesPerSec`), and `tick` now applies lineage again — so divide the
-    // baked factor back out, keyed by the daemon's lineage index `k`.
-    s.legacy.forEach((dm, k) => {
-      dm.rate = dm.rate.div(d(1 + k * 0.1));
-    });
-  }
+  for (const m of MIGRATIONS) if (from < m.from) m.apply(s);
   // from < 3: the lineage/perk fields and the milestone records are additive only —
   // newGame() defaults already filled them and the rosters rebuild them.
   // from < 4: `buyMax` is additive too — newGame() defaults it to false.

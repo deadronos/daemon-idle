@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { d } from "./bignum";
 import {
   MAX_SANE_COUNT,
+  MIGRATIONS,
   applyOffline,
   decode,
   encode,
@@ -491,5 +492,44 @@ describe("repeatables persistence", () => {
   it("pads a pre-v8 save's short counts array with zeros for the new tiers", () => {
     const s = decode('{"saveVersion":7,"counts":[1,2,3,4,5]}');
     expect(s.counts).toEqual([1, 2, 3, 4, 5, 0, 0]);
+  });
+});
+
+describe("MIGRATIONS table", () => {
+  it("is ordered by ascending from, each from > 1, and has one entry today", () => {
+    const froms = MIGRATIONS.map((m) => m.from);
+    expect(froms).toEqual([...froms].sort((a, b) => a - b));
+    for (const m of MIGRATIONS) expect(m.from).toBeGreaterThan(1);
+    expect(MIGRATIONS).toHaveLength(1);
+    expect(MIGRATIONS[0].from).toBe(2);
+    expect(typeof MIGRATIONS[0].apply).toBe("function");
+  });
+});
+
+describe("save versioning — explicit table", () => {
+  it("runs the v2 migration for a saveVersion 1 save", () => {
+    const raw = JSON.stringify({
+      saveVersion: 1,
+      legacy: [
+        { name: "legacy-1", rate: "22", crashed: false, respawn: 0 },
+        { name: "legacy-2", rate: "33", crashed: false, respawn: 0 },
+      ],
+    });
+    const s = decode(raw);
+    expect(s.saveVersion).toBe(SAVE_VERSION);
+    expect(s.legacy[0].rate.toNumber()).toBeCloseTo(22, 5);
+    expect(s.legacy[1].rate.toNumber()).toBeCloseTo(33 / 1.1, 5);
+  });
+
+  it("is idempotent: decoding a SAVE_VERSION save twice leaves rates untouched", () => {
+    const g = newGame();
+    g.legacy = [
+      { name: "legacy-1", rate: d(22), crashed: false, respawn: 0 },
+      { name: "legacy-2", rate: d(33), crashed: false, respawn: 0 },
+    ];
+    const once = decode(encode(g));
+    const twice = decode(encode(once));
+    expect(once.legacy[1].rate.toNumber()).toBeCloseTo(33, 5);
+    expect(twice.legacy[1].rate.toNumber()).toBeCloseTo(33, 5);
   });
 });
