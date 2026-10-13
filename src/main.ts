@@ -38,6 +38,7 @@ import {
   sweepVictimMult,
   tick,
   tierCost,
+  tierUnlocked,
 } from "./sim";
 import { d } from "./bignum";
 import {
@@ -325,6 +326,15 @@ function render(force = false): void {
     const ok = b.enabled();
     const ramFull = ramUsed(state) + TIERS[i].ram > ramCapTotal(state);
     b.el.disabled = !ok;
+    const locked = !tierUnlocked(state, i);
+    const nameEl = b.el.querySelector(".name") as HTMLElement;
+    const lockSig = locked ? "1" : "0";
+    if (nameEl.dataset.locked !== lockSig) {
+      nameEl.dataset.locked = lockSig;
+      nameEl.innerHTML = locked
+        ? `🔒 ${TIERS[i].name} <small>${unlockSource(TIERS[i].unlock!)}</small>`
+        : `${TIERS[i].name} <small>${TIERS[i].desc}</small>`;
+    }
     const costEl = b.el.querySelector(".cost") as HTMLElement;
     costEl.textContent = `${state.counts[i]}  ·  ${fmt(b.cost())}${maxOn ? "  ×max" : ""}${ramFull ? "  ⚠ ram" : ""}`;
     costEl.classList.toggle("ok", ok);

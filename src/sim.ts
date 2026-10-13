@@ -31,6 +31,8 @@ export interface TierDef {
   priority: number;
   /** Identity tag; `"leak-immune"` tiers consume RAM but never feed the leak. */
   trait: "none" | "leak-immune";
+  /** Milestone unlock id gating this tier; undefined = always available. */
+  unlock?: string;
 }
 
 export const TIERS: TierDef[] = [
@@ -84,6 +86,28 @@ export const TIERS: TierDef[] = [
     priority: 4,
     trait: "none",
   },
+  {
+    name: "k8s pod",
+    desc: "it has a namespace and everything",
+    baseCost: 1e6,
+    costGrowth: 1.25,
+    baseOutput: 3e4,
+    ram: 24,
+    priority: 5,
+    trait: "none",
+    unlock: UNLOCK.tier5,
+  },
+  {
+    name: "bare-metal node",
+    desc: "you own the rack now",
+    baseCost: 1e8,
+    costGrowth: 1.3,
+    baseOutput: 5e5,
+    ram: 32,
+    priority: 6,
+    trait: "none",
+    unlock: UNLOCK.tier6,
+  },
 ];
 
 /**
@@ -99,11 +123,14 @@ export const DEFAULT_SACRIFICE_ORDER: readonly number[] = Object.freeze(
  * Cross-tier synergy links. Owning `from` units multiplies the output of tier
  * `tier` by `1 + pct * counts[from]`. Data-driven on purpose: links are declared
  * here, not branched in `childOutput`, so composition (not raw tier spam) matters.
- * Tier indices: 2 = worker thread, 3 = microservice, 4 = cron daemon.
+ * Tier indices: 2 = worker thread, 3 = microservice, 4 = cron daemon, 5 = k8s pod,
+ * 6 = bare-metal node.
  */
 export const SYNERGY: Array<{ tier: number; from: number; pct: number }> = [
   { tier: 2 /* worker thread */, from: 3 /* microservice */, pct: 0.02 },
   { tier: 3 /* microservice */, from: 4 /* cron daemon */, pct: 0.05 },
+  { tier: 4 /* cron daemon */, from: 5 /* k8s pod */, pct: 0.03 },
+  { tier: 5 /* k8s pod */, from: 6 /* bare-metal node */, pct: 0.05 },
 ];
 
 const LEAK_RATE = 0.01; // fraction of footprint leaked per second
@@ -623,7 +650,15 @@ export function buyOfflineCap(s: GameState): boolean {
 
 // --- actions ---------------------------------------------------------------
 
+/** True when tier `i` exists and its milestone unlock (if any) has been granted. */
+export function tierUnlocked(s: GameState, i: number): boolean {
+  const def = TIERS[i];
+  if (!def) return false;
+  return !def.unlock || hasUnlock(s, def.unlock);
+}
+
 export function canSpawn(s: GameState, i: number): boolean {
+  if (!tierUnlocked(s, i)) return false;
   const ramOk = ramUsed(s) + TIERS[i].ram <= ramCapTotal(s);
   return s.cycles.gte(tierCost(s, i)) && ramOk;
 }
@@ -638,7 +673,7 @@ export function spawn(s: GameState, i: number): boolean {
 /** Largest number of units of tier `i` buyable now, bounded by `cycles` and RAM. Pure. */
 export function maxAffordable(s: GameState, i: number): number {
   const def = TIERS[i];
-  if (!def) return 0;
+  if (!def || !tierUnlocked(s, i)) return 0;
   const room = Math.floor((ramCapTotal(s) - ramUsed(s)) / def.ram);
   if (room <= 0) return 0;
   const next = tierCost(s, i); // cost of the next unit

@@ -82,6 +82,8 @@ export const UNLOCK = {
   autoMalloc: "auto-malloc",
   autoFree: "auto-free",
   legacyRespawn: "legacy-respawn",
+  tier5: "tier:5",
+  tier6: "tier:6",
 } as const;
 
 export function milestoneById(id: MilestoneId): MilestoneDef | undefined {

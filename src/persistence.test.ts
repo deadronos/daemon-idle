@@ -20,7 +20,7 @@ describe("decode — save hardening", () => {
     const s = decode(encode(newGame()));
     expect(s.cycles.eq(0)).toBe(true);
     expect(s.totalEarned.eq(0)).toBe(true);
-    expect(s.counts).toEqual([0, 0, 0, 0, 0]);
+    expect(s.counts).toEqual([0, 0, 0, 0, 0, 0, 0]);
   });
 
   it("loads a corrupt save to a finite state and never throws", () => {
@@ -35,7 +35,7 @@ describe("decode — save hardening", () => {
     expect(s.sweepTimer).toBeLessThanOrEqual(s.sweepInterval);
     expect(s.playtime).toBe(0);
     expect(s.leak).toBe(0);
-    expect(s.counts).toEqual([0, 0, 2, 0, 0]);
+    expect(s.counts).toEqual([0, 0, 2, 0, 0, 0, 0]);
     expect(s.legacy).toEqual([]);
     expect(Array.isArray(s.log)).toBe(true);
   });
@@ -49,7 +49,7 @@ describe("decode — save hardening", () => {
   });
 
   it("resets a non-array counts to zeros", () => {
-    expect(decode('{"counts":"nope"}').counts).toEqual([0, 0, 0, 0, 0]);
+    expect(decode('{"counts":"nope"}').counts).toEqual([0, 0, 0, 0, 0, 0, 0]);
   });
 
   it("caps a huge finite count to MAX_SANE_COUNT", () => {
@@ -65,7 +65,7 @@ describe("decode — save hardening", () => {
     for (const raw of ["null", "42", '"nope"', "true"]) {
       expect(() => decode(raw)).not.toThrow();
       const s = decode(raw);
-      expect(s.counts).toEqual([0, 0, 0, 0, 0]);
+      expect(s.counts).toEqual([0, 0, 0, 0, 0, 0, 0]);
       expect(s.saveVersion).toBe(SAVE_VERSION);
     }
   });
@@ -139,7 +139,7 @@ describe("save versioning", () => {
 describe("offline progress", () => {
   it("does not reap the process table while offline", () => {
     const s = newGame();
-    s.counts = [0, 10, 0, 0, 0];
+    s.counts = [0, 10, 0, 0, 0, 0, 0];
     s.ramCap = 1000;
     s.sweepInterval = 1;
     s.sweepTimer = 1;
@@ -150,7 +150,7 @@ describe("offline progress", () => {
 
   it("is monotonic in cycles over an offline gap", () => {
     const s = newGame();
-    s.counts = [0, 10, 0, 0, 0];
+    s.counts = [0, 10, 0, 0, 0, 0, 0];
     s.ramCap = 1000;
     s.sweepInterval = 1;
     s.sweepTimer = 1;
@@ -189,7 +189,7 @@ describe("offline progress", () => {
 
   it("never runs the OOM killer while offline", () => {
     const s = newGame();
-    s.counts = [0, 0, 0, 0, 10]; // 10 cron daemons = 160MB, far over the 16MB cap
+    s.counts = [0, 0, 0, 0, 10, 0, 0]; // 10 cron daemons = 160MB, far over the 16MB cap
     s.ramCap = 16;
     applyOffline(s, 10);
     expect(s.oomCount).toBe(0);
@@ -198,7 +198,7 @@ describe("offline progress", () => {
 
   it("bounds the offline leak at the RAM cap so returning does not wipe the board", () => {
     const s = newGame();
-    s.counts = [0, 5, 0, 0, 0]; // 10 MB leak-prone footprint
+    s.counts = [0, 5, 0, 0, 0, 0, 0]; // 10 MB leak-prone footprint
     s.ramCap = 1000;
     s.gc = 0; // no auto-flush: the leak would grow without bound if offline let it
     applyOffline(s, 8 * 3600);
@@ -206,7 +206,7 @@ describe("offline progress", () => {
     expect(s.leak).toBeCloseTo(s.ramCap, 5); // it did reach the cap
     tick(s, 0.01); // first live tick must not OOM the board away
     expect(s.oomCount).toBe(0);
-    expect(s.counts).toEqual([0, 5, 0, 0, 0]);
+    expect(s.counts).toEqual([0, 5, 0, 0, 0, 0, 0]);
   });
 });
 
@@ -355,7 +355,7 @@ describe("applyOffline cap and equivalence", () => {
     const offline = newGame();
     for (const s of [online, offline]) {
       s.cycles = d(1e6);
-      s.counts = [4, 0, 0, 0, 0];
+      s.counts = [4, 0, 0, 0, 0, 0, 0];
       s.sweepTimer = 1e9; // no sweep fires within N seconds
     }
     const N = 600;
@@ -372,7 +372,7 @@ describe("applyOffline cap and equivalence", () => {
       s.sweepTimer = 1e9;
       s.gc = 5; // flushes the leak so the online run stays under cap
       s.unlocks[UNLOCK.legacyRespawn] = true; // auto-respawn, so crashes are transient
-      s.counts = [0, 0, 0, 0, 4]; // children income dominates the small legacy share
+      s.counts = [0, 0, 0, 0, 4, 0, 0]; // children income dominates the small legacy share
       s.legacy = [{ name: "legacy-1", rate: d(100), crashed: false, respawn: 0 }];
       // Earn the whole roster up front on both runs: achievements are live-only, so an
       // empty record would let the live run compound a multiplier the offline one never
@@ -392,7 +392,7 @@ describe("applyOffline cap and equivalence", () => {
 
   it("does not advance sweepsSurvived offline (non-punishing retained)", () => {
     const s = newGame();
-    s.counts = [4, 0, 0, 0, 0];
+    s.counts = [4, 0, 0, 0, 0, 0, 0];
     applyOffline(s, 600); // > the 60s sweep interval
     expect(s.sweepsSurvived).toBe(0);
   });
