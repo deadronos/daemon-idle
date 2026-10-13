@@ -97,10 +97,12 @@ Every save stamps `state.lastSave = Date.now()` first.
 `GameState.saveVersion` records the semantics of the persisted fields; `newGame()` stamps
 it at `SAVE_VERSION = 8`. `encode()` spreads the field, so it round-trips. On load,
 `decode()` reads the parsed value into `from` and iterates the explicit, ordered
-`MIGRATIONS` table — `{ from, describe, apply }` entries in `src/persistence.ts`, mirroring
-the table below — applying each step whose `from` is older, before the numeric clamps. The
-table is the single source of truth for "what migrates"; a test pins its ordering so a
-future step must be added deliberately.
+`MIGRATIONS` table — `{ from, describe, apply }` entries in `src/persistence.ts` — applying each
+step whose `from` is older, before the numeric clamps. The table below lists **every** version
+step; `MIGRATIONS` encodes only the non-additive ones (the rest are no-ops handled by the
+defaults merge), so today the code table has a single entry while the table below has a row per
+version. The code table is the single source of truth for "what migrates"; a test pins its
+ordering so a future step must be added deliberately.
 
 | from              | to  | migration                                                                    |
 | ----------------- | --- | ---------------------------------------------------------------------------- |

@@ -503,6 +503,7 @@ describe("MIGRATIONS table", () => {
     expect(MIGRATIONS).toHaveLength(1);
     expect(MIGRATIONS[0].from).toBe(2);
     expect(typeof MIGRATIONS[0].apply).toBe("function");
+    for (const m of MIGRATIONS) expect(m.describe.length).toBeGreaterThan(0);
   });
 });
 
@@ -531,6 +532,21 @@ describe("save versioning — explicit table", () => {
     const twice = decode(encode(once));
     expect(once.legacy[1].rate.toNumber()).toBeCloseTo(33, 5);
     expect(twice.legacy[1].rate.toNumber()).toBeCloseTo(33, 5);
+  });
+
+  it("is idempotent on a migrated save: a v1 save is not divided again", () => {
+    const raw = JSON.stringify({
+      saveVersion: 1,
+      legacy: [
+        { name: "legacy-1", rate: "22", crashed: false, respawn: 0 },
+        { name: "legacy-2", rate: "33", crashed: false, respawn: 0 },
+      ],
+    });
+    const migrated = decode(raw);
+    expect(migrated.legacy[1].rate.toNumber()).toBeCloseTo(33 / 1.1, 5);
+    // Re-encode (now stamped SAVE_VERSION) and decode again: no further division.
+    const again = decode(encode(migrated));
+    expect(again.legacy[1].rate.toNumber()).toBeCloseTo(33 / 1.1, 5);
   });
 });
 
