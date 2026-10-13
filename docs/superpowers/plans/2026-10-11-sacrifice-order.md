@@ -35,9 +35,11 @@ Failure modes the design implies (each gets a test):
 ### Task 1: Sacrifice-order model in `src/sim.ts`
 
 **Files:**
+
 - Modify: `src/sim.ts`, `src/sim.test.ts`, `docs/architecture/001-simulation-core.md`
 
 **Interfaces:**
+
 - Produces:
   - `GameState.sacrificeOrder: number[]`
   - `export const DEFAULT_SACRIFICE_ORDER: number[]`
@@ -110,6 +112,7 @@ Expected: FAIL — `movePriority` / `priorityOf` / etc. not exported.
 - [ ] **Step 3: Implement the model**
 
 In `src/sim.ts`:
+
 - `export const DEFAULT_SACRIFICE_ORDER = TIERS.map((_, i) => i).sort((a, b) => TIERS[a].priority - TIERS[b].priority);` (`TIERS.priority` becomes the default-order source only).
 - Add `sacrificeOrder: number[]` to `GameState`; `newGame()` sets `sacrificeOrder: [...DEFAULT_SACRIFICE_ORDER]`.
 - `priorityOf(s, tier) { return s.sacrificeOrder.indexOf(tier); }`.
@@ -141,9 +144,11 @@ git commit -m "feat: player-controlled sacrifice order in the sim (#9)"
 ### Task 2: Sacrifice-order panel and save sanitize
 
 **Files:**
+
 - Modify: `index.html`, `src/main.ts`, `src/style.css`, `docs/architecture/002-render-system.md`
 
 **Interfaces:**
+
 - Consumes: `sacrificeOrder`, `priorityOf`/`priorityOrder`, `movePriority`, `sanitizeSacrificeOrder`, `DEFAULT_SACRIFICE_ORDER`, `TIERS` (Task 1).
 
 - [ ] **Step 1: Add the panel markup**

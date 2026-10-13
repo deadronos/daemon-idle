@@ -40,10 +40,12 @@ Failure modes the spec implies — each gets a test in its owning task:
 ### Task 1: `MIGRATIONS` table refactor + ordering / pre-versioning / idempotency tests
 
 **Files:**
+
 - Modify: `src/persistence.ts`
 - Test: `src/persistence.test.ts`
 
 **Interfaces:**
+
 - Produces: `export interface Migration { from: number; describe: string; apply(s: GameState): void }`; `export const MIGRATIONS: Migration[]` (one entry, `from: 2`).
 - Consumes: `GameState` (type, already imported), `d` / `Decimal` (already imported).
 
@@ -94,8 +96,8 @@ describe("save versioning — explicit table", () => {
 ```
 
 - [ ] **Step 2: Run to verify it fails** —
-  `npx vp test run src/persistence.test.ts > /tmp/persist-25.log 2>&1; echo exit=$?`
-  → FAIL: `MIGRATIONS` is not exported.
+      `npx vp test run src/persistence.test.ts > /tmp/persist-25.log 2>&1; echo exit=$?`
+      → FAIL: `MIGRATIONS` is not exported.
 
 - [ ] **Step 3: Implement** in `src/persistence.ts`, directly above `decode`:
 
@@ -147,9 +149,9 @@ s.saveVersion = SAVE_VERSION;
 ```
 
 - [ ] **Step 4: Run to verify it passes** —
-  `npx vp test run src/persistence.test.ts > /tmp/persist-25.log 2>&1; echo exit=$?`
-  → PASS (the pre-existing `save versioning` and per-version tests must stay green — they are the
-  behavior-preservation guard).
+      `npx vp test run src/persistence.test.ts > /tmp/persist-25.log 2>&1; echo exit=$?`
+      → PASS (the pre-existing `save versioning` and per-version tests must stay green — they are the
+      behavior-preservation guard).
 
 - [ ] **Step 5: Commit**
 
@@ -163,9 +165,11 @@ git commit -m "refactor(persistence): explicit ordered MIGRATIONS table (#25)"
 ### Task 2: Forward-compat + sparse-save + shape-drift characterization tests
 
 **Files:**
+
 - Test: `src/persistence.test.ts` (no production change expected)
 
 **Interfaces:**
+
 - Consumes: `MIGRATIONS` and the refactored `decode` (Task 1); `SAVE_VERSION`, `newGame` from `./sim`.
 
 > These are **characterization/guard** tests for behavior the spec promises. They are expected to
@@ -229,9 +233,9 @@ describe("counts shape drift", () => {
 ```
 
 - [ ] **Step 2: Run** —
-  `npx vp test run src/persistence.test.ts > /tmp/persist-25.log 2>&1; echo exit=$?`
-  → PASS. If red, stop and report the failure (do not edit production code to force green without
-  re-checking the spec).
+      `npx vp test run src/persistence.test.ts > /tmp/persist-25.log 2>&1; echo exit=$?`
+      → PASS. If red, stop and report the failure (do not edit production code to force green without
+      re-checking the spec).
 
 - [ ] **Step 3: Commit**
 
@@ -245,33 +249,34 @@ git commit -m "test(persistence): forward-compat, sparse-save, and counts shape 
 ### Task 3: Docs lockstep — `003-persistence.md`
 
 **Files:**
+
 - Modify: `docs/architecture/003-persistence.md`
 
 - [ ] **Step 1: Save versioning section.** State that `decode()` iterates the explicit, ordered
-  `MIGRATIONS` table of `{ from, describe, apply }` entries in `src/persistence.ts`, mirroring the
-  doc's existing table, instead of inline `if` blocks. Keep the table and the "Why v2"–"Why v8"
-  paragraphs.
+      `MIGRATIONS` table of `{ from, describe, apply }` entries in `src/persistence.ts`, mirroring the
+      doc's existing table, instead of inline `if` blocks. Keep the table and the "Why v2"–"Why v8"
+      paragraphs.
 - [ ] **Step 2: Load step 3.** Reword "runs a **staged** chain — one step per version it upgrades
-  *from* (`if (from < 2) …`, `if (from < 3) …`, with `from = coerceFinite(parsed.saveVersion, 0)`)" to
-  the `MIGRATIONS` loop (`for (const m of MIGRATIONS) if (from < m.from) m.apply(s)`), keeping the
-  "staged steps matter" rationale.
+      _from_ (`if (from < 2) …`, `if (from < 3) …`, with `from = coerceFinite(parsed.saveVersion, 0)`)" to
+      the `MIGRATIONS` loop (`for (const m of MIGRATIONS) if (from < m.from) m.apply(s)`), keeping the
+      "staged steps matter" rationale.
 - [ ] **Step 3: Pre-versioning path.** Document that a save with a missing `saveVersion` (coerced
-  to `0`) or `saveVersion: 1` runs the v2 step — dividing the `k`-th legacy `rate` by
-  `1 + k*0.1` — and is stamped to `SAVE_VERSION`; all other fields come from `newGame()` defaults
-  and sanitizers.
+      to `0`) or `saveVersion: 1` runs the v2 step — dividing the `k`-th legacy `rate` by
+      `1 + k*0.1` — and is stamped to `SAVE_VERSION`; all other fields come from `newGame()` defaults
+      and sanitizers.
 - [ ] **Step 4: Forward-compat.** Document that a save with a **future** `saveVersion` runs no
-  migration, loads best-effort (known fields preserved, unknown roster ids dropped by the
-  sanitizers), and is stamped **down** to `SAVE_VERSION`.
+      migration, loads best-effort (known fields preserved, unknown roster ids dropped by the
+      sanitizers), and is stamped **down** to `SAVE_VERSION`.
 - [ ] **Step 5: Known limitations.** Change "Migrations are code-only (see [Save
-  versioning](#save-versioning)); there is no data-driven or plugin migration registry." to
-  "Migrations are a code-only ordered table (`MIGRATIONS` in `src/persistence.ts`); there is no
-  data-driven or plugin migration registry."
+      versioning](#save-versioning)); there is no data-driven or plugin migration registry." to
+      "Migrations are a code-only ordered table (`MIGRATIONS` in `src/persistence.ts`); there is no
+      data-driven or plugin migration registry."
 - [ ] **Step 6: Closing line.** Change "The chain is append-only: to migrate further, add the next
-  `if (from < N)` step and bump `SAVE_VERSION`." to "The table is append-only: to migrate further,
-  add the next `MIGRATIONS` entry (with a strictly greater `from`) and bump `SAVE_VERSION`."
+      `if (from < N)` step and bump `SAVE_VERSION`." to "The table is append-only: to migrate further,
+      add the next `MIGRATIONS` entry (with a strictly greater `from`) and bump `SAVE_VERSION`."
 - [ ] **Step 7: Run `npm run check`** —
-  `npm run check > /tmp/check-25.log 2>&1; echo exit=$?`
-  → typecheck + lint + tests all PASS.
+      `npm run check > /tmp/check-25.log 2>&1; echo exit=$?`
+      → typecheck + lint + tests all PASS.
 
 - [ ] **Step 8: Commit**
 

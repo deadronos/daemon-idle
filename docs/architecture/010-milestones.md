@@ -10,10 +10,10 @@ subsystem's job (doc [011](./011-achievements.md)); a milestone never changes in
 
 ## The two records
 
-| Field            | Type                        | Meaning                                             |
-| ---------------- | --------------------------- | --------------------------------------------------- |
-| `milestonesDone` | `Record<MilestoneId, true>` | Milestones that have fired. **Sticky.**             |
-| `unlocks`        | `Record<string, true>`      | Unlock ids granted; features gate via `hasUnlock`.  |
+| Field            | Type                        | Meaning                                            |
+| ---------------- | --------------------------- | -------------------------------------------------- |
+| `milestonesDone` | `Record<MilestoneId, true>` | Milestones that have fired. **Sticky.**            |
+| `unlocks`        | `Record<string, true>`      | Unlock ids granted; features gate via `hasUnlock`. |
 
 They are separate on purpose: a feature checks `hasUnlock(s, "gc")` — a stable id — while any
 milestone may grant it. A fired milestone stays fired even if its metric later drops (only
@@ -24,15 +24,20 @@ the sim can re-evaluate every tick safely.
 
 ```ts
 export type MetricId =
-  | "totalEarned" | "sweepsSurvived" | "forks" | "playtime" | "children" | "ramCap";
+  | "totalEarned"
+  | "sweepsSurvived"
+  | "forks"
+  | "playtime"
+  | "children"
+  | "ramCap";
 
 export interface MilestoneDef {
   id: MilestoneId;
   name: string;
   desc: string;
-  metric: MetricId;   // read from METRICS
-  at: number;         // met when metric(s) >= at
-  unlocks: string[];  // unlock ids granted on fire
+  metric: MetricId; // read from METRICS
+  at: number; // met when metric(s) >= at
+  unlocks: string[]; // unlock ids granted on fire
 }
 ```
 

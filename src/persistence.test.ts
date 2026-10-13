@@ -284,9 +284,9 @@ describe("milestone persistence", () => {
     expect(out.unlocks).toEqual({ nice: true, "auto-nice": true });
   });
   it("drops unknown milestone ids and garbage unlocks", () => {
-    expect(
-      sanitizeMilestones({ "first-blood": true, ghost: true, "grown-up": false }),
-    ).toEqual({ "first-blood": true });
+    expect(sanitizeMilestones({ "first-blood": true, ghost: true, "grown-up": false })).toEqual({
+      "first-blood": true,
+    });
     expect(sanitizeMilestones(null)).toEqual({});
     expect(sanitizeUnlocks({ nice: true, bad: false, zero: 0 })).toEqual({ nice: true });
     expect(sanitizeUnlocks([1, 2])).toEqual({});

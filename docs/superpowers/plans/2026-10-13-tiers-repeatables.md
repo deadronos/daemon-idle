@@ -39,10 +39,12 @@ Failure modes the spec implies — each gets a test in its owning task:
 ### Task 1: Tiers — data, gating, synergy, spawn-panel lock
 
 **Files:**
+
 - Modify: `src/sim.ts`, `src/main.ts`
 - Test: `src/sim.test.ts`, `src/persistence.test.ts` (count-length expectations only)
 
 **Interfaces:**
+
 - Produces: `TierDef.unlock?: string`; `TIERS` indices 5–6; `tierUnlocked(s, i): boolean`; gated `canSpawn`/`maxAffordable`; two new `SYNERGY` links.
 - Consumes: `UNLOCK.tier5`/`UNLOCK.tier6` (added in Task 2 — for this task use the literal `"tier:5"`/`"tier:6"` and switch to `UNLOCK.*` in Task 2; the tests below reference `UNLOCK.tier5` and so run **after** Task 2's constants exist — see the ordering note).
 
@@ -98,8 +100,8 @@ describe("tier unlocks", () => {
 ```
 
 - [ ] **Step 2: Run to verify it fails** —
-  `npx vp test run src/sim.test.ts > /tmp/tiers.log 2>&1; echo exit=$?`
-  → FAIL: `TIERS.length` is 5 and `tierUnlocked` is not exported.
+      `npx vp test run src/sim.test.ts > /tmp/tiers.log 2>&1; echo exit=$?`
+      → FAIL: `TIERS.length` is 5 and `tierUnlocked` is not exported.
 
 - [ ] **Step 3: Implement**
 
@@ -175,7 +177,7 @@ describe("tier unlocks", () => {
   - `src/persistence.test.ts` lines asserting `s.counts).toEqual([0, 0, 0, 0, 0])` → seven zeros.
 
 - [ ] **Step 4: Run to verify it passes** — the `TIERS.length` change ripples, so run the whole suite:
-  `npx vp test run > /tmp/tiers.log 2>&1; echo exit=$?` → PASS.
+      `npx vp test run > /tmp/tiers.log 2>&1; echo exit=$?` → PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -189,10 +191,12 @@ git commit -m "feat(tiers): two unlock-gated tiers, gated spawn/buy-max, synergy
 ### Task 2: Tier unlock milestones
 
 **Files:**
+
 - Modify: `src/config/milestones.ts`
 - Test: `src/milestones.test.ts`
 
 **Interfaces:**
+
 - Consumes: `UNLOCK.tier5`/`tier6` (Task 1), `evaluateMilestones`/`hasUnlock` (existing).
 - Produces: `MILESTONES` rows `tier-5` (`totalEarned >= 1e7` → `tier:5`) and `tier-6` (`totalEarned >= 1e9` → `tier:6`).
 
@@ -227,10 +231,11 @@ describe("tier unlock milestones", () => {
 ```
 
 - [ ] **Step 2: Run to verify it fails** —
-  `npx vp test run src/milestones.test.ts > /tmp/tier-ms.log 2>&1; echo exit=$?`
-  → FAIL: `milestoneById("tier-5")` is `undefined`.
+      `npx vp test run src/milestones.test.ts > /tmp/tier-ms.log 2>&1; echo exit=$?`
+      → FAIL: `milestoneById("tier-5")` is `undefined`.
 
 - [ ] **Step 3: Implement** — append two rows to `MILESTONES` in `src/config/milestones.ts`:
+
   ```ts
   {
     id: "tier-5",
@@ -249,10 +254,11 @@ describe("tier unlock milestones", () => {
     unlocks: [UNLOCK.tier6],
   },
   ```
+
   (The existing roster-shape test requires `unlocks.length > 0` — both rows satisfy it.)
 
 - [ ] **Step 4: Run to verify it passes** —
-  `npx vp test run src/milestones.test.ts src/sim.test.ts > /tmp/tier-ms.log 2>&1; echo exit=$?` → PASS.
+      `npx vp test run src/milestones.test.ts src/sim.test.ts > /tmp/tier-ms.log 2>&1; echo exit=$?` → PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -266,10 +272,12 @@ git commit -m "feat(milestones): tier-5/tier-6 unlock milestones (#23)"
 ### Task 3: Repeatables — data and pure logic
 
 **Files:**
+
 - Create: `src/config/repeatables.ts`, `src/repeatables.ts`
 - Test: `src/repeatables.test.ts`
 
 **Interfaces:**
+
 - Produces (config): `RepeatableId`, `RepeatableMods`, `RepeatableDef { id, name, desc, baseCost, costGrowth, mod, perLevel }`, `REPEATABLES`, `repeatableById`.
 - Produces (logic): `RepeatableInput { repeatables, cycles }`, `REPEATABLE_MOD_KIND`, `repeatableMods(s): RepeatableMods`, `repeatableCost(s, id): Decimal`, `canBuyRepeatable(s, id): boolean`.
 
@@ -332,10 +340,9 @@ describe("repeatableMods (diminishing returns)", () => {
 describe("repeatableCost", () => {
   it("grows exponentially with level and is 0 for an unknown id", () => {
     expect(repeatableCost(s(), "overclock").toNumber()).toBeCloseTo(1e6, 0);
-    expect(repeatableCost(s({ repeatables: { overclock: 3 } }), "overclock").toNumber()).toBeCloseTo(
-      1e6 * 1.6 ** 3,
-      0,
-    );
+    expect(
+      repeatableCost(s({ repeatables: { overclock: 3 } }), "overclock").toNumber(),
+    ).toBeCloseTo(1e6 * 1.6 ** 3, 0);
     expect(repeatableCost(s(), "nope").toNumber()).toBe(0);
   });
 });
@@ -350,8 +357,8 @@ describe("canBuyRepeatable", () => {
 ```
 
 - [ ] **Step 2: Run to verify it fails** —
-  `npx vp test run src/repeatables.test.ts > /tmp/repeat.log 2>&1; echo exit=$?`
-  → FAIL: `./repeatables` does not exist.
+      `npx vp test run src/repeatables.test.ts > /tmp/repeat.log 2>&1; echo exit=$?`
+      → FAIL: `./repeatables` does not exist.
 
 - [ ] **Step 3: Implement**
 
@@ -369,9 +376,9 @@ describe("canBuyRepeatable", () => {
   /** Aggregate of every owned repeatable, applied by the sim. One field per effect kind. */
   export interface RepeatableMods {
     incomeMult: Decimal; // multiply, >= 1
-    ramCapAdd: number;   // add, >= 0
+    ramCapAdd: number; // add, >= 0
     tierCostMult: number; // divide in (0, 1]
-    heatGenMult: number;  // divide in (0, 1]
+    heatGenMult: number; // divide in (0, 1]
   }
 
   export interface RepeatableDef {
@@ -379,16 +386,48 @@ describe("canBuyRepeatable", () => {
     name: string;
     desc: string;
     baseCost: number;
-    costGrowth: number;        // per-level cost multiplier (exponential)
+    costGrowth: number; // per-level cost multiplier (exponential)
     mod: keyof RepeatableMods; // which aggregate field this row feeds
-    perLevel: number;          // magnitude per level (interpreted via REPEATABLE_MOD_KIND)
+    perLevel: number; // magnitude per level (interpreted via REPEATABLE_MOD_KIND)
   }
 
   export const REPEATABLES: RepeatableDef[] = [
-    { id: "overclock", name: "overclock", desc: "+income, sub-linear", baseCost: 1e6, costGrowth: 1.6, mod: "incomeMult", perLevel: 0.1 },
-    { id: "swapfile", name: "swapfile", desc: "+RAM cap, sub-linear", baseCost: 5e6, costGrowth: 1.7, mod: "ramCapAdd", perLevel: 4 },
-    { id: "undervolt", name: "undervolt", desc: "-heat equilibrium, sub-linear", baseCost: 2e6, costGrowth: 1.6, mod: "heatGenMult", perLevel: 0.08 },
-    { id: "bulk", name: "bulk discount", desc: "spawns get cheaper as you buy in bulk", baseCost: 2e6, costGrowth: 1.7, mod: "tierCostMult", perLevel: 0.05 },
+    {
+      id: "overclock",
+      name: "overclock",
+      desc: "+income, sub-linear",
+      baseCost: 1e6,
+      costGrowth: 1.6,
+      mod: "incomeMult",
+      perLevel: 0.1,
+    },
+    {
+      id: "swapfile",
+      name: "swapfile",
+      desc: "+RAM cap, sub-linear",
+      baseCost: 5e6,
+      costGrowth: 1.7,
+      mod: "ramCapAdd",
+      perLevel: 4,
+    },
+    {
+      id: "undervolt",
+      name: "undervolt",
+      desc: "-heat equilibrium, sub-linear",
+      baseCost: 2e6,
+      costGrowth: 1.6,
+      mod: "heatGenMult",
+      perLevel: 0.08,
+    },
+    {
+      id: "bulk",
+      name: "bulk discount",
+      desc: "spawns get cheaper as you buy in bulk",
+      baseCost: 2e6,
+      costGrowth: 1.7,
+      mod: "tierCostMult",
+      perLevel: 0.05,
+    },
   ];
 
   export function repeatableById(id: RepeatableId): RepeatableDef | undefined {
@@ -396,6 +435,7 @@ describe("canBuyRepeatable", () => {
   }
   ```
 - `src/repeatables.ts` — the pure logic:
+
   ```ts
   // Pure repeatable-upgrade logic for `daemon`. No DOM and no runtime `GameState` import —
   // the helpers read a narrow `RepeatableInput`. Mutating actions and the formula
@@ -453,14 +493,18 @@ describe("canBuyRepeatable", () => {
         mm[r.mod] = op === "multiply" ? cur.mul(1 + mag) : cur.add(mag);
       } else {
         const cur = mm[r.mod] as number;
-        mm[r.mod] = op === "multiply" ? cur * (1 + mag) : op === "divide" ? cur / (1 + mag) : cur + mag;
+        mm[r.mod] =
+          op === "multiply" ? cur * (1 + mag) : op === "divide" ? cur / (1 + mag) : cur + mag;
       }
     }
     return m;
   }
 
   /** Cost of the next level of `id`; `0` for an unknown id. */
-  export function repeatableCost(s: Pick<RepeatableInput, "repeatables">, id: RepeatableId): Decimal {
+  export function repeatableCost(
+    s: Pick<RepeatableInput, "repeatables">,
+    id: RepeatableId,
+  ): Decimal {
     const def = repeatableById(id);
     if (!def) return d(0);
     const level = s.repeatables[id] ?? 0;
@@ -476,7 +520,7 @@ describe("canBuyRepeatable", () => {
   ```
 
 - [ ] **Step 4: Run to verify it passes** —
-  `npx vp test run src/repeatables.test.ts > /tmp/repeat.log 2>&1; echo exit=$?` → PASS.
+      `npx vp test run src/repeatables.test.ts > /tmp/repeat.log 2>&1; echo exit=$?` → PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -490,10 +534,12 @@ git commit -m "feat(repeatables): data-driven roster and diminishing-return pure
 ### Task 4: Repeatables — state, four-site integration, action, and UI rows
 
 **Files:**
+
 - Modify: `src/sim.ts`, `src/main.ts`
 - Test: `src/sim.test.ts`, `src/diagnostics.test.ts`
 
 **Interfaces:**
+
 - Consumes: `repeatableMods`, `repeatableCost`, `canBuyRepeatable`, `repeatableById`, `REPEATABLES` (Task 3).
 - Produces: `GameState.repeatables: Record<string, number>` (default `{}`); `buyRepeatable(s, id): boolean`; the four integration sites; four upgrade rows.
 
@@ -557,8 +603,8 @@ describe("repeatables and the watchdog", () => {
 ```
 
 - [ ] **Step 2: Run to verify it fails** —
-  `npx vp test run src/sim.test.ts src/diagnostics.test.ts > /tmp/repeat-int.log 2>&1; echo exit=$?`
-  → FAIL: `repeatables` is missing and `buyRepeatable` is not exported.
+      `npx vp test run src/sim.test.ts src/diagnostics.test.ts > /tmp/repeat-int.log 2>&1; echo exit=$?`
+      → FAIL: `repeatables` is missing and `buyRepeatable` is not exported.
 
 - [ ] **Step 3: Implement** in `src/sim.ts`:
 
@@ -612,11 +658,14 @@ describe("repeatables and the watchdog", () => {
   }
   ```
 - `src/main.ts` — imports:
+
   ```ts
   import { buyRepeatable } from "./sim";
   import { REPEATABLES, canBuyRepeatable, repeatableCost } from "./repeatables";
   ```
+
   Register the rows after the `nohup` `addUpgrade(...)` call (before `// --- render ---`):
+
   ```ts
   for (const r of REPEATABLES) {
     addUpgrade(
@@ -629,7 +678,7 @@ describe("repeatables and the watchdog", () => {
   ```
 
 - [ ] **Step 4: Run to verify it passes** —
-  `npx vp test run src/sim.test.ts src/diagnostics.test.ts > /tmp/repeat-int.log 2>&1; echo exit=$?` → PASS.
+      `npx vp test run src/sim.test.ts src/diagnostics.test.ts > /tmp/repeat-int.log 2>&1; echo exit=$?` → PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -643,10 +692,12 @@ git commit -m "feat(sim): repeatable state, four-site integration, action, and U
 ### Task 5: Persistence — sanitize, staged v8, old-save padding
 
 **Files:**
+
 - Modify: `src/sim.ts` (the `SAVE_VERSION` constant + comment only), `src/persistence.ts`
 - Test: `src/persistence.test.ts`
 
 **Interfaces:**
+
 - Consumes: `REPEATABLES` (Task 3), `GameState.repeatables` (Task 4), `sanitizeCounts` (existing).
 - Produces: `SAVE_VERSION === 8`; `sanitizeRepeatables(raw): Record<string, number>`; `decode` wires the record and runs the staged `if (from < 8)` no-op.
 
@@ -683,8 +734,8 @@ describe("repeatables persistence", () => {
 ```
 
 - [ ] **Step 2: Run to verify it fails** —
-  `npx vp test run src/persistence.test.ts > /tmp/repeat-persist.log 2>&1; echo exit=$?`
-  → FAIL: `sanitizeRepeatables` is not exported and `SAVE_VERSION` is still 7.
+      `npx vp test run src/persistence.test.ts > /tmp/repeat-persist.log 2>&1; echo exit=$?`
+      → FAIL: `sanitizeRepeatables` is not exported and `SAVE_VERSION` is still 7.
 
 - [ ] **Step 3: Implement**
 
@@ -732,7 +783,7 @@ describe("repeatables persistence", () => {
     still yields `achievementsDone: {}`.)
 
 - [ ] **Step 4: Run to verify it passes** —
-  `npx vp test run src/persistence.test.ts > /tmp/repeat-persist.log 2>&1; echo exit=$?` → PASS.
+      `npx vp test run src/persistence.test.ts > /tmp/repeat-persist.log 2>&1; echo exit=$?` → PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -746,41 +797,42 @@ git commit -m "feat(persistence): sanitize repeatables and stage v8 (#23)"
 ### Task 6: Docs lockstep + ADR
 
 **Files:**
+
 - Create: `docs/architecture/012-repeatables.md`, `docs/decisions/0013-diminishing-return-repeatables.md`
 - Modify: `docs/architecture/README.md`, `docs/architecture/001-simulation-core.md`,
   `docs/architecture/002-render-system.md`, `docs/architecture/003-persistence.md`,
   `docs/architecture/010-milestones.md`, `docs/decisions/README.md`
 
 - [ ] **Step 1: `012-repeatables.md`** — the roster table, `RepeatableDef`/`RepeatableMods`, the
-  pure logic (`repeatableMods`/`repeatableCost`/`canBuyRepeatable`), the **four integration
-  sites**, `buyRepeatable`, persistence (v8), and the upgrade-panel rows. Register it in
-  `docs/architecture/README.md` (`012-repeatables.md`).
+      pure logic (`repeatableMods`/`repeatableCost`/`canBuyRepeatable`), the **four integration
+      sites**, `buyRepeatable`, persistence (v8), and the upgrade-panel rows. Register it in
+      `docs/architecture/README.md` (`012-repeatables.md`).
 - [ ] **Step 2: `001`** — extend the tier table with rows 5–6 and an `unlock` column; document
-  `tierUnlocked` and the `canSpawn`/`maxAffordable` gate; add the two `SYNERGY` rows to the
-  synergy table; add the `repeatables` state row; add the four repeatable factors to the
-  income/RAM/heat/`tierCost` formulas; add `buyRepeatable`; note `baseCyclesPerSec` stays
-  repeatable-free.
+      `tierUnlocked` and the `canSpawn`/`maxAffordable` gate; add the two `SYNERGY` rows to the
+      synergy table; add the `repeatables` state row; add the four repeatable factors to the
+      income/RAM/heat/`tierCost` formulas; add `buyRepeatable`; note `baseCyclesPerSec` stays
+      repeatable-free.
 - [ ] **Step 3: `002`** — the locked spawn row (`🔒 <name> · <milestone>`) and the four
-  repeatable `addUpgrade` rows (`<name> L<n>`, level-label pattern like `cooling`).
+      repeatable `addUpgrade` rows (`<name> L<n>`, level-label pattern like `cooling`).
 - [ ] **Step 4: `003`** — the `repeatables → sanitizeRepeatables` coercion bullet, the
-  `| < 8 | 8 | Additive only … |` table row, a "Why v8" paragraph, and a note that
-  `sanitizeCounts` pads short `counts` arrays for the two new tiers; update the
-  `SAVE_VERSION = 8` stamp sentence.
+      `| < 8 | 8 | Additive only … |` table row, a "Why v8" paragraph, and a note that
+      `sanitizeCounts` pads short `counts` arrays for the two new tiers; update the
+      `SAVE_VERSION = 8` stamp sentence.
 - [ ] **Step 5: `010`** — add the `tier-5`/`tier-6` rows to the starter-set table and document
-  the `UNLOCK.tier5`/`tier6` ids (the `tier:<index>` convention).
+      the `UNLOCK.tier5`/`tier6` ids (the `tier:<index>` convention).
 - [ ] **Step 6: ADR `0013-diminishing-return-repeatables.md`** — Context (five uniform tiers,
-  no infinite scaling), Decision (exponential cost + `perLevel * sqrt(level)` fold; four
-  integration sites; `baseCyclesPerSec` clean; data-driven roster), rejected alternatives
-  (linear levels, a level cap, folding into `perkMods`, applying in `baseCyclesPerSec`), and
-  Consequences (v8 additive; `tierCostMult` live via `bulk`). Register it in
-  `docs/decisions/README.md`.
+      no infinite scaling), Decision (exponential cost + `perLevel * sqrt(level)` fold; four
+      integration sites; `baseCyclesPerSec` clean; data-driven roster), rejected alternatives
+      (linear levels, a level cap, folding into `perkMods`, applying in `baseCyclesPerSec`), and
+      Consequences (v8 additive; `tierCostMult` live via `bulk`). Register it in
+      `docs/decisions/README.md`.
 - [ ] **Step 7: Run `npm run check`** —
-  `npm run check > /tmp/check.log 2>&1; echo exit=$?` → typecheck + lint + tests all PASS.
+      `npm run check > /tmp/check.log 2>&1; echo exit=$?` → typecheck + lint + tests all PASS.
 - [ ] **Step 8: Verify in the browser.** Run `npm run dev`, open `http://127.0.0.1:5173` with
-  the browser tool. Confirm the two locked tier rows show `🔒 <name> · k8s pod`-style hints
-  and are disabled; seed `state.unlocks["tier:5"] = true` (or `totalEarned`) in the console and
-  confirm the row enables; confirm the four repeatable rows show `L0` with live cost and turn
-  green when affordable. Screenshot and report the values.
+      the browser tool. Confirm the two locked tier rows show `🔒 <name> · k8s pod`-style hints
+      and are disabled; seed `state.unlocks["tier:5"] = true` (or `totalEarned`) in the console and
+      confirm the row enables; confirm the four repeatable rows show `L0` with live cost and turn
+      green when affordable. Screenshot and report the values.
 - [ ] **Step 9: Commit**
 
 ```bash

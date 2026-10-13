@@ -113,16 +113,16 @@ export function achievementById(id: AchievementId): AchievementDef | undefined {
 
 ### Roster (tunable data)
 
-| id               | name           | desc                            | metric           | `at` | `mult` |
-| ---------------- | -------------- | ------------------------------- | ---------------- | ---- | ------ |
-| `first-earnings` | first earnings | earn 1,000 cycles               | `totalEarned`    | 1e3  | +2%    |
-| `grinder`        | grinder        | earn 1,000,000,000 cycles       | `totalEarned`    | 1e9  | +5%    |
-| `survivor`       | survivor       | survive 10 cleanup sweeps       | `sweepsSurvived` | 10   | +2%    |
-| `veteran`        | veteran        | survive 100 cleanup sweeps      | `sweepsSurvived` | 100  | +4%    |
-| `forker`         | forker         | fork once                       | `forks`          | 1    | +2%    |
-| `crowd`          | crowd          | run 50 children at once         | `children`       | 50   | +3%    |
-| `headroom`       | headroom       | raise the RAM ceiling to 64 MB  | `ramCap`         | 64   | +3%    |
-| `uptime`         | uptime         | play for one hour               | `playtime`       | 3600 | +2%    |
+| id               | name           | desc                           | metric           | `at` | `mult` |
+| ---------------- | -------------- | ------------------------------ | ---------------- | ---- | ------ |
+| `first-earnings` | first earnings | earn 1,000 cycles              | `totalEarned`    | 1e3  | +2%    |
+| `grinder`        | grinder        | earn 1,000,000,000 cycles      | `totalEarned`    | 1e9  | +5%    |
+| `survivor`       | survivor       | survive 10 cleanup sweeps      | `sweepsSurvived` | 10   | +2%    |
+| `veteran`        | veteran        | survive 100 cleanup sweeps     | `sweepsSurvived` | 100  | +4%    |
+| `forker`         | forker         | fork once                      | `forks`          | 1    | +2%    |
+| `crowd`          | crowd          | run 50 children at once        | `children`       | 50   | +3%    |
+| `headroom`       | headroom       | raise the RAM ceiling to 64 MB | `ramCap`         | 64   | +3%    |
+| `uptime`         | uptime         | play for one hour              | `playtime`       | 3600 | +2%    |
 
 Eight rows cover all six metrics. The full-roster product is ≈ 1.25× — a meaningful but small
 permanent boost, well under the milestone/prestige layers. All numbers are data.

@@ -22,12 +22,12 @@ export interface AchievementDef {
   id: AchievementId;
   name: string;
   desc: string;
-  metric: MetricId;   // read from METRICS in src/milestones.ts
-  at: number;         // met when METRICS[metric](s) >= at
-  mult: number;       // small positive fraction, e.g. 0.02 = +2% income
+  metric: MetricId; // read from METRICS in src/milestones.ts
+  at: number; // met when METRICS[metric](s) >= at
+  mult: number; // small positive fraction, e.g. 0.02 = +2% income
 }
 
-export const ACHIEVEMENTS: AchievementDef[] = [ /* roster below */ ];
+export const ACHIEVEMENTS: AchievementDef[] = [/* roster below */];
 export function achievementById(id: AchievementId): AchievementDef | undefined;
 ```
 

@@ -38,11 +38,13 @@ Failure modes the spec implies — each gets a test in its owning task:
 ### Task 1: `MetricInput` extraction + achievements data and pure logic
 
 **Files:**
+
 - Modify: `src/milestones.ts`
 - Create: `src/config/achievements.ts`, `src/achievements.ts`
 - Test: `src/milestones.test.ts`, `src/achievements.test.ts`
 
 **Interfaces:**
+
 - Produces (milestones): `MetricInput { totalEarned, sweepsSurvived, forks, playtime, counts, ramCap }`; `MilestoneInput extends MetricInput`; `METRICS: Record<MetricId, (s: MetricInput) => number>`.
 - Produces (config): `AchievementId`, `AchievementDef { id, name, desc, metric, at, mult }`, `ACHIEVEMENTS`, `achievementById`.
 - Produces (logic): `AchievementInput extends MetricInput { achievementsDone }`, `achievementMet(s, def)`, `achievementProgress(s, def)`, `achievementMult(s): Decimal`, `evaluateAchievements(s): AchievementId[]`, `orderedAchievements(s): AchievementDef[]`.
@@ -108,7 +110,14 @@ describe("METRICS reads a bare MetricInput (refactor)", () => {
 });
 
 describe("achievementMet / achievementProgress", () => {
-  const def: AchievementDef = { id: "x", name: "x", desc: "", metric: "ramCap", at: 64, mult: 0.02 };
+  const def: AchievementDef = {
+    id: "x",
+    name: "x",
+    desc: "",
+    metric: "ramCap",
+    at: 64,
+    mult: 0.02,
+  };
   it("is met at and above the threshold, not below", () => {
     expect(achievementMet(base({ ramCap: 63 }), def)).toBe(false);
     expect(achievementMet(base({ ramCap: 64 }), def)).toBe(true);
@@ -153,8 +162,8 @@ describe("orderedAchievements", () => {
 ```
 
 - [ ] **Step 2: Run to verify it fails** —
-  `npx vp test run src/achievements.test.ts src/milestones.test.ts > /tmp/ach.log 2>&1; echo exit=$?`
-  → FAIL: `./achievements` does not exist and `MetricInput` is not exported.
+      `npx vp test run src/achievements.test.ts src/milestones.test.ts > /tmp/ach.log 2>&1; echo exit=$?`
+      → FAIL: `./achievements` does not exist and `MetricInput` is not exported.
 
 - [ ] **Step 3: Implement**
 
@@ -174,7 +183,7 @@ describe("orderedAchievements", () => {
     unlocks: Record<string, true>;
   }
 
-  export const METRICS: Record<MetricId, (s: MetricInput) => number> = { /* unchanged bodies */ };
+  export const METRICS: Record<MetricId, (s: MetricInput) => number> = {/* unchanged bodies */};
   ```
   Leave `milestoneMet`/`milestoneProgress`/`hasUnlock`/`evaluateMilestones`/`orderedMilestones`
   taking `MilestoneInput` (it now extends `MetricInput`).
@@ -193,14 +202,63 @@ describe("orderedAchievements", () => {
   }
 
   export const ACHIEVEMENTS: AchievementDef[] = [
-    { id: "first-earnings", name: "first earnings", desc: "earn 1,000 cycles", metric: "totalEarned", at: 1e3, mult: 0.02 },
-    { id: "grinder", name: "grinder", desc: "earn 1,000,000,000 cycles", metric: "totalEarned", at: 1e9, mult: 0.05 },
-    { id: "survivor", name: "survivor", desc: "survive 10 cleanup sweeps", metric: "sweepsSurvived", at: 10, mult: 0.02 },
-    { id: "veteran", name: "veteran", desc: "survive 100 cleanup sweeps", metric: "sweepsSurvived", at: 100, mult: 0.04 },
+    {
+      id: "first-earnings",
+      name: "first earnings",
+      desc: "earn 1,000 cycles",
+      metric: "totalEarned",
+      at: 1e3,
+      mult: 0.02,
+    },
+    {
+      id: "grinder",
+      name: "grinder",
+      desc: "earn 1,000,000,000 cycles",
+      metric: "totalEarned",
+      at: 1e9,
+      mult: 0.05,
+    },
+    {
+      id: "survivor",
+      name: "survivor",
+      desc: "survive 10 cleanup sweeps",
+      metric: "sweepsSurvived",
+      at: 10,
+      mult: 0.02,
+    },
+    {
+      id: "veteran",
+      name: "veteran",
+      desc: "survive 100 cleanup sweeps",
+      metric: "sweepsSurvived",
+      at: 100,
+      mult: 0.04,
+    },
     { id: "forker", name: "forker", desc: "fork once", metric: "forks", at: 1, mult: 0.02 },
-    { id: "crowd", name: "crowd", desc: "run 50 children at once", metric: "children", at: 50, mult: 0.03 },
-    { id: "headroom", name: "headroom", desc: "raise the RAM ceiling to 64 MB", metric: "ramCap", at: 64, mult: 0.03 },
-    { id: "uptime", name: "uptime", desc: "play for one hour", metric: "playtime", at: 3600, mult: 0.02 },
+    {
+      id: "crowd",
+      name: "crowd",
+      desc: "run 50 children at once",
+      metric: "children",
+      at: 50,
+      mult: 0.03,
+    },
+    {
+      id: "headroom",
+      name: "headroom",
+      desc: "raise the RAM ceiling to 64 MB",
+      metric: "ramCap",
+      at: 64,
+      mult: 0.03,
+    },
+    {
+      id: "uptime",
+      name: "uptime",
+      desc: "play for one hour",
+      metric: "playtime",
+      at: 3600,
+      mult: 0.02,
+    },
   ];
 
   export function achievementById(id: AchievementId): AchievementDef | undefined {
@@ -208,10 +266,16 @@ describe("orderedAchievements", () => {
   }
   ```
 - `src/achievements.ts` — pure logic:
+
   ```ts
   import { d, type Decimal } from "./bignum";
   import { METRICS, type MetricId, type MetricInput } from "./milestones";
-  import { ACHIEVEMENTS, achievementById, type AchievementDef, type AchievementId } from "./config/achievements";
+  import {
+    ACHIEVEMENTS,
+    achievementById,
+    type AchievementDef,
+    type AchievementId,
+  } from "./config/achievements";
 
   export * from "./config/achievements";
 
@@ -255,8 +319,8 @@ describe("orderedAchievements", () => {
   ```
 
 - [ ] **Step 4: Run to verify it passes** —
-  `npx vp test run src/achievements.test.ts src/milestones.test.ts > /tmp/ach.log 2>&1; echo exit=$?`
-  → PASS (the milestones suite must stay green through the refactor).
+      `npx vp test run src/achievements.test.ts src/milestones.test.ts > /tmp/ach.log 2>&1; echo exit=$?`
+      → PASS (the milestones suite must stay green through the refactor).
 
 - [ ] **Step 5: Commit**
 
@@ -270,10 +334,12 @@ git commit -m "feat(achievements): data-driven roster and pure logic; extract Me
 ### Task 2: State, income hook, and live-only tick evaluation
 
 **Files:**
+
 - Modify: `src/sim.ts`
 - Test: `src/sim.test.ts`
 
 **Interfaces:**
+
 - Consumes: `achievementMult`, `evaluateAchievements`, `achievementById` (Task 1); `type AchievementId` from `./config/achievements`.
 - Produces: `GameState.achievementsDone: Record<AchievementId, true>`; `rawCyclesPerSec = perkedBaseCyclesPerSec × lineageMult × achievementMult`; `tick` evaluates achievements live-only.
 
@@ -330,8 +396,8 @@ describe("achievement tick evaluation", () => {
 ```
 
 - [ ] **Step 2: Run to verify it fails** —
-  `npx vp test run src/sim.test.ts > /tmp/sim.log 2>&1; echo exit=$?` → FAIL: `achievementsDone`
-  is missing and `rawCyclesPerSec` does not scale.
+      `npx vp test run src/sim.test.ts > /tmp/sim.log 2>&1; echo exit=$?` → FAIL: `achievementsDone`
+      is missing and `rawCyclesPerSec` does not scale.
 
 - [ ] **Step 3: Implement** in `src/sim.ts`:
 
@@ -352,6 +418,7 @@ describe("achievement tick evaluation", () => {
   (Update its doc comment: the achievement multiplier rides the same per-tick hook as lineage
   and is excluded from `baseCyclesPerSec`.)
 - `tick`, at the very end (after the milestone loop):
+
   ```ts
   // achievements: micro-multipliers, evaluated once per live tick alongside milestones
   for (const id of evaluateAchievements(s)) {
@@ -359,10 +426,11 @@ describe("achievement tick evaluation", () => {
     if (def) log(s, `achievement: ${def.name} — +${Math.round(def.mult * 100)}% income`);
   }
   ```
+
   Leave `baseCyclesPerSec`, `perkedBaseCyclesPerSec`, and `doFork` untouched.
 
 - [ ] **Step 4: Run to verify it passes** —
-  `npx vp test run src/sim.test.ts > /tmp/sim.log 2>&1; echo exit=$?` → PASS.
+      `npx vp test run src/sim.test.ts > /tmp/sim.log 2>&1; echo exit=$?` → PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -376,10 +444,12 @@ git commit -m "feat(sim): achievement state, income hook, and live-only evaluati
 ### Task 3: Persistence — sanitize, staged v7
 
 **Files:**
+
 - Modify: `src/sim.ts` (the `SAVE_VERSION` constant + comment only), `src/persistence.ts`
 - Test: `src/persistence.test.ts`
 
 **Interfaces:**
+
 - Consumes: `ACHIEVEMENTS` (Task 1), `GameState.achievementsDone` (Task 2).
 - Produces: `SAVE_VERSION === 7`; `sanitizeAchievements(raw): Record<string, true>`; `decode` wires the record and runs the staged `if (from < 7)` no-op.
 
@@ -414,8 +484,8 @@ describe("achievements persistence", () => {
 ```
 
 - [ ] **Step 2: Run to verify it fails** —
-  `npx vp test run src/persistence.test.ts > /tmp/persist.log 2>&1; echo exit=$?` → FAIL:
-  `sanitizeAchievements` is not exported and `SAVE_VERSION` is still 6.
+      `npx vp test run src/persistence.test.ts > /tmp/persist.log 2>&1; echo exit=$?` → FAIL:
+      `sanitizeAchievements` is not exported and `SAVE_VERSION` is still 6.
 
 - [ ] **Step 3: Implement**
 
@@ -455,7 +525,7 @@ describe("achievements persistence", () => {
     ```
 
 - [ ] **Step 4: Run to verify it passes** —
-  `npx vp test run src/persistence.test.ts > /tmp/persist.log 2>&1; echo exit=$?` → PASS.
+      `npx vp test run src/persistence.test.ts > /tmp/persist.log 2>&1; echo exit=$?` → PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -469,9 +539,11 @@ git commit -m "feat(persistence): sanitize achievements and stage v7 (#21)"
 ### Task 4: Achievements panel
 
 **Files:**
+
 - Modify: `index.html`, `src/main.ts`, `src/style.css`
 
 **Interfaces:**
+
 - Consumes: `orderedAchievements`, `achievementProgress` from `./achievements`; `METRICS`/`type MetricId` (already imported from `./milestones`); `state.achievementsDone`.
 
 - [ ] **Step 1: Add the panel markup** in `index.html`, after the `milestones` section:
@@ -489,6 +561,7 @@ git commit -m "feat(persistence): sanitize achievements and stage v7 (#21)"
 - Add `achievementPanel: $("achievementPanel"),` to the `el` map.
 - Call `renderAchievements();` in `render()`, beside `renderMilestones();`.
 - Add the renderer (mirrors `renderMilestones`, reusing the `milestone` row classes):
+
   ```ts
   function renderAchievements(): void {
     const ordered = orderedAchievements(state);
@@ -541,7 +614,8 @@ git commit -m "feat(persistence): sanitize achievements and stage v7 (#21)"
   ```
 
 - [ ] **Step 3: Reuse the milestone styles** in `src/style.css` — add `.achievements` to the
-  container selector (rows keep the `.milestone` class):
+      container selector (rows keep the `.milestone` class):
+
   ```css
   .milestones,
   .achievements {
@@ -552,10 +626,10 @@ git commit -m "feat(persistence): sanitize achievements and stage v7 (#21)"
   ```
 
 - [ ] **Step 4: Verify in the browser.** Run `npm run dev`, then open
-  `http://127.0.0.1:5173` with the browser tool. Confirm the achievements panel lists the eight
-  rows pending-first; seed cycles/`totalEarned` in the console (`daemon.totalEarned = daemon.totalEarned.add(1e3)`)
-  or wait, then confirm `first-earnings` flips to `✓ +2% income` and `cycles/s` rises ~2%.
-  Screenshot and report the values.
+      `http://127.0.0.1:5173` with the browser tool. Confirm the achievements panel lists the eight
+      rows pending-first; seed cycles/`totalEarned` in the console (`daemon.totalEarned = daemon.totalEarned.add(1e3)`)
+      or wait, then confirm `first-earnings` flips to `✓ +2% income` and `cycles/s` rises ~2%.
+      Screenshot and report the values.
 
 - [ ] **Step 5: Commit**
 
@@ -569,34 +643,35 @@ git commit -m "feat(ui): achievements panel (#21)"
 ### Task 5: Docs lockstep + ADR
 
 **Files:**
+
 - Create: `docs/architecture/011-achievements.md`, `docs/decisions/0012-achievements-multiplier-hook.md`
 - Modify: `docs/architecture/README.md`, `docs/architecture/001-simulation-core.md`,
   `docs/architecture/002-render-system.md`, `docs/architecture/003-persistence.md`,
   `docs/architecture/010-milestones.md`, `docs/decisions/README.md`
 
 - [ ] **Step 1: `011-achievements.md`** — the roster table, `AchievementDef`, the pure logic
-  (`achievementMet`/`progress`/`mult`/`evaluateAchievements`/`orderedAchievements`), the income
-  hook, tick placement (live-only), persistence (v7), and the UI. Register it in
-  `docs/architecture/README.md` (`011-achievements.md`).
+      (`achievementMet`/`progress`/`mult`/`evaluateAchievements`/`orderedAchievements`), the income
+      hook, tick placement (live-only), persistence (v7), and the UI. Register it in
+      `docs/architecture/README.md` (`011-achievements.md`).
 - [ ] **Step 2: `001`** — add `achievementMult = Π(1 + mult)` and
-  `rawCyclesPerSec = perkedBase × lineageMult × achievementMult` to the income block; note
-  `baseCyclesPerSec` stays achievement-free; add the `achievementsDone` state row; add the
-  achievements tick step (and update the offline "never fires milestones" sentence); add a short
-  "Achievements" pointer to doc 011.
+      `rawCyclesPerSec = perkedBase × lineageMult × achievementMult` to the income block; note
+      `baseCyclesPerSec` stays achievement-free; add the `achievementsDone` state row; add the
+      achievements tick step (and update the offline "never fires milestones" sentence); add a short
+      "Achievements" pointer to doc 011.
 - [ ] **Step 3: `002`** — add an "Achievements panel" section mirroring "Milestones panel".
 - [ ] **Step 4: `003`** — add the `achievementsDone → sanitizeAchievements` coercion bullet, the
-  `| < 7 | 7 | Additive only … |` table row, a "Why v7" paragraph, and update the `SAVE_VERSION = 7`
-  stamp sentence.
+      `| < 7 | 7 | Additive only … |` table row, a "Why v7" paragraph, and update the `SAVE_VERSION = 7`
+      stamp sentence.
 - [ ] **Step 5: `010`** — point the "Numeric rewards (micro-multipliers) are the achievements
-  subsystem's job (tracked separately)" line at doc 011.
+      subsystem's job (tracked separately)" line at doc 011.
 - [ ] **Step 6: ADR `0012-achievements-multiplier-hook.md`** — Context (milestones are
-  content-only; achievements add numeric rewards), Decision (multiplier in `rawCyclesPerSec`, the
-  same per-tick hook as lineage, **not** in the `baseCyclesPerSec` legacy snapshot and **not**
-  applied to legacy daemons — one hook; sticky/idempotent; live-only; data-driven roster), the
-  rejected alternatives from the spec, and Consequences (v7 additive; legacy exclusion).
-  Register it in `docs/decisions/README.md`.
+      content-only; achievements add numeric rewards), Decision (multiplier in `rawCyclesPerSec`, the
+      same per-tick hook as lineage, **not** in the `baseCyclesPerSec` legacy snapshot and **not**
+      applied to legacy daemons — one hook; sticky/idempotent; live-only; data-driven roster), the
+      rejected alternatives from the spec, and Consequences (v7 additive; legacy exclusion).
+      Register it in `docs/decisions/README.md`.
 - [ ] **Step 7: Run `npm run check`** →
-  `npm run check > /tmp/check.log 2>&1; echo exit=$?` → typecheck + lint + tests all PASS.
+      `npm run check > /tmp/check.log 2>&1; echo exit=$?` → typecheck + lint + tests all PASS.
 - [ ] **Step 8: Commit**
 
 ```bash

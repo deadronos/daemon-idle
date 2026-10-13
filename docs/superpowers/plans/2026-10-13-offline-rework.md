@@ -35,10 +35,12 @@ Failure modes the spec implies but a single task's test might miss — each gets
 ### Task 1: `nohup` cap upgrade, state, and persistence (staged v6)
 
 **Files:**
+
 - Modify: `src/sim.ts`, `src/persistence.ts`
 - Test: `src/sim.test.ts`, `src/persistence.test.ts`
 
 **Interfaces:**
+
 - Produces: `BASE_OFFLINE_CAP_S`, `OFFLINE_CAP_STEP`, `OFFLINE_MAX_STEPS`, `offlineCapS(s)`, `offlineCost(s)`, `buyOfflineCap(s)`; `GameState.offlineCap: number`; `SAVE_VERSION === 6`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -112,10 +114,12 @@ git commit -m "feat(sim): nohup offline-cap upgrade and staged v6 (#24)"
 ### Task 2: Cap-bounded `applyOffline` + equivalence proof
 
 **Files:**
+
 - Modify: `src/persistence.ts`
 - Test: `src/persistence.test.ts`
 
 **Interfaces:**
+
 - Consumes: `offlineCapS`, `OFFLINE_MAX_STEPS`, `BASE_OFFLINE_CAP_S` (Task 1).
 
 - [ ] **Step 1: Write the failing tests**
@@ -202,9 +206,11 @@ git commit -m "feat(persistence): cap-bounded offline replay and equivalence pro
 ### Task 3: `nohup` upgrade button
 
 **Files:**
+
 - Modify: `src/main.ts`, `src/style.css` (only if a style is needed)
 
 **Interfaces:**
+
 - Consumes: `offlineCapS`, `offlineCost`, `buyOfflineCap`.
 
 - [ ] **Step 1: Register the button** in `src/main.ts`, beside the other `addUpgrade(...)` calls:
@@ -236,6 +242,7 @@ git commit -m "feat(ui): nohup offline-cap upgrade button (#24)"
 ### Task 4: Docs lockstep + ADR
 
 **Files:**
+
 - Modify: `docs/architecture/003-persistence.md`, `001-simulation-core.md`, `002-render-system.md`
 - Create: `docs/decisions/0010-offline-fidelity.md`
 - Modify: `docs/decisions/README.md`

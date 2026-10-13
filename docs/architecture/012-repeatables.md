@@ -16,10 +16,10 @@ currencies (ADR [0013](../decisions/0013-diminishing-return-repeatables.md)).
 
 ```ts
 export interface RepeatableMods {
-  incomeMult: Decimal;  // multiply, >= 1
-  ramCapAdd: number;    // add, >= 0
+  incomeMult: Decimal; // multiply, >= 1
+  ramCapAdd: number; // add, >= 0
   tierCostMult: number; // divide in (0, 1]
-  heatGenMult: number;  // divide in (0, 1]
+  heatGenMult: number; // divide in (0, 1]
 }
 
 export interface RepeatableDef {
@@ -27,9 +27,9 @@ export interface RepeatableDef {
   name: string;
   desc: string;
   baseCost: number;
-  costGrowth: number;        // per-level cost multiplier (exponential)
+  costGrowth: number; // per-level cost multiplier (exponential)
   mod: keyof RepeatableMods; // which aggregate field this row feeds
-  perLevel: number;          // magnitude per level (interpreted via REPEATABLE_MOD_KIND)
+  perLevel: number; // magnitude per level (interpreted via REPEATABLE_MOD_KIND)
 }
 ```
 
@@ -56,11 +56,11 @@ contributes a magnitude of `perLevel * sqrt(level)`, applied by the operation na
 
 ```ts
 REPEATABLE_MOD_KIND = {
-  incomeMult:   "multiply",   // cur * (1 + mag)
-  ramCapAdd:    "add",        // cur + mag
-  tierCostMult: "divide",     // cur / (1 + mag)
-  heatGenMult:  "divide",     // cur / (1 + mag)
-}
+  incomeMult: "multiply", // cur * (1 + mag)
+  ramCapAdd: "add", // cur + mag
+  tierCostMult: "divide", // cur / (1 + mag)
+  heatGenMult: "divide", // cur / (1 + mag)
+};
 ```
 
 The fold is **data-driven over `REPEATABLES`**, exactly like `perkMods` over `PERKS`, so a
@@ -99,12 +99,12 @@ Like every mutating action it returns `boolean` (false = refused).
 
 `repeatableMods(s)` is read in place by four formulas; nothing else in the sim consults it:
 
-| site                       | fold                                                             |
-| -------------------------- | ---------------------------------------------------------------- |
-| `perkedBaseCyclesPerSec`   | children and root both multiply by `repeatableMods.incomeMult`    |
-| `tierCost`                 | multiply by `repeatableMods.tierCostMult`                         |
-| `ramCapTotal`              | add `repeatableMods.ramCapAdd`                                    |
-| `heatEquilibrium`          | multiply by `repeatableMods.heatGenMult`                          |
+| site                     | fold                                                           |
+| ------------------------ | -------------------------------------------------------------- |
+| `perkedBaseCyclesPerSec` | children and root both multiply by `repeatableMods.incomeMult` |
+| `tierCost`               | multiply by `repeatableMods.tierCostMult`                      |
+| `ramCapTotal`            | add `repeatableMods.ramCapAdd`                                 |
+| `heatEquilibrium`        | multiply by `repeatableMods.heatGenMult`                       |
 
 `baseCyclesPerSec` is deliberately **not** touched: `doFork` snapshots it into a legacy
 daemon's rate, so baking a repeatable multiplier in would double-count it (the same reason

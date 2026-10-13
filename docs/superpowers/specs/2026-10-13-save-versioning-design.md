@@ -53,8 +53,12 @@ docs.
 1. **Explicit ordered table.** In `src/persistence.ts` add:
 
    ```ts
-   export interface Migration { from: number; describe: string; apply(s: GameState): void }
-   export const MIGRATIONS: Migration[] = [ /* ordered by ascending `from` */ ];
+   export interface Migration {
+     from: number;
+     describe: string;
+     apply(s: GameState): void;
+   }
+   export const MIGRATIONS: Migration[] = [/* ordered by ascending `from` */];
    ```
 
    with exactly one real entry today:
@@ -152,7 +156,7 @@ are preserved and the game is playable.
 
 Note on "unknown dropped": `decode` does not whitelist top-level keys, so an arbitrary unknown
 top-level field from a future save survives the `{ ...newGame(), ...parsed }` merge and is
-re-encoded (verified: `{"saveVersion":99,"ghostField":42}` round-trips `ghostField`). What *is*
+re-encoded (verified: `{"saveVersion":99,"ghostField":42}` round-trips `ghostField`). What _is_
 dropped is unknown ids inside roster-backed records (`perks`, `milestonesDone`,
 `achievementsDone`, `repeatables`, `unlocks`) and invalid `legacy` entries, because those are
 rebuilt from rosters. See Risks / open questions.
@@ -202,7 +206,7 @@ Owning task in parentheses. Commands must not be piped.
 - **"Unknown dropped" is only true inside roster-backed records.** `decode` shallow-merges over
   defaults without whitelisting, so an arbitrary unknown top-level field from a future save is
   preserved (and re-encoded) rather than dropped. The forward-compat test should assert the
-  true, safe subset (known fields preserved, no migration, stamped down, unknown *roster ids*
+  true, safe subset (known fields preserved, no migration, stamped down, unknown _roster ids_
   dropped) and must **not** assert literal top-level dropping — doing so would fail, and adding a
   whitelist would be a behavior change beyond this issue's "behavior must be identical" ruling.
   This is flagged as unresolved (see the final reply).

@@ -30,6 +30,7 @@
 **Files:** `src/sim.ts`, `src/sim.test.ts`, `docs/architecture/001-simulation-core.md`
 
 **Interfaces:**
+
 - `TierDef` gains `costGrowth: number` and `trait: "none" | "leak-immune"`.
 - Per-tier growth: noop `1.12`, fork `1.15`, worker `1.15`, microservice `1.18`, cron `1.22`.
 - Only `noop loop` has `trait: "leak-immune"`.
@@ -50,6 +51,7 @@
 **Files:** `src/sim.ts`, `src/sim.test.ts`, `src/main.ts`, `index.html`, `docs/architecture/001-simulation-core.md`, `docs/architecture/008-sweep-directives.md`
 
 **Interfaces:**
+
 - `GameState.shields: number` (default 0) — a pool of charges; each absorbs one sweep victim.
 - `shieldCost(s): Decimal` = `500 * 2^shields`; `buyShield(s): boolean`.
 - In `runSweep`, after the directive's `pre` and budget are computed: `absorbed = min(s.shields, budget); s.shields -= absorbed; budget -= absorbed;` (never negative).
@@ -69,6 +71,7 @@
 **Files:** `src/sim.ts`, `src/sim.test.ts`, `docs/architecture/001-simulation-core.md`
 
 **Interfaces:**
+
 - `GameState.heat: number` (0..100, default 0), `GameState.cooling: number` (default 0, upgrade level).
 - Constants: `HEAT_PER_RAM = 0.05` (heat/s per MB of footprint), `HEAT_DECAY = 0.8` (heat/s), `HEAT_THROTTLE_AT = 60`, `MAX_THROTTLE = 0.5`. Cooling raises decay: `HEAT_DECAY * (1 + cooling * 0.5)`.
 - `tick`: `heat += footprint * HEAT_PER_RAM * dt; heat -= decay * dt;` clamp `[0, 100]`. **Order:** after income, before/after leak (document it).
@@ -88,6 +91,7 @@
 **Files:** `src/sim.ts`, `src/sim.test.ts`, `docs/architecture/001-simulation-core.md`
 
 **Interfaces:**
+
 - `childOutput` becomes `Σ TIERS[i].baseOutput * counts[i] * synergyMult(s, i)`.
 - `synergyMult(s, i)`: `worker thread` gets `1 + 0.02 * counts[microservice]`; `microservice` gets `1 + 0.05 * counts[cron daemon]`; all others `1`.
 - Data-driven: express the two links in a small table/array so it is not hardcoded branches.
@@ -104,6 +108,7 @@
 **Files:** `src/sim.ts`, `src/sim.test.ts`, `docs/architecture/001-simulation-core.md`
 
 **Interfaces:**
+
 - `niceCost` growth `2.5 → 2.2`; keep base `250`.
 - `mallocCost` growth `1.9 → 1.85`; keep base `150`.
 - No signature changes.
@@ -120,6 +125,7 @@
 **Files:** `src/sim.ts`, `src/sim.test.ts`, `src/main.ts`, `index.html`, `src/style.css`, `docs/architecture/002-render-system.md`
 
 **Interfaces:**
+
 - `export function estimateVictims(s): number` — resolves `s.nextDirective` (fallback `standard`), computes its budget on current counts and the number of victims it would actually reap (same math as `runSweep`, without mutating).
 - UI: the sweep label uses `estimateVictims(state)` (replacing the generic severity math — fixes the #15 note), plus a **heat meter** bar and a shields/charges readout near the sweep meter.
 

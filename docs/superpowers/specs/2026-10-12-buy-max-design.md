@@ -43,9 +43,9 @@ click — bounded by both `cycles` and remaining RAM.
 
 `MILESTONES` gains one row (the dependent issue authors its own row on #17's forward id):
 
-| id | name | metric | `at` | unlocks |
-| --- | --- | --- | --- | --- |
-| `bulk-buy` | bulk-buy | `totalEarned` | 1e5 | `buy-max` |
+| id         | name     | metric        | `at` | unlocks   |
+| ---------- | -------- | ------------- | ---- | --------- |
+| `bulk-buy` | bulk-buy | `totalEarned` | 1e5  | `buy-max` |
 
 `UNLOCK.buyMax` already exists (declared by #17). The threshold is data.
 
@@ -80,7 +80,7 @@ maxAffordable(s, i):
 where `total(k) = next * (growth^k - 1) / (growth - 1)` is the cost of `k` units, computed in
 `Decimal` (break_eternity scales past `1e308`, so the log is taken in `Decimal` too). The
 correction loop is bounded to a couple of iterations; it absorbs floating/Decimal rounding so
-the result is the *exact* maximum.
+the result is the _exact_ maximum.
 
 ### Action
 

@@ -42,10 +42,12 @@ Failure modes the spec implies — each gets a test in its owning task:
 ### Task 1: `legacy-respawn` milestone data and unlock id
 
 **Files:**
+
 - Modify: `src/config/milestones.ts`
 - Test: `src/milestones.test.ts`
 
 **Interfaces:**
+
 - Produces: `MILESTONES` row `{ id: "legacy-respawn", name: "auto-respawn", desc: "fork twice", metric: "forks", at: 2, unlocks: ["legacy-respawn"] }`; `UNLOCK.legacyRespawn === "legacy-respawn"`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -71,7 +73,7 @@ describe("legacy-respawn milestone", () => {
 ```
 
 - [ ] **Step 2: Run to verify it fails** — `npx vp test run src/milestones.test.ts` → FAIL
-  (`milestoneById("legacy-respawn")` is `undefined`; `UNLOCK.legacyRespawn` is `undefined`).
+      (`milestoneById("legacy-respawn")` is `undefined`; `UNLOCK.legacyRespawn` is `undefined`).
 
 - [ ] **Step 3: Implement** in `src/config/milestones.ts`:
 
@@ -87,6 +89,7 @@ describe("legacy-respawn milestone", () => {
   },
   ```
 - Add to `UNLOCK`:
+
   ```ts
   legacyRespawn: "legacy-respawn",
   ```
@@ -105,10 +108,12 @@ git commit -m "feat(milestones): legacy-respawn unlock at two forks (#20)"
 ### Task 2: Unlock-gated respawn + offline legacy tests
 
 **Files:**
+
 - Modify: `src/sim.ts`
 - Test: `src/sim.test.ts`, `src/persistence.test.ts`
 
 **Interfaces:**
+
 - Consumes: `UNLOCK.legacyRespawn` (Task 1), `hasUnlock` (already imported in `sim.ts`).
 - Produces: `tick` respawns a crashed daemon when `dm.respawn <= 0 && hasUnlock(s, UNLOCK.legacyRespawn)`.
 
@@ -191,11 +196,11 @@ describe("offline legacy contribution", () => {
 ```
 
 - [ ] **Step 2: Run to verify it fails** — `npx vp test run src/sim.test.ts src/persistence.test.ts`
-  → FAIL: "keeps a crashed daemon down without the unlock, even with gc" (current code respawns
-  with `gc = 5`), "auto-respawns once the unlock is granted", "fires the milestone…" is gated on
-  Task 1 but the tick still checks `gc`, and "respawns a crashed daemon offline once the unlock
-  is granted". The tiny-`dt` production test and the fold-in test are characterization guards and
-  may pass immediately.
+      → FAIL: "keeps a crashed daemon down without the unlock, even with gc" (current code respawns
+      with `gc = 5`), "auto-respawns once the unlock is granted", "fires the milestone…" is gated on
+      Task 1 but the tick still checks `gc`, and "respawns a crashed daemon offline once the unlock
+      is granted". The tiny-`dt` production test and the fold-in test are characterization guards and
+      may pass immediately.
 
 - [ ] **Step 3: Implement** in `src/sim.ts` — change the respawn condition (around line 829):
 
@@ -225,7 +230,7 @@ for (const dm of s.legacy) {
 Leave `gc`'s leak-flush block and `nudgeDaemon` unchanged.
 
 - [ ] **Step 4: Run to verify it passes** — `npx vp test run src/sim.test.ts src/persistence.test.ts`
-  → PASS.
+      → PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -239,28 +244,29 @@ git commit -m "feat(sim): gate legacy auto-respawn on the legacy-respawn unlock 
 ### Task 3: Docs lockstep + ADR
 
 **Files:**
+
 - Modify: `docs/architecture/004-prestige-and-legacy.md`, `docs/architecture/010-milestones.md`,
   `docs/architecture/001-simulation-core.md`, `docs/architecture/003-persistence.md`
 - Create: `docs/decisions/0011-decouple-auto-respawn-from-gc.md`
 - Modify: `docs/decisions/README.md`
 
 - [ ] **Step 1: `004`** — replace the Respawn bullet's `if (gc > 0)` with
-  `if hasUnlock(s, "legacy-respawn")`; add an **offline role** paragraph (the legacy block runs
-  before `tick`'s offline early-return, so daemons produce/crash/respawn across a gap and their
-  output is folded into the offline cycles total — no separate accumulator); fix the
-  "without `gc` you occasionally have to click" line to say "before the `legacy-respawn` unlock".
+      `if hasUnlock(s, "legacy-respawn")`; add an **offline role** paragraph (the legacy block runs
+      before `tick`'s offline early-return, so daemons produce/crash/respawn across a gap and their
+      output is folded into the offline cycles total — no separate accumulator); fix the
+      "without `gc` you occasionally have to click" line to say "before the `legacy-respawn` unlock".
 - [ ] **Step 2: `010`** — add the starter-set row
-  `| legacy-respawn | forks | 2 | legacy-respawn |` (name "auto-respawn"); add `legacy-respawn`
-  to the `UNLOCK` list; update the gating sentence to note the respawn gate.
+      `| legacy-respawn | forks | 2 | legacy-respawn |` (name "auto-respawn"); add `legacy-respawn`
+      to the `UNLOCK` list; update the gating sentence to note the respawn gate.
 - [ ] **Step 3: `001`** — tick step 5 becomes "auto-respawn if `hasUnlock(s, 'legacy-respawn')`";
-  update the Milestones section's "`nice` and `gc` are the starter gates" to include
-  `legacy-respawn`.
+      update the Milestones section's "`nice` and `gc` are the starter gates" to include
+      `legacy-respawn`.
 - [ ] **Step 4: `003`** — one line in the offline section: legacy respawn during replay is
-  unlock-gated (so a pre-crashed daemon only comes back offline once `legacy-respawn` is granted).
+      unlock-gated (so a pre-crashed daemon only comes back offline once `legacy-respawn` is granted).
 - [ ] **Step 5: ADR `0011-decouple-auto-respawn-from-gc.md`** — Context (gc doubled as the
-  respawn gate), Decision (milestone-gated respawn; `gc` is leak-flush only; `forks: 2`), the
-  rejected alternatives from the spec, and Consequences (no `SAVE_VERSION` change; pre-unlock
-  play needs a manual click). Register it in `docs/decisions/README.md`.
+      respawn gate), Decision (milestone-gated respawn; `gc` is leak-flush only; `forks: 2`), the
+      rejected alternatives from the spec, and Consequences (no `SAVE_VERSION` change; pre-unlock
+      play needs a manual click). Register it in `docs/decisions/README.md`.
 - [ ] **Step 6: Run `npm run check`** → typecheck + lint + tests all PASS.
 - [ ] **Step 7: Commit**
 

@@ -54,10 +54,9 @@ describe("repeatableMods (diminishing returns)", () => {
 describe("repeatableCost", () => {
   it("grows exponentially with level and is 0 for an unknown id", () => {
     expect(repeatableCost(s(), "overclock").toNumber()).toBeCloseTo(1e6, 0);
-    expect(repeatableCost(s({ repeatables: { overclock: 3 } }), "overclock").toNumber()).toBeCloseTo(
-      1e6 * 1.6 ** 3,
-      0,
-    );
+    expect(
+      repeatableCost(s({ repeatables: { overclock: 3 } }), "overclock").toNumber(),
+    ).toBeCloseTo(1e6 * 1.6 ** 3, 0);
     expect(repeatableCost(s(), "nope").toNumber()).toBe(0);
   });
 });

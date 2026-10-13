@@ -36,7 +36,7 @@ Every save stamps `state.lastSave = Date.now()` first.
    JSON value (`null`, `42`, `"x"`, `true`) is treated as `{}`, so it decodes to a fresh
    game instead of throwing.
 3. **Version migration:** `decode()` iterates the explicit, ordered `MIGRATIONS` table in
-   `src/persistence.ts` — one step per version it upgrades *from*
+   `src/persistence.ts` — one step per version it upgrades _from_
    (`for (const m of MIGRATIONS) if (from < m.from) m.apply(s)`, with
    `from = coerceFinite(parsed.saveVersion, 0)`) — then stamps `saveVersion = SAVE_VERSION`.
    Staged steps matter: a single `saveVersion < SAVE_VERSION` check would re-run older steps
@@ -104,14 +104,14 @@ defaults merge), so today the code table has a single entry while the table belo
 version. The code table is the single source of truth for "what migrates"; a test pins its
 ordering so a future step must be added deliberately.
 
-| from              | to  | migration                                                                    |
-| ----------------- | --- | ---------------------------------------------------------------------------- |
-| (missing) / `< 2` | 2   | For each legacy daemon at array index `k`, divide its `rate` by `1 + k*0.1`. |
-| `< 3`             | 3   | Additive only: the perk fields + milestone records come from `newGame()` defaults; no-op. |
-| `< 4`             | 4   | Additive only: `buyMax` comes from `newGame()` defaults; no-op.              |
-| `< 5`             | 5   | Additive only: the automation toggles + `freeThreshold`; no-op.              |
-| `< 6`             | 6   | Additive only: `offlineCap` comes from `newGame()` defaults; no-op.          |
-| `< 7`             | 7   | Additive only: `achievementsDone` comes from `newGame()` defaults and is rebuilt by `sanitizeAchievements`; no-op. |
+| from              | to  | migration                                                                                                                                                                          |
+| ----------------- | --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| (missing) / `< 2` | 2   | For each legacy daemon at array index `k`, divide its `rate` by `1 + k*0.1`.                                                                                                       |
+| `< 3`             | 3   | Additive only: the perk fields + milestone records come from `newGame()` defaults; no-op.                                                                                          |
+| `< 4`             | 4   | Additive only: `buyMax` comes from `newGame()` defaults; no-op.                                                                                                                    |
+| `< 5`             | 5   | Additive only: the automation toggles + `freeThreshold`; no-op.                                                                                                                    |
+| `< 6`             | 6   | Additive only: `offlineCap` comes from `newGame()` defaults; no-op.                                                                                                                |
+| `< 7`             | 7   | Additive only: `achievementsDone` comes from `newGame()` defaults and is rebuilt by `sanitizeAchievements`; no-op.                                                                 |
 | `< 8`             | 8   | Additive only: `repeatables` comes from `newGame()` defaults and is rebuilt by `sanitizeRepeatables`; short `counts` arrays pad the new tiers with `0` in `sanitizeCounts`; no-op. |
 
 **Pre-versioning path.** A save with a missing `saveVersion` (coerced to `0` by
@@ -185,7 +185,7 @@ and, because `heatMult ≥ 0.5` and the root always produces, cycles are strictl
 Legacy respawn during replay is unlock-gated (`legacy-respawn`), so a pre-crashed daemon only
 comes back offline once that milestone fires.
 
-**Equivalence.** The replay matches an online run in the *safe regime* — no sweep fires and RAM
+**Equivalence.** The replay matches an online run in the _safe regime_ — no sweep fires and RAM
 stays under the cap, which is exactly what offline promises. With no legacy daemons and
 `N < sweepInterval` the two are equal (same code; the `offline` branch only skips events, none
 of which fire); with a legacy daemon they match within **~2%** (unseeded `Math.random` crash

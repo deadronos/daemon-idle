@@ -23,7 +23,7 @@ npm run test       # vp test run
 npm run lint       # vp lint (type-aware via oxlint-tsgolint)
 npm run lint:fix   # vp lint --fix
 npm run format     # vp fmt . --write
-npm run check      # typecheck + lint + test
+npm run check      # typecheck + lint + format check + test
 ```
 
 ## Workflow
