@@ -229,9 +229,10 @@ export interface GameState {
  * `runStartPlaytime`) and the milestone records (`milestonesDone`, `unlocks`) — both additive.
  * Version 4 added the `buyMax` toggle. Version 5 added the automation toggles
  * (`autoNice`, `autoMalloc`, `autoFree`) and `freeThreshold`. Version 6 added the `offlineCap`
- * level. Version 7 added `achievementsDone` (additive). Versions 3–7 are additive.
+ * level. Version 7 added `achievementsDone` (additive). Version 8 added `repeatables`
+ * (additive). Versions 3–8 are additive.
  */
-export const SAVE_VERSION = 7;
+export const SAVE_VERSION = 8;
 
 export const BASE = {
   ramCap: 8,

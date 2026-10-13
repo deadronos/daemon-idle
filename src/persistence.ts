@@ -9,6 +9,7 @@ import { d, Decimal } from "./bignum";
 import { PERKS } from "./config/perks";
 import { MILESTONES } from "./config/milestones";
 import { ACHIEVEMENTS } from "./config/achievements";
+import { REPEATABLES } from "./config/repeatables";
 import { fmt, fmtTime } from "./format";
 import {
   type GameState,
@@ -88,6 +89,22 @@ export function sanitizePerks(raw: unknown): Record<string, number> {
   for (const p of PERKS) {
     const level = Math.min(p.maxLevel, coerceCount(rec[p.id]));
     if (level > 0) out[p.id] = level;
+  }
+  return out;
+}
+
+/**
+ * Repeatable levels: read each known row's level, clamp to `MAX_SANE_COUNT`, and drop
+ * zeros and unknown ids (the result is rebuilt from `REPEATABLES`, so a stale id never
+ * survives). A non-object (including an array) yields `{}`.
+ */
+export function sanitizeRepeatables(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  const rec = raw as Record<string, unknown>;
+  for (const r of REPEATABLES) {
+    const level = Math.min(MAX_SANE_COUNT, coerceCount(rec[r.id]));
+    if (level > 0) out[r.id] = level;
   }
   return out;
 }
@@ -193,6 +210,7 @@ export function decode(raw: string): GameState {
   s.runBaseEarned = coerceDecimal(parsed.runBaseEarned, d(0));
   s.legacy = sanitizeLegacy(parsed.legacy);
   s.perks = sanitizePerks(parsed.perks);
+  s.repeatables = sanitizeRepeatables(parsed.repeatables);
   s.lineage = coerceCount(parsed.lineage);
   s.milestonesDone = sanitizeMilestones(parsed.milestonesDone);
   s.achievementsDone = sanitizeAchievements(parsed.achievementsDone);
@@ -221,6 +239,9 @@ export function decode(raw: string): GameState {
   // from < 6: `offlineCap` is additive too — newGame() defaults it to 0.
   // from < 7: `achievementsDone` is additive too — newGame() defaults it to {} and the
   // roster rebuilds it in `sanitizeAchievements`.
+  // from < 8: `repeatables` is additive too — newGame() defaults it to {} and the roster
+  // rebuilds it in `sanitizeRepeatables`; short `counts` arrays pad the new tiers with 0
+  // in `sanitizeCounts`.
   s.saveVersion = SAVE_VERSION;
   s.log = Array.isArray(s.log) ? s.log.map(String) : [];
   s.sacrificeOrder = sanitizeSacrificeOrder(s.sacrificeOrder);

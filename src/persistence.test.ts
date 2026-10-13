@@ -10,6 +10,7 @@ import {
   sanitizeMilestones,
   sanitizeUnlocks,
   sanitizeAchievements,
+  sanitizeRepeatables,
 } from "./persistence";
 import { BASE, BASE_OFFLINE_CAP_S, SAVE_VERSION, newGame, tick } from "./sim";
 import { UNLOCK } from "./milestones";
@@ -457,10 +458,38 @@ describe("achievements persistence", () => {
     expect(sanitizeAchievements("nope")).toEqual({});
   });
 
-  it("loads a pre-v7 save with an empty record and stamps version 7", () => {
+  it("loads a pre-v8 save with an empty record and stamps version 8", () => {
     const s = decode('{"saveVersion":6}');
     expect(s.achievementsDone).toEqual({});
-    expect(s.saveVersion).toBe(7);
-    expect(SAVE_VERSION).toBe(7);
+    expect(s.saveVersion).toBe(8);
+    expect(SAVE_VERSION).toBe(8);
+  });
+});
+
+describe("repeatables persistence", () => {
+  it("round-trips repeatable levels", () => {
+    const s = newGame();
+    s.repeatables.overclock = 3;
+    expect(decode(encode(s)).repeatables).toEqual({ overclock: 3 });
+  });
+
+  it("sanitizeRepeatables rebuilds from the roster, clamps, and drops zeros/junk", () => {
+    expect(sanitizeRepeatables({ overclock: 3, bogus: 9 })).toEqual({ overclock: 3 });
+    expect(sanitizeRepeatables({ overclock: 0 })).toEqual({});
+    expect(sanitizeRepeatables({ overclock: 1e9 })).toEqual({ overclock: MAX_SANE_COUNT });
+    expect(sanitizeRepeatables(null)).toEqual({});
+    expect(sanitizeRepeatables([])).toEqual({});
+  });
+
+  it("loads a pre-v8 save with defaults and stamps version 8", () => {
+    const s = decode('{"saveVersion":7}');
+    expect(s.repeatables).toEqual({});
+    expect(s.saveVersion).toBe(8);
+    expect(SAVE_VERSION).toBe(8);
+  });
+
+  it("pads a pre-v8 save's short counts array with zeros for the new tiers", () => {
+    const s = decode('{"saveVersion":7,"counts":[1,2,3,4,5]}');
+    expect(s.counts).toEqual([1, 2, 3, 4, 5, 0, 0]);
   });
 });
