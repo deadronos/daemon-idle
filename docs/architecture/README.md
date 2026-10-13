@@ -37,6 +37,7 @@ purpose per file.
 | [`008-sweep-directives.md`](./008-sweep-directives.md)                   | Sweep directive roster, escalation, sacrifice order               |
 | [`009-prestige-perk-tree.md`](./009-prestige-perk-tree.md)               | Prestige perk tree: lineage points, branches, curves, `perkMods`  |
 | [`010-milestones.md`](./010-milestones.md)                               | Milestones: goals, metrics, unlock flags, `hasUnlock`             |
+| [`011-achievements.md`](./011-achievements.md)                           | Achievements: roster, micro-multipliers, income hook, panel       |
 
 ## Conventions
 

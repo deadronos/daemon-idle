@@ -33,6 +33,7 @@ cosmetics, which use `Math.random`).
 | `ramWarned`      | boolean        | Latches the ≥90% memory-pressure warning.       |
 | `legacy`         | LegacyDaemon[] | Background producers left by forks.             |
 | `milestonesDone` | Record<MilestoneId, true> | Milestones that have fired (sticky).  |
+| `achievementsDone` | Record<AchievementId, true> | Achievements that have fired (sticky). |
 | `unlocks`        | Record<string, true> | Unlock ids granted; gate via `hasUnlock`. |
 | `buyMax`         | boolean        | `buy max` spawn toggle preference.              |
 | `autoNice`       | boolean        | Auto-buy `nice` when affordable (unlock-gated). |
@@ -85,10 +86,11 @@ wins. (Output is linear in count; the exponential growth comes from the global
 
 ```
 survivalMult     = (1 + SURVIVAL_BONUS)^sweepsSurvived     // SURVIVAL_BONUS = 0.05
-baseCyclesPerSec = childOutput * survivalMult + BASE.rootOutput        // perk-free (legacy snapshot)
+baseCyclesPerSec = childOutput * survivalMult + BASE.rootOutput        // perk- AND achievement-free (legacy snapshot)
 perkedBase       = childOutput * survivalMult * incomeMult
                  + BASE.rootOutput * incomeMult * rootMult             // growth perks
-rawCyclesPerSec  = perkedBase * lineageMult
+achievementMult  = Π (1 + mult)  over earned achievements
+rawCyclesPerSec  = perkedBase * lineageMult * achievementMult
 cyclesPerSec     = rawCyclesPerSec * heatMult
 childOutput      = Σ counts[i] * baseOutput[i] * synergyMult(i)
 synergyMult(i)   = Π (1 + pct * counts[from])  for each SYNERGY link targeting i
@@ -105,11 +107,17 @@ heatMult         = 1 - MAX_THROTTLE * clamp((heat - HEAT_THROTTLE_AT) / (100 - H
   efficiency, and `SYNERGY`.
 - The root is **outside** `survivalMult`: an empty board still earns exactly 1 cycle/s, so
   the bootstrap invariant holds no matter how many sweeps have been survived.
-- `baseCyclesPerSec = childOutput * survivalMult + BASE.rootOutput` — income before lineage
-  and heat. Lineage-free on purpose: legacy daemon rates snapshot this (see
-  [doc 004](./004-prestige-and-legacy.md)), so applying lineage here too would double-count
-  it; the snapshot therefore inherits the compounded `survivalMult` at fork time.
+- `baseCyclesPerSec = childOutput * survivalMult + BASE.rootOutput` — income before perks,
+  lineage, achievements, and heat. Perk- and achievement-free on purpose: legacy daemon rates
+  snapshot this (see [doc 004](./004-prestige-and-legacy.md)), so applying either here too
+  would double-count it; the snapshot therefore inherits the compounded `survivalMult` at fork
+  time.
 - `lineageMult = 1 + forks * 0.1` multiplies _all_ income (children, root, legacy).
+- **Achievements** (see [doc 011](./011-achievements.md)) fold into `achievementMult`, the
+  product of `(1 + mult)` over earned roster rows. It multiplies `rawCyclesPerSec` alongside
+  `lineageMult` — the one per-tick hook — and is **excluded** from `baseCyclesPerSec`, so it is
+  never baked into a legacy snapshot; unlike lineage, it is deliberately **not** applied to
+  legacy-daemon income (ADR 0012).
 - **Prestige perks** (see [doc 009](./009-prestige-perk-tree.md)) apply inside `perkedBase`:
   `incomeMult` scales children and root, `rootMult` the root term only. They are applied in
   `perkedBase`, **not** in `baseCyclesPerSec`, so the legacy-rate snapshot stays perk-free;
@@ -220,6 +228,8 @@ Order matters — later steps observe the effects of earlier ones.
 8. If `ramUsed > ramCapTotal * OOM_TOLERANCE`, run the OOM killer.
 9. Evaluate milestones (see [doc 010](./010-milestones.md)): fire any whose metric threshold is
    met, granting their unlock flags.
+10. Evaluate achievements (see [doc 011](./011-achievements.md)): fire any whose metric
+    threshold is met, marking it done and logging its `+N% income` multiplier.
 
 Between the offline early-return and the sweep, a live tick also runs **earned automation**
 (`runAutomation`): auto-`free` (when `leak >= freeThreshold`), then auto-`malloc`, then
@@ -230,9 +240,9 @@ auto-`malloc` raise the ceiling in time. It is live-only, so offline catch-up ne
 `tick(s, dt, { offline: true })` is the offline catch-up path (see
 [doc 003](./003-persistence.md)): it runs steps 1–5 only, so an idle gap still earns
 (heat-throttled) income and runs legacy daemons but **never reaps the table (step 6), never
-OOMs (steps 7–8), and never fires milestones (step 9)**. The sweep timer is therefore
-**frozen, not decremented**, while offline: it resumes counting down from where it left off.
-The default `opts` is `{}` (live play), so the non-offline path is unchanged.
+OOMs (steps 7–8), and never fires milestones or achievements (steps 9–10)**. The sweep timer is
+therefore **frozen, not decremented**, while offline: it resumes counting down from where it left
+off. The default `opts` is `{}` (live play), so the non-offline path is unchanged.
 
 ## Sacrifice order
 
@@ -305,6 +315,13 @@ threshold is reached and grant named unlocks. State is two sticky records (`mile
 `unlocks`); `evaluateMilestones` runs at the end of a live tick; features gate via
 `hasUnlock(s, id)` — `nice`, `gc`, and `legacy-respawn` are the starter gates. Full contract in
 [doc 010](./010-milestones.md).
+
+**Achievements** ([doc 011](./011-achievements.md)) are the numeric counterpart: named,
+one-shot goals (`ACHIEVEMENTS` in `src/config/achievements.ts`) whose earned rows each grant a
+small permanent income multiplier through `rawCyclesPerSec`. State is the sticky
+`achievementsDone` record; `evaluateAchievements` runs at the end of a live tick, after the
+milestone loop. They reuse the milestone `METRICS` readers (`MetricInput`) and never gate
+content.
 
 The bulk-spawn ability is also gated: `maxAffordable(s, i)` returns the largest number of
 tier-`i` units buyable now (bounded by both `cycles` and `ramCapTotal`, solved in closed form

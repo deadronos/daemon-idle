@@ -59,6 +59,7 @@ import {
   type MetricId,
 } from "./milestones";
 import { type Alert, checkNumericHealth } from "./diagnostics";
+import { achievementProgress, orderedAchievements } from "./achievements";
 import { consoleSink, logFeedSink, makeReporter } from "./report";
 import { fmt, fmtRate, fmtTime } from "./format";
 import { encode, loadFrom } from "./persistence";
@@ -122,6 +123,7 @@ const el = {
   lineageNext: $("lineageNext"),
   perkPanel: $("perkPanel"),
   milestonePanel: $("milestonePanel"),
+  achievementPanel: $("achievementPanel"),
   buyMaxWrap: $("buyMaxWrap"),
   buyMaxToggle: $<HTMLInputElement>("buyMaxToggle"),
   autoWrap: $("autoWrap"),
@@ -342,6 +344,7 @@ function render(force = false): void {
   renderPriority();
   renderPerks();
   renderMilestones();
+  renderAchievements();
   renderLog(force);
 }
 
@@ -455,6 +458,60 @@ function renderMilestones(): void {
       fill.style.width = `${Math.min(100, milestoneProgress(state, m) * 100)}%`;
       const unit = METRIC_UNIT[m.metric] ? ` ${METRIC_UNIT[m.metric]}` : "";
       status.textContent = `${value} / ${m.at}${unit}`;
+    }
+  }
+}
+
+/**
+ * The achievements panel: pending first (closest to earning on top), earned dimmed below.
+ * Rows are rebuilt only when the earned set changes; progress refreshes each frame. Reuses
+ * the milestone row classes.
+ */
+function renderAchievements(): void {
+  const ordered = orderedAchievements(state);
+  const sig = ordered.map((a) => `${a.id}:${state.achievementsDone[a.id] ? 1 : 0}`).join(",");
+  if (el.achievementPanel.dataset.sig !== sig) {
+    el.achievementPanel.dataset.sig = sig;
+    el.achievementPanel.innerHTML = "";
+    for (const a of ordered) {
+      const row = document.createElement("div");
+      row.className = "milestone";
+      row.dataset.achievement = a.id;
+      const head = document.createElement("div");
+      head.className = "milestone-head";
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = a.name;
+      const status = document.createElement("span");
+      status.className = "status";
+      head.append(name, status);
+      const bar = document.createElement("div");
+      bar.className = "bar";
+      const fill = document.createElement("div");
+      fill.className = "fill";
+      bar.appendChild(fill);
+      const desc = document.createElement("p");
+      desc.className = "hint";
+      desc.textContent = a.desc;
+      row.append(head, bar, desc);
+      el.achievementPanel.appendChild(row);
+    }
+  }
+  for (const a of ordered) {
+    const row = el.achievementPanel.querySelector(`[data-achievement="${a.id}"]`);
+    if (!row) continue;
+    const doneNow = Boolean(state.achievementsDone[a.id]);
+    row.classList.toggle("done", doneNow);
+    const fill = row.querySelector(".fill") as HTMLElement;
+    const status = row.querySelector(".status") as HTMLElement;
+    if (doneNow) {
+      fill.style.width = "100%";
+      status.textContent = `✓ +${Math.round(a.mult * 100)}% income`;
+    } else {
+      const value = Math.floor(METRICS[a.metric](state));
+      fill.style.width = `${Math.min(100, achievementProgress(state, a) * 100)}%`;
+      const unit = METRIC_UNIT[a.metric] ? ` ${METRIC_UNIT[a.metric]}` : "";
+      status.textContent = `${value} / ${a.at}${unit}`;
     }
   }
 }

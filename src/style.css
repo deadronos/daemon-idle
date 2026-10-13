@@ -396,7 +396,8 @@ button.act .cost.ok {
 }
 
 /* milestones */
-.milestones {
+.milestones,
+.achievements {
   display: flex;
   flex-direction: column;
   gap: 8px;

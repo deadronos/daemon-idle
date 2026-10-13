@@ -106,6 +106,16 @@ signature changes (`milestonePanel.dataset.sig`); the progress numbers refresh e
 Rows are never interactive (milestones fire from state, not clicks). The locked `nice`/`gc`
 buttons in the upgrades panel point at their milestone by name.
 
+## Achievements panel
+
+The `achievements` panel (`#achievementPanel`, `renderAchievements()`) mirrors the milestones
+panel: `ACHIEVEMENTS` pending-first by `achievementProgress` descending, then earned ones dimmed
+below. A pending row shows the name, description, a progress bar, and `value / at <unit>`; an
+earned row shows `✓ +N% income`. Rows are rebuilt only when the earned-set signature changes
+(`achievementPanel.dataset.sig`); the progress numbers refresh each frame. Rows are never
+interactive. It reuses the milestone row classes (`.milestones, .achievements` share the
+container style). See [doc 011](./011-achievements.md).
+
 ## Meters
 
 - **RAM bar:** two segments — the child footprint (`ramBar`, green, turns red at >90% of
