@@ -11,7 +11,7 @@ branching prestige layer where "at least two meaningfully different fork builds 
 perks are data-driven and persist, and the player steers the meta-layer instead of watching
 one number rise.
 
-The question was how to *shape* that choice: how lineage is earned, whether it replaces or
+The question was how to _shape_ that choice: how lineage is earned, whether it replaces or
 layers on the flat multiplier, whether the tree resets, and how to keep an uncapped
 point-generation branch from running away.
 
@@ -44,7 +44,7 @@ Add a **permanent, data-driven perk tree** fed by a new spendable **lineage** cu
   discard Phase A's tuning. Layering is strictly additive.
 - **Per-run re-spec (roguelite) tree** — rejected: contradicts "persist across forks"; every
   run would restart investment.
-- **Flat per-fork points only** — rejected: *when* you fork should matter, so points blend a
+- **Flat per-fork points only** — rejected: _when_ you fork should matter, so points blend a
   flat base with depth.
 - **All-capped or all-uncapped nodes** — rejected in favour of the hybrid: distinct perks
   give legible builds; a sink absorbs overflow without a hard wall.

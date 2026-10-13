@@ -29,21 +29,21 @@ the alternatives you rejected. Record the trade-off, not a story.
 
 ## Index
 
-| ADR                                                   | Title                                    | Status   |
-| ----------------------------------------------------- | ---------------------------------------- | -------- |
-| [`0001`](./0001-root-baseline-income.md)              | Root baseline income for bootstrap       | Accepted |
-| [`0002`](./0002-lint-and-test-toolchain.md)           | Lint and test toolchain (Vite+)          | Accepted |
-| [`0003`](./0003-bignum-break-eternity.md)             | Big-number core (break_eternity.js)      | Accepted |
-| [`0004`](./0004-numeric-watchdog-and-diagnostics.md)  | Numeric watchdog and diagnostics routing | Accepted |
-| [`0005`](./0005-pages-deploy-on-tag.md)               | Deploy to GitHub Pages on release tags   | Accepted |
-| [`0006`](./0006-sweep-directive-model.md)             | Sweep directive model                    | Accepted |
-| [`0007`](./0007-player-controlled-sacrifice-order.md) | Player-controlled sacrifice order        | Accepted |
-| [`0008`](./0008-branching-prestige-perk-tree.md)      | Branching prestige: the perk tree        | Accepted |
-| [`0009`](./0009-milestone-gating-model.md)            | Milestone gating model                   | Accepted |
-| [`0010`](./0010-offline-fidelity.md)                  | Offline fidelity and the upgradable cap  | Accepted |
-| [`0011`](./0011-decouple-auto-respawn-from-gc.md)     | Decouple legacy auto-respawn from `gc`   | Accepted |
+| ADR                                                   | Title                                        | Status   |
+| ----------------------------------------------------- | -------------------------------------------- | -------- |
+| [`0001`](./0001-root-baseline-income.md)              | Root baseline income for bootstrap           | Accepted |
+| [`0002`](./0002-lint-and-test-toolchain.md)           | Lint and test toolchain (Vite+)              | Accepted |
+| [`0003`](./0003-bignum-break-eternity.md)             | Big-number core (break_eternity.js)          | Accepted |
+| [`0004`](./0004-numeric-watchdog-and-diagnostics.md)  | Numeric watchdog and diagnostics routing     | Accepted |
+| [`0005`](./0005-pages-deploy-on-tag.md)               | Deploy to GitHub Pages on release tags       | Accepted |
+| [`0006`](./0006-sweep-directive-model.md)             | Sweep directive model                        | Accepted |
+| [`0007`](./0007-player-controlled-sacrifice-order.md) | Player-controlled sacrifice order            | Accepted |
+| [`0008`](./0008-branching-prestige-perk-tree.md)      | Branching prestige: the perk tree            | Accepted |
+| [`0009`](./0009-milestone-gating-model.md)            | Milestone gating model                       | Accepted |
+| [`0010`](./0010-offline-fidelity.md)                  | Offline fidelity and the upgradable cap      | Accepted |
+| [`0011`](./0011-decouple-auto-respawn-from-gc.md)     | Decouple legacy auto-respawn from `gc`       | Accepted |
 | [`0012`](./0012-achievements-multiplier-hook.md)      | Achievements pay through one multiplier hook | Accepted |
-| [`0013`](./0013-diminishing-return-repeatables.md)    | Diminishing-return repeatable upgrades   | Accepted |
+| [`0013`](./0013-diminishing-return-repeatables.md)    | Diminishing-return repeatable upgrades       | Accepted |
 
 ## Naming
 

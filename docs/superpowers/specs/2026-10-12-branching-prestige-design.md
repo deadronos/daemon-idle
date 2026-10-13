@@ -13,8 +13,8 @@ build variety. The only permanent carry-overs are `forks` (and the derived multi
 stack" and that the meta-layer gives the player something to steer; today it gives a single
 number going up.
 
-#22's acceptance: *perks are data-driven, persist across forks and reset correctly on
-fork; at least two meaningfully different fork builds are viable; perk-tree UI*. This
+#22's acceptance: _perks are data-driven, persist across forks and reset correctly on
+fork; at least two meaningfully different fork builds are viable; perk-tree UI_. This
 design delivers a permanent, branching **perk tree** fed by a new spendable **lineage**
 currency, layered on top of (not replacing) the existing flat multiplier.
 
@@ -66,12 +66,12 @@ The tree is data, so the data and its constants live in a leaf module; the pure 
 next to it; the mutating actions stay in the sim (per the repo's "rules in `sim.ts`"
 convention).
 
-| File                  | Owns                                                                                 |
-| --------------------- | ------------------------------------------------------------------------------------ |
-| `src/config/perks.ts` | `PerkId`, `Branch`, `PerkDef`, `PerkMods` *types*, the `PERKS` roster, all tunable constants. No runtime imports (a type-only `Decimal` import is erased). |
-| `src/perks.ts`        | Pure logic: `perkMods`, `perkCost`, `canBuyPerk`, `pointsForFork`. Imports `config/perks`. |
-| `src/sim.ts`          | New `GameState` fields, the `buyPerk` action, `doFork` changes, formula integration. |
-| `src/persistence.ts`  | `sanitizePerks`, new fields in `decode`/`encode`/`sanitizeNumericState`, staged migrations. |
+| File                  | Owns                                                                                                                                                       |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/config/perks.ts` | `PerkId`, `Branch`, `PerkDef`, `PerkMods` _types_, the `PERKS` roster, all tunable constants. No runtime imports (a type-only `Decimal` import is erased). |
+| `src/perks.ts`        | Pure logic: `perkMods`, `perkCost`, `canBuyPerk`, `pointsForFork`. Imports `config/perks`.                                                                 |
+| `src/sim.ts`          | New `GameState` fields, the `buyPerk` action, `doFork` changes, formula integration.                                                                       |
+| `src/persistence.ts`  | `sanitizePerks`, new fields in `decode`/`encode`/`sanitizeNumericState`, staged migrations.                                                                |
 
 Runtime dependency direction is one-way: `config/perks.ts` → (nothing); `perks.ts` →
 `config/perks.ts` + `bignum`; `sim.ts` → both; `persistence.ts` → all. No cycles. Type-only
@@ -82,12 +82,12 @@ imports (e.g. `Decimal`) are erased at runtime.
 Four fields are added to `GameState` (all get `newGame()` defaults, so saves stay
 additive-safe):
 
-| Field              | Type                   | Meaning                                                       | On `doFork` |
-| ------------------ | ---------------------- | ------------------------------------------------------------ | ----------- |
-| `lineage`          | `number`               | Unspent lineage points (integer ≥ 0).                        | preserved   |
-| `perks`            | `Record<PerkId, number>` | Purchased level per node; a missing key means level 0.      | preserved   |
-| `runBaseEarned`    | `Decimal`              | `totalEarned` snapshot at the last fork.                     | reset       |
-| `runStartPlaytime` | `number`               | `playtime` snapshot at the last fork.                        | reset       |
+| Field              | Type                     | Meaning                                                | On `doFork` |
+| ------------------ | ------------------------ | ------------------------------------------------------ | ----------- |
+| `lineage`          | `number`                 | Unspent lineage points (integer ≥ 0).                  | preserved   |
+| `perks`            | `Record<PerkId, number>` | Purchased level per node; a missing key means level 0. | preserved   |
+| `runBaseEarned`    | `Decimal`                | `totalEarned` snapshot at the last fork.               | reset       |
+| `runStartPlaytime` | `number`                 | `playtime` snapshot at the last fork.                  | reset       |
 
 `runEarned = totalEarned - runBaseEarned` and `runSeconds = playtime - runStartPlaytime`
 are the per-run depth inputs. `lineage` and `perks` join `forks`/`legacy` in the
@@ -105,16 +105,16 @@ export interface PerkDef {
   id: PerkId;
   branch: Branch;
   name: string;
-  desc: string;          // terminal-flavored flavor text
-  requires?: PerkId;     // prerequisite node (DAG edge); undefined = root of its branch
-  maxLevel: number;      // 1 for distinct perks; Infinity for sinks
-  costBase: number;      // points for level 0 -> 1
-  costRate: number;      // per-level cost multiplier: 1 = flat (distinct), 1.6 = sink
-  mod: keyof PerkMods;   // which aggregate field this node feeds
-  perLevel: number;      // magnitude per level (interpreted via MOD_KIND)
+  desc: string; // terminal-flavored flavor text
+  requires?: PerkId; // prerequisite node (DAG edge); undefined = root of its branch
+  maxLevel: number; // 1 for distinct perks; Infinity for sinks
+  costBase: number; // points for level 0 -> 1
+  costRate: number; // per-level cost multiplier: 1 = flat (distinct), 1.6 = sink
+  mod: keyof PerkMods; // which aggregate field this node feeds
+  perLevel: number; // magnitude per level (interpreted via MOD_KIND)
 }
 
-export const PERKS: PerkDef[] = [ /* roster below */ ];
+export const PERKS: PerkDef[] = [/* roster below */];
 export const perkById = (id: PerkId) => PERKS.find((p) => p.id === id);
 ```
 
@@ -130,25 +130,25 @@ touching logic.
 
 ```ts
 // config/perks.ts
-export const T_REF = 300;         // seconds for timeFactor = 1
-export const E_REF = 1e6;         // cycles for earnFactor = 1
-export const DEPTH_GAIN = 2;      // points per unit of depth
-export const FLAT_BASE = 1;       // flat points for a qualifying fork
+export const T_REF = 300; // seconds for timeFactor = 1
+export const E_REF = 1e6; // cycles for earnFactor = 1
+export const DEPTH_GAIN = 2; // points per unit of depth
+export const FLAT_BASE = 1; // flat points for a qualifying fork
 export const MIN_RUN_SECONDS = 60;
 export const MIN_RUN_EARNED = 1e3;
-export const DEPTH_CAP = 1000;    // bound on each factor before toNumber()
+export const DEPTH_CAP = 1000; // bound on each factor before toNumber()
 export const MAX_POINTS_PER_FORK = 1e6; // hard ceiling on a single grant
-export const SINK_RATE = 1.6;     // per-level cost multiplier used by sink nodes
+export const SINK_RATE = 1.6; // per-level cost multiplier used by sink nodes
 export const FORK_COST_FLOOR = 0.25; // floor on the forkCost-reduction multiplier
 
 // perks.ts
 runSeconds = max(0, playtime - runStartPlaytime);
-runEarned  = max(0, totalEarned - runBaseEarned);          // Decimal
+runEarned = max(0, totalEarned - runBaseEarned); // Decimal
 timeFactor = sqrt(runSeconds / T_REF);
 earnFactor = clamp(Decimal.sqrt(runEarned / E_REF).toNumber(), 0, DEPTH_CAP);
-depth      = timeFactor + earnFactor;
-qualifies  = runSeconds >= MIN_RUN_SECONDS && runEarned.gte(d(MIN_RUN_EARNED));
-points     = min(MAX_POINTS_PER_FORK, floor(DEPTH_GAIN * depth) + (qualifies ? FLAT_BASE : 0));
+depth = timeFactor + earnFactor;
+qualifies = runSeconds >= MIN_RUN_SECONDS && runEarned.gte(d(MIN_RUN_EARNED));
+points = min(MAX_POINTS_PER_FORK, floor(DEPTH_GAIN * depth) + (qualifies ? FLAT_BASE : 0));
 ```
 
 - `runEarned / E_REF` and the `sqrt` are computed in `Decimal` (break_eternity scales past
@@ -169,12 +169,12 @@ unbounded shape. Distinct perks only ever reach `level = 1` (`sqrt(1) = 1`, i.e.
 
 ```ts
 type Op = "add" | "multiply" | "divide";
-const MOD_KIND: Record<keyof PerkMods, Op> = { /* ... */ };
+const MOD_KIND: Record<keyof PerkMods, Op> = {/* ... */};
 ```
 
 - `multiply`: `value *= 1 + perLevel * sqrt(L)` (increase modifiers)
-- `divide`:   `value /= 1 + perLevel * sqrt(L)` (reduction modifiers, e.g. cost/heat)
-- `add`:      `value += perLevel * sqrt(L)`
+- `divide`: `value /= 1 + perLevel * sqrt(L)` (reduction modifiers, e.g. cost/heat)
+- `add`: `value += perLevel * sqrt(L)`
 
 `perkMods(s)` folds every owned node in `PERKS` order into one `PerkMods`, with Decimal
 fields for `incomeMult`, `rootMult`, `legacyRateMult`, `startCycles`. The interface is
@@ -182,17 +182,17 @@ declared in `src/config/perks.ts` (shown here for reference):
 
 ```ts
 export interface PerkMods {
-  incomeMult: Decimal;      // multiply, >= 1  (children + root)
-  rootMult: Decimal;        // multiply, >= 1  (root baseline only)
-  tierCostMult: number;     // divide in (0, 1]
-  niceAdd: number;          // add, >= 0  (equivalent extra `nice` levels)
-  ramCapAdd: number;        // add, >= 0
-  heatGenMult: number;      // divide in (0, 1]  (scales heat equilibrium)
-  startShieldsAdd: number;  // add, >= 0
-  forkCostMult: number;     // divide, floored at FORK_COST_FLOOR
-  pointsMult: number;       // multiply, >= 1
-  legacyRateMult: Decimal;  // multiply, >= 1
-  startCycles: Decimal;     // add, >= 0
+  incomeMult: Decimal; // multiply, >= 1  (children + root)
+  rootMult: Decimal; // multiply, >= 1  (root baseline only)
+  tierCostMult: number; // divide in (0, 1]
+  niceAdd: number; // add, >= 0  (equivalent extra `nice` levels)
+  ramCapAdd: number; // add, >= 0
+  heatGenMult: number; // divide in (0, 1]  (scales heat equilibrium)
+  startShieldsAdd: number; // add, >= 0
+  forkCostMult: number; // divide, floored at FORK_COST_FLOOR
+  pointsMult: number; // multiply, >= 1
+  legacyRateMult: Decimal; // multiply, >= 1
+  startCycles: Decimal; // add, >= 0
 }
 
 export const FORK_COST_FLOOR = 0.25;
@@ -212,33 +212,33 @@ dangerous multiplier is floored (decision 8).
 
 **Growth** — more cycles, cheaper herd
 
-| id | name | effect | `mod` | `perLevel` | requires | `maxLevel` | `costBase` | `costRate` |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `spin` | spin loop | +10% income | `incomeMult` | 0.10 | — | 1 | 2 | 1 |
-| `tailcall` | tail-call opt | −8% tier cost | `tierCostMult` | 0.08 | `spin` | 1 | 5 | 1 |
-| `prefetch` | prefetcher | +15% income | `incomeMult` | 0.15 | `spin` | 1 | 5 | 1 |
-| `vec` | vectorized | root output ×2 | `rootMult` | 1.0 | `tailcall` | 1 | 10 | 1 |
-| `pipeline` ∞ | pipelining | income ×(1 + 0.10·√L) | `incomeMult` | 0.10 | `prefetch` | ∞ | 3 | 1.6 |
+| id           | name          | effect                | `mod`          | `perLevel` | requires   | `maxLevel` | `costBase` | `costRate` |
+| ------------ | ------------- | --------------------- | -------------- | ---------- | ---------- | ---------- | ---------- | ---------- |
+| `spin`       | spin loop     | +10% income           | `incomeMult`   | 0.10       | —          | 1          | 2          | 1          |
+| `tailcall`   | tail-call opt | −8% tier cost         | `tierCostMult` | 0.08       | `spin`     | 1          | 5          | 1          |
+| `prefetch`   | prefetcher    | +15% income           | `incomeMult`   | 0.15       | `spin`     | 1          | 5          | 1          |
+| `vec`        | vectorized    | root output ×2        | `rootMult`     | 1.0        | `tailcall` | 1          | 10         | 1          |
+| `pipeline` ∞ | pipelining    | income ×(1 + 0.10·√L) | `incomeMult`   | 0.10       | `prefetch` | ∞          | 3          | 1.6        |
 
 **Survival** — keep the herd alive
 
-| id | name | effect | `mod` | `perLevel` | requires | `maxLevel` | `costBase` | `costRate` |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `renice` | re-nice | +1 effective `nice` | `niceAdd` | 1 | — | 1 | 2 | 1 |
-| `oomguard` | oom-guard | +8 MB RAM cap | `ramCapAdd` | 8 | `renice` | 1 | 5 | 1 |
-| `heatsink` | heatsink | −10% heat | `heatGenMult` | 0.10 | `renice` | 1 | 5 | 1 |
-| `sigblock` | signal mask | +1 starting shield | `startShieldsAdd` | 1 | `oomguard` | 1 | 10 | 1 |
-| `reaper` ∞ | lazy sweeper | +1·√L effective `nice` | `niceAdd` | 1 | `heatsink` | ∞ | 3 | 1.6 |
+| id         | name         | effect                 | `mod`             | `perLevel` | requires   | `maxLevel` | `costBase` | `costRate` |
+| ---------- | ------------ | ---------------------- | ----------------- | ---------- | ---------- | ---------- | ---------- | ---------- |
+| `renice`   | re-nice      | +1 effective `nice`    | `niceAdd`         | 1          | —          | 1          | 2          | 1          |
+| `oomguard` | oom-guard    | +8 MB RAM cap          | `ramCapAdd`       | 8          | `renice`   | 1          | 5          | 1          |
+| `heatsink` | heatsink     | −10% heat              | `heatGenMult`     | 0.10       | `renice`   | 1          | 5          | 1          |
+| `sigblock` | signal mask  | +1 starting shield     | `startShieldsAdd` | 1          | `oomguard` | 1          | 10         | 1          |
+| `reaper` ∞ | lazy sweeper | +1·√L effective `nice` | `niceAdd`         | 1          | `heatsink` | ∞          | 3          | 1.6        |
 
 **Lineage** — meta-carryover (the risky branch)
 
-| id | name | effect | `mod` | `perLevel` | requires | `maxLevel` | `costBase` | `costRate` |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `echo` | lineage echo | +5% points/fork | `pointsMult` | 0.05 | — | 1 | 2 | 1 |
-| `cheapfork` | cheap fork | −10% forkCost (floored) | `forkCostMult` | 0.10 | `echo` | 1 | 5 | 1 |
-| `cache` | ancestor cache | legacy rate ×1.05 | `legacyRateMult` | 0.05 | `echo` | 1 | 5 | 1 |
-| `startup` | warm start | start each run with 1 000 cycles | `startCycles` | 1000 | `cheapfork` | 1 | 10 | 1 |
-| `recursion` ∞ | recursion | points ×(1 + 0.05·√L) | `pointsMult` | 0.05 | `cache` | ∞ | 3 | 1.6 |
+| id            | name           | effect                           | `mod`            | `perLevel` | requires    | `maxLevel` | `costBase` | `costRate` |
+| ------------- | -------------- | -------------------------------- | ---------------- | ---------- | ----------- | ---------- | ---------- | ---------- |
+| `echo`        | lineage echo   | +5% points/fork                  | `pointsMult`     | 0.05       | —           | 1          | 2          | 1          |
+| `cheapfork`   | cheap fork     | −10% forkCost (floored)          | `forkCostMult`   | 0.10       | `echo`      | 1          | 5          | 1          |
+| `cache`       | ancestor cache | legacy rate ×1.05                | `legacyRateMult` | 0.05       | `echo`      | 1          | 5          | 1          |
+| `startup`     | warm start     | start each run with 1 000 cycles | `startCycles`    | 1000       | `cheapfork` | 1          | 10         | 1          |
+| `recursion` ∞ | recursion      | points ×(1 + 0.05·√L)            | `pointsMult`     | 0.05       | `cache`     | ∞          | 3          | 1.6        |
 
 Adding a node is additive: append to `PERKS` with a `requires` edge, and the fold, cost,
 gating, and UI all pick it up.
@@ -271,16 +271,16 @@ export function cyclesPerSec(s: GameState): Decimal {
 legacyGain = dm.rate.mul(mods.legacyRateMult).mul(lineageMult(s)).mul(dt);
 ```
 
-| Formula               | Change                                                              |
-| --------------------- | ------------------------------------------------------------------- |
-| `cyclesPerSec`        | children `· mods.incomeMult`; root term additionally `· mods.rootMult` |
-| `tierCost(s, i)`      | `· mods.tierCostMult`                                               |
-| `ramCap` reads        | `ramCap + mods.ramCapAdd` (spawn gating / OOM)                      |
-| `sweepVictimMult`     | reads `s.nice + mods.niceAdd` (existing `max(0.3, …)` floor holds)  |
-| `heatEquilibrium`     | `· mods.heatGenMult` (lower equilibrium → less throttle)            |
-| `forkCost`            | `· mods.forkCostMult` (floored at `FORK_COST_FLOOR`)                |
-| legacy income         | `· mods.legacyRateMult` (does **not** get `incomeMult`)             |
-| `baseCyclesPerSec`    | **unchanged / perk-free** — keeps the legacy snapshot clean         |
+| Formula            | Change                                                                 |
+| ------------------ | ---------------------------------------------------------------------- |
+| `cyclesPerSec`     | children `· mods.incomeMult`; root term additionally `· mods.rootMult` |
+| `tierCost(s, i)`   | `· mods.tierCostMult`                                                  |
+| `ramCap` reads     | `ramCap + mods.ramCapAdd` (spawn gating / OOM)                         |
+| `sweepVictimMult`  | reads `s.nice + mods.niceAdd` (existing `max(0.3, …)` floor holds)     |
+| `heatEquilibrium`  | `· mods.heatGenMult` (lower equilibrium → less throttle)               |
+| `forkCost`         | `· mods.forkCostMult` (floored at `FORK_COST_FLOOR`)                   |
+| legacy income      | `· mods.legacyRateMult` (does **not** get `incomeMult`)                |
+| `baseCyclesPerSec` | **unchanged / perk-free** — keeps the legacy snapshot clean            |
 
 **`doFork` additions**, in order:
 
@@ -331,12 +331,16 @@ pure functions of state, so replays and `applyOffline` stay reproducible.
 legacy-rate fixup under a single `parsed.saveVersion < SAVE_VERSION` check. Once
 `SAVE_VERSION = 3`, that check would also fire for v2 saves and **re-divide rates that were
 already lineage-free**, corrupting them. The migration must be split into per-step stages,
-each keyed to the version it upgrades *from*:
+each keyed to the version it upgrades _from_:
 
 ```ts
 const from = coerceFinite(parsed.saveVersion, 0);
-if (from < 2) { /* divide baked lineage out of each legacy rate, as today */ }
-if (from < 3) { /* additive only: new fields come from newGame() defaults; no-op */ }
+if (from < 2) {
+  /* divide baked lineage out of each legacy rate, as today */
+}
+if (from < 3) {
+  /* additive only: new fields come from newGame() defaults; no-op */
+}
 s.saveVersion = SAVE_VERSION;
 ```
 
@@ -360,6 +364,7 @@ elements, no framework):
   showing name, current level, next cost (`perkCost`), the effect line, and its
   prerequisite. A node is **disabled/dimmed** when the prerequisite is not owned or
   `lineage < cost`.
+
 - **Header:** `lineage: N pt` and a preview `next fork grants ≈ P pt` (from
   `pointsForFork`) so the earning loop is legible. The existing HUD `×N.N` lineage
   multiplier is unchanged.
@@ -422,7 +427,7 @@ New `src/perks.test.ts` plus additions to `src/sim.test.ts` and
   sweep still reads as "lowest priority first" and that the `nice` floor plus the sweep
   budget keep Phase A's directives meaningful rather than trivial (a very high `niceAdd`
   with a low budget reaps almost nothing).
-- **Lineage runaway.** The sub-linear benefit caps the *optimal* investment, but
+- **Lineage runaway.** The sub-linear benefit caps the _optimal_ investment, but
   `pointsMult` and `legacyRateMult` still compound; the `MAX_POINTS_PER_FORK` ceiling and
   the soft-cap test are the guards. Revisit if the watchdog sees explosive growth.
 

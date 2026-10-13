@@ -15,7 +15,7 @@
     "lint": "vp lint",
     "lint:fix": "vp lint --fix",
     "format": "vp fmt . --write",
-    "check": "vp run typecheck && vp lint && vp test run"
+    "check": "vp run typecheck && vp lint && vp fmt . --check && vp test run"
   },
   "dependencies": {
     "break_eternity.js": "^2.1.3"

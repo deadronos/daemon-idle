@@ -25,7 +25,7 @@ Keep offline **non-punishing** and deliver the cap plus a verified equivalence g
   stay live-only; legacy daemons still produce, crash, and respawn across the gap. The `tick`
   offline branch is unchanged.
 - **Equivalence against a sweep-free online reference.** The replay is proven to match an
-  online run in the *safe regime* — no sweep fires and RAM stays under the cap, which is
+  online run in the _safe regime_ — no sweep fires and RAM stays under the cap, which is
   exactly the regime offline promises. It is equal (no legacy) or within ~2% (legacy crash
   timing is unseeded). This is the deliberate interpretation of "matches an equivalent online
   run": the reference is an online run with the punishing events excluded.

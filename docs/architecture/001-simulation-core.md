@@ -6,46 +6,46 @@ cosmetics, which use `Math.random`).
 
 ## State — `GameState`
 
-| Field            | Type           | Meaning                                         |
-| ---------------- | -------------- | ----------------------------------------------- |
-| `cycles`         | Decimal        | Current spendable currency.                     |
-| `totalEarned`    | Decimal        | Lifetime earned; gates prestige.                |
-| `counts`         | number[]       | Owned children per tier (index = tier).         |
-| `sacrificeOrder` | number[]       | Reap order: tier indices, earlier dies first.   |
-| `ramCap`         | number         | RAM ceiling in MB.                              |
-| `leak`           | number         | Leaked RAM on top of the footprint.             |
-| `heat`           | number         | 0..100; throttles income above the threshold.   |
-| `cooling`        | number         | Upgrade level; sheds heat faster, lower eq.     |
-| `nice`           | number         | Upgrade level reducing sweep victims.           |
-| `shields`        | number         | SIGTERM charges; each absorbs one sweep victim. |
-| `gc`             | number         | Upgrade level of automatic leak flushing.       |
-| `forks`          | number         | Prestige count; drives the lineage multiplier.  |
-| `lineage`        | number         | Unspent lineage points for the perk tree.        |
-| `perks`          | Record<PerkId, number> | Purchased perk level per node id (absent = 0). |
-| `repeatables`    | Record<string, number> | Purchased repeatable level per id (absent = 0). |
-| `runBaseEarned`  | Decimal        | `totalEarned` at the last fork (depth base).     |
-| `runStartPlaytime` | number       | `playtime` at the last fork (depth base).        |
-| `sweepTimer`     | number         | Seconds until the next cleanup sweep.           |
-| `sweepInterval`  | number         | Seconds between sweeps; derived each tick.      |
-| `sweepsSurvived` | number         | Sweeps run so far; raises severity.             |
-| `rngState`       | number         | Int32 PRNG cursor for the directive draw.       |
-| `nextDirective`  | DirectiveId    | Directive resolved at the next sweep.           |
-| `oomCount`       | number         | Times the OOM killer has fired.                 |
-| `ramWarned`      | boolean        | Latches the ≥90% memory-pressure warning.       |
-| `legacy`         | LegacyDaemon[] | Background producers left by forks.             |
-| `milestonesDone` | Record<MilestoneId, true> | Milestones that have fired (sticky).  |
-| `achievementsDone` | Record<AchievementId, true> | Achievements that have fired (sticky). |
-| `unlocks`        | Record<string, true> | Unlock ids granted; gate via `hasUnlock`. |
-| `buyMax`         | boolean        | `buy max` spawn toggle preference.              |
-| `autoNice`       | boolean        | Auto-buy `nice` when affordable (unlock-gated). |
-| `autoMalloc`     | boolean        | Auto-buy `malloc` when affordable (unlock-gated). |
-| `autoFree`       | boolean        | Auto-`free()` the leak at `freeThreshold`.      |
-| `freeThreshold`  | number         | Leak MB at which auto-free fires.               |
-| `offlineCap`     | number         | `nohup` level; +4 h offline cap per level.      |
-| `log`            | string[]       | Terminal feed, newest first, capped at 40.      |
-| `playtime`       | number         | Seconds simulated (includes offline).           |
-| `lastSave`       | number         | Epoch ms of last save; drives offline progress. |
-| `saveVersion`    | number         | Save format version; drives `decode` migration. |
+| Field              | Type                        | Meaning                                           |
+| ------------------ | --------------------------- | ------------------------------------------------- |
+| `cycles`           | Decimal                     | Current spendable currency.                       |
+| `totalEarned`      | Decimal                     | Lifetime earned; gates prestige.                  |
+| `counts`           | number[]                    | Owned children per tier (index = tier).           |
+| `sacrificeOrder`   | number[]                    | Reap order: tier indices, earlier dies first.     |
+| `ramCap`           | number                      | RAM ceiling in MB.                                |
+| `leak`             | number                      | Leaked RAM on top of the footprint.               |
+| `heat`             | number                      | 0..100; throttles income above the threshold.     |
+| `cooling`          | number                      | Upgrade level; sheds heat faster, lower eq.       |
+| `nice`             | number                      | Upgrade level reducing sweep victims.             |
+| `shields`          | number                      | SIGTERM charges; each absorbs one sweep victim.   |
+| `gc`               | number                      | Upgrade level of automatic leak flushing.         |
+| `forks`            | number                      | Prestige count; drives the lineage multiplier.    |
+| `lineage`          | number                      | Unspent lineage points for the perk tree.         |
+| `perks`            | Record<PerkId, number>      | Purchased perk level per node id (absent = 0).    |
+| `repeatables`      | Record<string, number>      | Purchased repeatable level per id (absent = 0).   |
+| `runBaseEarned`    | Decimal                     | `totalEarned` at the last fork (depth base).      |
+| `runStartPlaytime` | number                      | `playtime` at the last fork (depth base).         |
+| `sweepTimer`       | number                      | Seconds until the next cleanup sweep.             |
+| `sweepInterval`    | number                      | Seconds between sweeps; derived each tick.        |
+| `sweepsSurvived`   | number                      | Sweeps run so far; raises severity.               |
+| `rngState`         | number                      | Int32 PRNG cursor for the directive draw.         |
+| `nextDirective`    | DirectiveId                 | Directive resolved at the next sweep.             |
+| `oomCount`         | number                      | Times the OOM killer has fired.                   |
+| `ramWarned`        | boolean                     | Latches the ≥90% memory-pressure warning.         |
+| `legacy`           | LegacyDaemon[]              | Background producers left by forks.               |
+| `milestonesDone`   | Record<MilestoneId, true>   | Milestones that have fired (sticky).              |
+| `achievementsDone` | Record<AchievementId, true> | Achievements that have fired (sticky).            |
+| `unlocks`          | Record<string, true>        | Unlock ids granted; gate via `hasUnlock`.         |
+| `buyMax`           | boolean                     | `buy max` spawn toggle preference.                |
+| `autoNice`         | boolean                     | Auto-buy `nice` when affordable (unlock-gated).   |
+| `autoMalloc`       | boolean                     | Auto-buy `malloc` when affordable (unlock-gated). |
+| `autoFree`         | boolean                     | Auto-`free()` the leak at `freeThreshold`.        |
+| `freeThreshold`    | number                      | Leak MB at which auto-free fires.                 |
+| `offlineCap`       | number                      | `nohup` level; +4 h offline cap per level.        |
+| `log`              | string[]                    | Terminal feed, newest first, capped at 40.        |
+| `playtime`         | number                      | Seconds simulated (includes offline).             |
+| `lastSave`         | number                      | Epoch ms of last save; drives offline progress.   |
+| `saveVersion`      | number                      | Save format version; drives `decode` migration.   |
 
 `newGame()` returns a fresh state with one child-tier array of zeros and the log seeded
 with a boot line. `BASE` holds the tunable constants shared across the file.
@@ -308,16 +308,16 @@ re-crosses `+2%`, so the `*0.9` penalty no longer compounds tick-over-tick.
 
 ## Upgrade costs
 
-| Upgrade           | Cost                        | Effect                                       |
-| ----------------- | --------------------------- | -------------------------------------------- |
-| `nice(+1)`        | `250 * 2.2^n`               | −3% sweep victims per level (floor 30%). Gated by `first-blood` (doc 010). |
-| `malloc(+1)`      | `150 * 1.6^((ramCap-8)/16)` | +16 MB ceiling.                              |
-| `gc(+1)`          | `400 * 3^n`                 | Faster automatic leak flushing. Gated by `grown-up` (doc 010). |
-| `cooling(+1)`     | `1000 * 2.5^n`              | Heat sheds faster and its equilibrium drops. |
-| `free()`          | 0                           | Zero the leak.                               |
-| `SIGTERM handler` | `500 * 2^shields`           | +1 charge; each absorbs one sweep victim.    |
-| `fork()`          | `1e6 * 10^forks * forkCostMult` | Prestige — see doc 004.                  |
-| `nohup(+1)`       | `1e7 * 5^n`                 | +4 h offline cap (doc 003).                  |
+| Upgrade           | Cost                            | Effect                                                                     |
+| ----------------- | ------------------------------- | -------------------------------------------------------------------------- |
+| `nice(+1)`        | `250 * 2.2^n`                   | −3% sweep victims per level (floor 30%). Gated by `first-blood` (doc 010). |
+| `malloc(+1)`      | `150 * 1.6^((ramCap-8)/16)`     | +16 MB ceiling.                                                            |
+| `gc(+1)`          | `400 * 3^n`                     | Faster automatic leak flushing. Gated by `grown-up` (doc 010).             |
+| `cooling(+1)`     | `1000 * 2.5^n`                  | Heat sheds faster and its equilibrium drops.                               |
+| `free()`          | 0                               | Zero the leak.                                                             |
+| `SIGTERM handler` | `500 * 2^shields`               | +1 charge; each absorbs one sweep victim.                                  |
+| `fork()`          | `1e6 * 10^forks * forkCostMult` | Prestige — see doc 004.                                                    |
+| `nohup(+1)`       | `1e7 * 5^n`                     | +4 h offline cap (doc 003).                                                |
 
 `malloc` is the real gate to the upper tiers: its `1.6` growth and `+16 MB` step let RAM
 scale fast enough to reach the cron daemon within a session, instead of leaving it
@@ -366,7 +366,7 @@ The bulk-spawn ability is also gated: `maxAffordable(s, i)` returns the largest 
 tier-`i` units buyable now (bounded by both `cycles` and `ramCapTotal`, solved in closed form
 with a rounding correction), and `spawnMax(s, i)` bulk-buys that many in one action. `spawnMax`
 refuses until `hasUnlock(s, "buy-max")` (the `bulk-buy` milestone); the persisted `buyMax`
-boolean is only the toggle *preference*, not the capability.
+boolean is only the toggle _preference_, not the capability.
 
 ## Invariants
 

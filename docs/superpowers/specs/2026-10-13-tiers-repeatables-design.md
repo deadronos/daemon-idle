@@ -15,15 +15,15 @@ unlocks late, and no repeatable sink for the huge cycle totals a long run produc
 #23 closes both gaps:
 
 - **Two new tiers** (`k8s pod`, `bare-metal node`) that extend the curve and are gated by
-  **milestones** (B1's unlock model), not affordability alone — so they are a *goal*, not
+  **milestones** (B1's unlock model), not affordability alone — so they are a _goal_, not
   just a bigger number.
 - **Four infinite repeatable upgrades** with **diminishing returns** (`perLevel * sqrt(level)`)
   so a long run has somewhere to keep spending without runaway growth.
 
 The repeatables mirror the perk tree's proven shape: a leaf data module, a pure logic
 module with a narrow input, a `MOD_KIND` fold, and integration into existing formulas at
-exactly four documented sites. They are the *earned, in-run* counterpart to perks (which
-are *meta, prestige*).
+exactly four documented sites. They are the _earned, in-run_ counterpart to perks (which
+are _meta, prestige_).
 
 ## Goals
 
@@ -55,10 +55,10 @@ are *meta, prestige*).
    0–4 carry no `unlock` and stay ungated. Numbers are tunable data; the curve stays steeper
    than tier 4's `1.22`.
 
-   | # | name            | baseCost | costGrowth | baseOutput | ram | priority | trait | unlock   |
-   | - | --------------- | -------- | ---------- | ---------- | --- | -------- | ----- | -------- |
-   | 5 | k8s pod         | 1e6      | 1.25       | 3e4        | 24  | 5        | none  | `tier:5` |
-   | 6 | bare-metal node | 1e8      | 1.3        | 5e5        | 32  | 6        | none  | `tier:6` |
+   | #   | name            | baseCost | costGrowth | baseOutput | ram | priority | trait | unlock   |
+   | --- | --------------- | -------- | ---------- | ---------- | --- | -------- | ----- | -------- |
+   | 5   | k8s pod         | 1e6      | 1.25       | 3e4        | 24  | 5        | none  | `tier:5` |
+   | 6   | bare-metal node | 1e8      | 1.3        | 5e5        | 32  | 6        | none  | `tier:6` |
 
 2. **One gate helper.** `tierUnlocked(s, i) = !def.unlock || hasUnlock(s, def.unlock)`.
    `canSpawn` returns `false` when locked; `maxAffordable` returns `0` when locked — so
@@ -188,9 +188,9 @@ export type RepeatableId = string;
 /** Aggregate of every owned repeatable, applied by the sim. One field per effect kind. */
 export interface RepeatableMods {
   incomeMult: Decimal; // multiply, >= 1
-  ramCapAdd: number;   // add, >= 0
+  ramCapAdd: number; // add, >= 0
   tierCostMult: number; // divide in (0, 1]
-  heatGenMult: number;  // divide in (0, 1]
+  heatGenMult: number; // divide in (0, 1]
 }
 
 export interface RepeatableDef {
@@ -198,13 +198,15 @@ export interface RepeatableDef {
   name: string;
   desc: string;
   baseCost: number;
-  costGrowth: number;          // per-level cost multiplier (exponential)
-  mod: keyof RepeatableMods;   // which aggregate field this row feeds
-  perLevel: number;            // magnitude per level (interpreted via REPEATABLE_MOD_KIND)
+  costGrowth: number; // per-level cost multiplier (exponential)
+  mod: keyof RepeatableMods; // which aggregate field this row feeds
+  perLevel: number; // magnitude per level (interpreted via REPEATABLE_MOD_KIND)
 }
 
-export const REPEATABLES: RepeatableDef[] = [ /* four rows above */ ];
-export function repeatableById(id: RepeatableId): RepeatableDef | undefined { /* find */ }
+export const REPEATABLES: RepeatableDef[] = [/* four rows above */];
+export function repeatableById(id: RepeatableId): RepeatableDef | undefined {
+  /* find */
+}
 ```
 
 ### Repeatables logic (`src/repeatables.ts`)
@@ -252,7 +254,7 @@ aggregate), exactly like `perkMods` over `PERKS`.
 
 ```ts
 /** Purchased level per repeatable id; a missing key means level 0. */
-repeatables: Record<RepeatableId, number>;   // newGame(): {}
+repeatables: Record<RepeatableId, number>; // newGame(): {}
 
 export function buyRepeatable(s: GameState, id: RepeatableId): boolean {
   if (!canBuyRepeatable(s, id)) return false;

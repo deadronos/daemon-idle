@@ -7,7 +7,7 @@
 ## Context
 
 Progression in `daemon` is purely **affordability-gated**: the only thing standing between a
-new player and any upgrade is `cycles`. There is nothing to *strive toward* except larger
+new player and any upgrade is `cycles`. There is nothing to _strive toward_ except larger
 numbers, and no way for content (automation, tiers) to arrive as a reward. The one existing
 escalation — sweep directives unlocking at `sweepsSurvived` thresholds
 ([doc 008](../../architecture/008-sweep-directives.md)) — is a hardcoded `unlockAt` field, not
@@ -57,13 +57,13 @@ shown in a panel, persisted, and evaluated in the sim. It is the foundation **#1
 
 ### File layout
 
-| File                     | Owns                                                                           |
-| ------------------------ | ------------------------------------------------------------------------------ |
-| `src/config/milestones.ts` | `MilestoneId`, `MetricId`, `MilestoneDef`, the `MILESTONES` roster, the `UNLOCK` id constants. No runtime imports (leaf). |
-| `src/milestones.ts`        | Pure logic: `METRICS`, `milestoneMet`, `milestoneProgress`, `evaluateMilestones`, `hasUnlock`. |
-| `src/sim.ts`               | The two persisted fields, the `tick` evaluation call, and the `nice`/`gc` gates. |
-| `src/persistence.ts`       | `sanitizeMilestones`, `sanitizeUnlocks`, the v3 migration step.                |
-| `src/main.ts` + `index.html` + `src/style.css` | The milestones panel and the locked-upgrade hints.        |
+| File                                           | Owns                                                                                                                      |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `src/config/milestones.ts`                     | `MilestoneId`, `MetricId`, `MilestoneDef`, the `MILESTONES` roster, the `UNLOCK` id constants. No runtime imports (leaf). |
+| `src/milestones.ts`                            | Pure logic: `METRICS`, `milestoneMet`, `milestoneProgress`, `evaluateMilestones`, `hasUnlock`.                            |
+| `src/sim.ts`                                   | The two persisted fields, the `tick` evaluation call, and the `nice`/`gc` gates.                                          |
+| `src/persistence.ts`                           | `sanitizeMilestones`, `sanitizeUnlocks`, the v3 migration step.                                                           |
+| `src/main.ts` + `index.html` + `src/style.css` | The milestones panel and the locked-upgrade hints.                                                                        |
 
 Runtime dependency direction is one-way: `config/milestones.ts` → (nothing);
 `milestones.ts` → `config/milestones.ts`; `sim.ts` → both; `persistence.ts` → all.
@@ -72,10 +72,10 @@ Runtime dependency direction is one-way: `config/milestones.ts` → (nothing);
 
 Two sticky records, both defaulted in `newGame()` (additive-safe):
 
-| Field            | Type                       | Meaning                                                       | Default |
-| ---------------- | -------------------------- | ------------------------------------------------------------- | ------- |
-| `milestonesDone` | `Record<MilestoneId, true>`| Milestones that have fired (sticky).                          | `{}`    |
-| `unlocks`        | `Record<string, true>`     | Unlock ids granted by rewards; features check `hasUnlock`.    | `{}`    |
+| Field            | Type                        | Meaning                                                    | Default |
+| ---------------- | --------------------------- | ---------------------------------------------------------- | ------- |
+| `milestonesDone` | `Record<MilestoneId, true>` | Milestones that have fired (sticky).                       | `{}`    |
+| `unlocks`        | `Record<string, true>`      | Unlock ids granted by rewards; features check `hasUnlock`. | `{}`    |
 
 `unlocks` is deliberately separate from `milestonesDone`: a feature checks
 `hasUnlock(s, "gc")` while any milestone (or a future source) may grant it. Firing is
@@ -86,19 +86,24 @@ Two sticky records, both defaulted in `newGame()` (additive-safe):
 ```ts
 export type MilestoneId = string;
 export type MetricId =
-  | "totalEarned" | "sweepsSurvived" | "forks" | "playtime"
-  | "children" | "ramCap" | "directivesSeen";
+  | "totalEarned"
+  | "sweepsSurvived"
+  | "forks"
+  | "playtime"
+  | "children"
+  | "ramCap"
+  | "directivesSeen";
 
 export interface MilestoneDef {
   id: MilestoneId;
   name: string;
   desc: string;
-  metric: MetricId;   // read from METRICS
-  at: number;         // met when metric(s) >= at
-  unlocks: string[];  // unlock ids granted on fire (usually one)
+  metric: MetricId; // read from METRICS
+  at: number; // met when metric(s) >= at
+  unlocks: string[]; // unlock ids granted on fire (usually one)
 }
 
-export const MILESTONES: MilestoneDef[] = [ /* starter set, below */ ];
+export const MILESTONES: MilestoneDef[] = [/* starter set, below */];
 
 /** Forward unlock ids: declared here, consumed by #18/#19/#23. */
 export const UNLOCK = {
@@ -115,10 +120,10 @@ export const UNLOCK = {
 
 The only `MILESTONES` entries in #17:
 
-| id            | name       | metric           | `at` | unlocks |
-| ------------- | ---------- | ---------------- | ---- | ------- |
-| `first-blood` | first blood| `sweepsSurvived` | 1    | `nice`  |
-| `grown-up`    | grown-up   | `ramCap`         | 24   | `gc`    |
+| id            | name        | metric           | `at` | unlocks |
+| ------------- | ----------- | ---------------- | ---- | ------- |
+| `first-blood` | first blood | `sweepsSurvived` | 1    | `nice`  |
+| `grown-up`    | grown-up    | `ramCap`         | 24   | `gc`    |
 
 - `first-blood` fires after the first cleanup sweep — teaches the sweep axis via `nice`.
 - `grown-up` fires after the first `malloc` (8 → 24 MB) — teaches RAM scaling via `gc`.
@@ -128,15 +133,15 @@ shields, and `fork()` stay available from the start (they never call `hasUnlock`
 
 ### Metrics and predicate (`src/milestones.ts`)
 
-| `MetricId`       | value                                                         |
-| ---------------- | ------------------------------------------------------------- |
+| `MetricId`       | value                                                                                 |
+| ---------------- | ------------------------------------------------------------------------------------- |
 | `totalEarned`    | `s.totalEarned.toNumber()` (may be `Infinity`; safe for `>=` and clamped in progress) |
-| `sweepsSurvived` | `s.sweepsSurvived`                                            |
-| `forks`          | `s.forks`                                                     |
-| `playtime`       | `s.playtime`                                                  |
-| `children`       | `Σ counts`                                                    |
-| `ramCap`         | `s.ramCap` (the purchased ceiling; see the rebase note for `ramCapTotal`) |
-| `directivesSeen` | `unlockedDirectives(s).length`                                |
+| `sweepsSurvived` | `s.sweepsSurvived`                                                                    |
+| `forks`          | `s.forks`                                                                             |
+| `playtime`       | `s.playtime`                                                                          |
+| `children`       | `Σ counts`                                                                            |
+| `ramCap`         | `s.ramCap` (the purchased ceiling; see the rebase note for `ramCapTotal`)             |
+| `directivesSeen` | `unlockedDirectives(s).length`                                                        |
 
 ```ts
 milestoneMet(s, d)      = METRICS[d.metric](s) >= d.at
@@ -166,6 +171,7 @@ export function hasUnlock(s: GameState, id: string): boolean {
 
 `tick` calls `evaluateMilestones(s)` **once per live tick, at the very end**, i.e. **after the
 `offline` early-return**. So:
+
 - a milestone met during live play fires the same tick;
 - a milestone met during an offline catch-up fires on the next live tick (no offline log
   spam, and `applyOffline` totals are unchanged);
@@ -191,8 +197,12 @@ ungated.
 - `SAVE_VERSION` bumps **2 → 3**, adding one staged step:
   ```ts
   const from = coerceFinite(parsed.saveVersion, 0);
-  if (from < 2) { /* legacy-rate division — unchanged */ }
-  if (from < 3) { /* additive: milestones/unlocks come from newGame() defaults; no-op */ }
+  if (from < 2) {
+    /* legacy-rate division — unchanged */
+  }
+  if (from < 3) {
+    /* additive: milestones/unlocks come from newGame() defaults; no-op */
+  }
   ```
 - `sanitizeMilestones(raw)` — keep only keys present in `MILESTONES` with a truthy value;
   non-object → `{}`. Rebuilt from the roster, so stale ids never survive.
@@ -202,6 +212,7 @@ ungated.
 
 **Rebase note.** This branch is based on a `main` where `SAVE_VERSION = 2` and the perk
 subsystem does not yet exist. If PR #48 (the perk tree) lands first:
+
 - #22 already occupies the `< 3` migration step, so #17's step becomes `< 4` and the constant
   becomes `4`;
 - the `ramCap` metric should read `ramCapTotal(s)` instead of `s.ramCap`, so the `oomguard`

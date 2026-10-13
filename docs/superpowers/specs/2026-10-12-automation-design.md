@@ -44,20 +44,20 @@ handled by earned automation").
 
 `MILESTONES` gains one row (the dependent issue authors its own row on #17's forward ids):
 
-| id | name | metric | `at` | unlocks |
-| --- | --- | --- | --- | --- |
-| `hands-off` | hands-off | `forks` | 1 | `auto-nice`, `auto-malloc`, `auto-free` |
+| id          | name      | metric  | `at` | unlocks                                 |
+| ----------- | --------- | ------- | ---- | --------------------------------------- |
+| `hands-off` | hands-off | `forks` | 1    | `auto-nice`, `auto-malloc`, `auto-free` |
 
 Automation arrives once you've prestiged. `UNLOCK` already declares all three ids (from #17).
 
 ### State and persistence
 
-| Field           | Type    | Meaning                                     | Default | On `doFork` |
-| --------------- | ------- | ------------------------------------------- | ------- | ----------- |
-| `autoNice`      | boolean | Auto-buy `nice` when affordable.            | `false` | preserved   |
-| `autoMalloc`    | boolean | Auto-buy `malloc` when affordable.          | `false` | preserved   |
-| `autoFree`      | boolean | Auto-`free()` the leak at the threshold.    | `false` | preserved   |
-| `freeThreshold` | number  | Leak MB at which auto-free fires.           | `16`    | preserved   |
+| Field           | Type    | Meaning                                  | Default | On `doFork` |
+| --------------- | ------- | ---------------------------------------- | ------- | ----------- |
+| `autoNice`      | boolean | Auto-buy `nice` when affordable.         | `false` | preserved   |
+| `autoMalloc`    | boolean | Auto-buy `malloc` when affordable.       | `false` | preserved   |
+| `autoFree`      | boolean | Auto-`free()` the leak at the threshold. | `false` | preserved   |
+| `freeThreshold` | number  | Leak MB at which auto-free fires.        | `16`    | preserved   |
 
 - The three booleans are **toggle preferences**; the capability is `hasUnlock(s, "auto-nice" |
   "auto-malloc" | "auto-free")`. A corrupt save with a toggle on but no unlock does nothing —
@@ -130,7 +130,7 @@ the buy-max toggle, must use a `[hidden]`-safe style so the attribute is not def
 
 ## Alternatives considered
 
-- **Fixed thresholds for all three** — rejected: the issue names a *configurable* level for
+- **Fixed thresholds for all three** — rejected: the issue names a _configurable_ level for
   auto-free.
 - **Full per-upgrade config** — rejected as YAGNI; one threshold is enough.
 - **Three (or two) milestones** — rejected in favor of one `hands-off` gate; independence lives

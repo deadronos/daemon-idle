@@ -6,7 +6,7 @@
 ## Context
 
 Progression in `daemon` was purely affordability-gated: the only gate was `cycles`. There was
-no way for content (automation, tiers) to *arrive as a reward*, and nothing for a player to
+no way for content (automation, tiers) to _arrive as a reward_, and nothing for a player to
 strive toward beyond larger numbers. The one escalation — sweep directives unlocking at
 `sweepsSurvived` thresholds — is a hardcoded `unlockAt` field, not a general goal system.
 

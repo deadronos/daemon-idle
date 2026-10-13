@@ -41,11 +41,13 @@ Failure modes the spec implies but a single task's tests might miss — each get
 ### Task 1: Milestone config + metrics/predicate core
 
 **Files:**
+
 - Create: `src/config/milestones.ts`
 - Create: `src/milestones.ts`
 - Test: `src/milestones.test.ts`
 
 **Interfaces:**
+
 - Consumes: `src/bignum.ts` (`Decimal` type).
 - Produces:
   - `type MilestoneId = string`
@@ -73,8 +75,15 @@ import {
 } from "./milestones";
 
 const base = (over: Partial<MilestoneInput> = {}): MilestoneInput => ({
-  totalEarned: d(0), sweepsSurvived: 0, forks: 0, playtime: 0, counts: [0, 0, 0, 0, 0],
-  ramCap: 8, milestonesDone: {}, unlocks: {}, ...over,
+  totalEarned: d(0),
+  sweepsSurvived: 0,
+  forks: 0,
+  playtime: 0,
+  counts: [0, 0, 0, 0, 0],
+  ramCap: 8,
+  milestonesDone: {},
+  unlocks: {},
+  ...over,
 });
 
 describe("milestone roster", () => {
@@ -93,7 +102,14 @@ describe("milestone roster", () => {
 
 describe("METRICS", () => {
   it("reads the expected value from state", () => {
-    const s = base({ totalEarned: d(1234), sweepsSurvived: 3, forks: 2, playtime: 9, counts: [1, 2, 0, 0, 0], ramCap: 24 });
+    const s = base({
+      totalEarned: d(1234),
+      sweepsSurvived: 3,
+      forks: 2,
+      playtime: 9,
+      counts: [1, 2, 0, 0, 0],
+      ramCap: 24,
+    });
     expect(METRICS.totalEarned(s)).toBe(1234);
     expect(METRICS.sweepsSurvived(s)).toBe(3);
     expect(METRICS.forks(s)).toBe(2);
@@ -116,7 +132,14 @@ describe("milestoneMet / milestoneProgress", () => {
     expect(milestoneProgress(base({ ramCap: 0 }), grown)).toBe(0);
     expect(milestoneProgress(base({ ramCap: 12 }), grown)).toBeCloseTo(0.5, 6);
     expect(milestoneProgress(base({ ramCap: 48 }), grown)).toBe(1);
-    const earn = { id: "x", name: "x", desc: "", metric: "totalEarned" as const, at: 100, unlocks: ["u"] };
+    const earn = {
+      id: "x",
+      name: "x",
+      desc: "",
+      metric: "totalEarned" as const,
+      at: 100,
+      unlocks: ["u"],
+    };
     const p = milestoneProgress(base({ totalEarned: d("1e1000") }), earn);
     expect(Number.isFinite(p)).toBe(true);
     expect(p).toBe(1);
@@ -131,10 +154,10 @@ Expected: FAIL — `Cannot find module './milestones'`.
 
 - [ ] **Step 3: Create `src/config/milestones.ts`** with the types, `MILESTONES` (the two starter entries below), `UNLOCK`, and `milestoneById`.
 
-| id            | name        | desc                                       | metric           | `at` | unlocks      |
-| ------------- | ----------- | ------------------------------------------ | ---------------- | ---- | ------------ |
-| `first-blood` | first blood | survive your first cleanup sweep           | `sweepsSurvived` | 1    | `nice`       |
-| `grown-up`    | grown-up    | raise the RAM ceiling to 24 MB             | `ramCap`         | 24   | `gc`         |
+| id            | name        | desc                             | metric           | `at` | unlocks |
+| ------------- | ----------- | -------------------------------- | ---------------- | ---- | ------- |
+| `first-blood` | first blood | survive your first cleanup sweep | `sweepsSurvived` | 1    | `nice`  |
+| `grown-up`    | grown-up    | raise the RAM ceiling to 24 MB   | `ramCap`         | 24   | `gc`    |
 
 `UNLOCK = { nice: "nice", gc: "gc", buyMax: "buy-max", autoNice: "auto-nice", autoMalloc: "auto-malloc", autoFree: "auto-free" } as const`.
 
@@ -157,10 +180,12 @@ git commit -m "feat(milestones): config roster and metric/predicate core (#17)"
 ### Task 2: `evaluateMilestones` (sticky fire) + `hasUnlock`
 
 **Files:**
+
 - Modify: `src/milestones.ts`
 - Test: `src/milestones.test.ts`
 
 **Interfaces:**
+
 - Consumes: `MILESTONES`, `MilestoneInput`, `milestoneMet` (Task 1).
 - Produces: `evaluateMilestones(s: MilestoneInput): MilestoneId[]`, `hasUnlock(s: Pick<MilestoneInput, "unlocks">, id: string): boolean`.
 
@@ -213,10 +238,12 @@ git commit -m "feat(milestones): sticky evaluation and unlock gate (#17)"
 ### Task 3: Sim state, `tick` wiring, and the `nice`/`gc` gates
 
 **Files:**
+
 - Modify: `src/sim.ts`
 - Test: `src/sim.test.ts`
 
 **Interfaces:**
+
 - Consumes: `evaluateMilestones`, `hasUnlock`, `UNLOCK`, `milestoneById`, `MilestoneId` (Tasks 1–2).
 - Produces: `GameState.milestonesDone`, `GameState.unlocks`, `SAVE_VERSION === 3`; `buyNice`/`buyGc` gated.
 
@@ -275,8 +302,8 @@ describe("milestone gating", () => {
   ```
 - Guards at the top of `buyNice`/`buyGc`:
   ```ts
-  if (!hasUnlock(s, UNLOCK.nice)) return false;   // buyNice
-  if (!hasUnlock(s, UNLOCK.gc)) return false;     // buyGc
+  if (!hasUnlock(s, UNLOCK.nice)) return false; // buyNice
+  if (!hasUnlock(s, UNLOCK.gc)) return false; // buyGc
   ```
 - **Update existing fixtures:** any existing test that calls `buyNice`/`buyGc` on a fresh game must first unlock it — set `s.unlocks = { nice: true }` / `{ gc: true }` (or drive the milestone). Grep `src/sim.test.ts` for `buyNice(`/`buyGc(`.
 
@@ -294,10 +321,12 @@ git commit -m "feat(sim): milestone state, tick wiring, and nice/gc gates (#17)"
 ### Task 4: Persistence — sanitizing and the staged v3 step
 
 **Files:**
+
 - Modify: `src/persistence.ts`
 - Test: `src/persistence.test.ts`
 
 **Interfaces:**
+
 - Consumes: `MILESTONES` (Task 1), fields (Task 3).
 - Produces: `sanitizeMilestones(raw): Record<string, true>`, `sanitizeUnlocks(raw): Record<string, true>`.
 
@@ -316,7 +345,9 @@ describe("milestone persistence", () => {
     expect(out.unlocks).toEqual({ nice: true, "auto-nice": true });
   });
   it("drops unknown milestone ids and garbage unlocks", () => {
-    expect(sanitizeMilestones({ "first-blood": true, ghost: true, "grown-up": false })).toEqual({ "first-blood": true });
+    expect(sanitizeMilestones({ "first-blood": true, ghost: true, "grown-up": false })).toEqual({
+      "first-blood": true,
+    });
     expect(sanitizeMilestones(null)).toEqual({});
     expect(sanitizeUnlocks({ nice: true, bad: false, 3: true })).toEqual({ nice: true });
     expect(sanitizeUnlocks([1, 2])).toEqual({});
@@ -353,9 +384,11 @@ git commit -m "feat(persistence): milestone/unlock fields, sanitizing, staged v3
 ### Task 5: Milestones panel + locked-upgrade hints
 
 **Files:**
+
 - Modify: `index.html`, `src/main.ts`, `src/style.css`
 
 **Interfaces:**
+
 - Consumes: `MILESTONES`, `milestoneProgress`, `hasUnlock`, `UNLOCK`, `perkMods` is irrelevant here.
 
 - [ ] **Step 1: Add the panel** to `index.html` inside `<main>` (after the upgrades panel, before legacy):
@@ -392,6 +425,7 @@ git commit -m "feat(ui): milestones panel and locked-upgrade hints (#17)"
 ### Task 6: Docs lockstep and ADR
 
 **Files:**
+
 - Create: `docs/architecture/010-milestones.md`, `docs/decisions/0009-milestone-gating-model.md`
 - Modify: `docs/architecture/001-simulation-core.md`, `002-render-system.md`, `003-persistence.md`, `docs/architecture/README.md`, `docs/decisions/README.md`
 

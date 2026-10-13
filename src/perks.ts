@@ -107,7 +107,8 @@ export function perkMods(s: PerkInput): PerkMods {
       mm[p.mod] = op === "multiply" ? cur.mul(1 + mag) : cur.add(mag);
     } else {
       const cur = mm[p.mod] as number;
-      mm[p.mod] = op === "multiply" ? cur * (1 + mag) : op === "divide" ? cur / (1 + mag) : cur + mag;
+      mm[p.mod] =
+        op === "multiply" ? cur * (1 + mag) : op === "divide" ? cur / (1 + mag) : cur + mag;
     }
   }
 

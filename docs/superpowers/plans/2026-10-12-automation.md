@@ -36,10 +36,12 @@ Failure modes the spec implies but a single task's test might miss — each gets
 ### Task 1: State fields + persistence (staged v5)
 
 **Files:**
+
 - Modify: `src/sim.ts`, `src/persistence.ts`
 - Test: `src/sim.test.ts`, `src/persistence.test.ts`
 
 **Interfaces:**
+
 - Produces: `GameState.autoNice | autoMalloc | autoFree: boolean`, `GameState.freeThreshold: number`; `SAVE_VERSION === 5`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -92,10 +94,12 @@ git commit -m "feat(persistence): automation toggle state and staged v5 step (#1
 ### Task 2: `runAutomation` + the `hands-off` milestone
 
 **Files:**
+
 - Modify: `src/sim.ts`, `src/config/milestones.ts`
 - Test: `src/sim.test.ts`
 
 **Interfaces:**
+
 - Consumes: `hasUnlock`, `UNLOCK.autoNice/autoMalloc/autoFree`, `mallocCost`, `niceCost`, `buyMalloc`, `buyNice`, `freeMemory`; the fields (Task 1).
 - Produces: `runAutomation(s: GameState): void`.
 
@@ -188,7 +192,8 @@ describe("runAutomation", () => {
   /** Earned automation: at most one action of each kind per tick, live ticks only. */
   export function runAutomation(s: GameState): void {
     if (hasUnlock(s, UNLOCK.autoFree) && s.autoFree && s.leak >= s.freeThreshold) freeMemory(s);
-    if (hasUnlock(s, UNLOCK.autoMalloc) && s.autoMalloc && s.cycles.gte(mallocCost(s))) buyMalloc(s);
+    if (hasUnlock(s, UNLOCK.autoMalloc) && s.autoMalloc && s.cycles.gte(mallocCost(s)))
+      buyMalloc(s);
     if (hasUnlock(s, UNLOCK.autoNice) && s.autoNice && s.cycles.gte(niceCost(s))) buyNice(s);
   }
   ```
@@ -208,9 +213,11 @@ git commit -m "feat(sim): earned automation and hands-off milestone (#19)"
 ### Task 3: Automation group in the upgrades panel
 
 **Files:**
+
 - Modify: `index.html`, `src/main.ts`, `src/style.css`
 
 **Interfaces:**
+
 - Consumes: `hasUnlock`, `UNLOCK.autoNice`, `UNLOCK.autoFree`.
 
 - [ ] **Step 1: Add the group** to `index.html` inside the upgrades section, before `#upgradePanel`:
@@ -248,6 +255,7 @@ git commit -m "feat(ui): automation group in the upgrades panel (#19)"
 ### Task 4: Docs lockstep
 
 **Files:**
+
 - Modify: `docs/architecture/001-simulation-core.md`, `002-render-system.md`, `003-persistence.md`, `010-milestones.md`
 
 - [ ] **Step 1: `001`** — add the four state rows; document `runAutomation` in the tick order (live-only, before the sweep, order free → malloc → nice, one action each per tick); note the `nice`/`malloc`/`free` interaction.

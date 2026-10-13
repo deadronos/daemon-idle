@@ -55,7 +55,9 @@ describe("canBuyPerk", () => {
     expect(canBuyPerk(base({ perks: { spin: 1 }, lineage: 5 }), "tailcall")).toBe(true);
     expect(canBuyPerk(base({ perks: { spin: 1 }, lineage: 99 }), "spin")).toBe(false); // maxLevel 1
     expect(canBuyPerk(base({ lineage: 99 }), "pipeline")).toBe(false); // sink still needs its prereq
-    expect(canBuyPerk(base({ perks: { spin: 1, prefetch: 1 }, lineage: 99 }), "pipeline")).toBe(true); // sink repeatable
+    expect(canBuyPerk(base({ perks: { spin: 1, prefetch: 1 }, lineage: 99 }), "pipeline")).toBe(
+      true,
+    ); // sink repeatable
     expect(canBuyPerk(base({ lineage: 99 }), "nope")).toBe(false); // unknown id
   });
 });
@@ -85,7 +87,10 @@ describe("perkMods", () => {
   });
 
   it("uses sqrt for sink levels and floors forkCostMult", () => {
-    expect(perkMods(base({ perks: { pipeline: 4 } })).incomeMult.toNumber()).toBeCloseTo(1 + 0.1 * 2, 6);
+    expect(perkMods(base({ perks: { pipeline: 4 } })).incomeMult.toNumber()).toBeCloseTo(
+      1 + 0.1 * 2,
+      6,
+    );
     const cheap = perkMods(base({ perks: { cheapfork: 1 } }));
     expect(cheap.forkCostMult).toBeLessThan(1);
     expect(cheap.forkCostMult).toBeGreaterThanOrEqual(0.25);

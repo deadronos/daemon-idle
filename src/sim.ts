@@ -690,7 +690,10 @@ export function maxAffordable(s: GameState, i: number): number {
   let k = 0;
   if (s.cycles.gt(0)) {
     // solve next * (growth^k - 1) / (growth - 1) <= cycles  ->  k
-    const ratio = s.cycles.mul(growth - 1).div(next).add(1);
+    const ratio = s.cycles
+      .mul(growth - 1)
+      .div(next)
+      .add(1);
     k = Math.floor(ratio.ln().div(Math.log(growth)).toNumber());
   }
   if (!Number.isFinite(k) || k < 0) k = 0;
@@ -707,7 +710,9 @@ export function spawnMax(s: GameState, i: number): boolean {
   const k = maxAffordable(s, i);
   if (k <= 0) return false;
   const growth = TIERS[i].costGrowth;
-  const total = tierCost(s, i).mul(d(growth).pow(k).sub(1)).div(growth - 1);
+  const total = tierCost(s, i)
+    .mul(d(growth).pow(k).sub(1))
+    .div(growth - 1);
   s.cycles = s.cycles.sub(total);
   s.counts[i] += k;
   log(s, `spawn x${k}: ${TIERS[i].name}`);

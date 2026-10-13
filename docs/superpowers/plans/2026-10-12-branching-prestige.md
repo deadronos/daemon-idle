@@ -37,11 +37,13 @@ Input classes / failure modes the spec implies but individual task tests might m
 ### Task 1: Perk config and cost/gating core
 
 **Files:**
+
 - Create: `src/config/perks.ts`
 - Create: `src/perks.ts`
 - Test: `src/perks.test.ts`
 
 **Interfaces:**
+
 - Consumes: `src/bignum.ts` (`d`, `Decimal`).
 - Produces:
   - `type PerkId = string`, `type Branch = "growth" | "survival" | "lineage"`
@@ -61,8 +63,13 @@ import { d } from "./bignum";
 import { PERKS, type PerkInput, perkById, perkCost, canBuyPerk } from "./perks";
 
 const base = (over: Partial<PerkInput> = {}): PerkInput => ({
-  perks: {}, lineage: 0, playtime: 0, runStartPlaytime: 0,
-  totalEarned: d(0), runBaseEarned: d(0), ...over,
+  perks: {},
+  lineage: 0,
+  playtime: 0,
+  runStartPlaytime: 0,
+  totalEarned: d(0),
+  runBaseEarned: d(0),
+  ...over,
 });
 
 describe("perk roster", () => {
@@ -92,12 +99,12 @@ describe("perkCost", () => {
 describe("canBuyPerk", () => {
   it("requires the prerequisite, the level cap, and affordable lineage", () => {
     expect(canBuyPerk(base({ lineage: 2 }), "spin")).toBe(true);
-    expect(canBuyPerk(base({ lineage: 1 }), "spin")).toBe(false);       // unaffordable
-    expect(canBuyPerk(base({ lineage: 5 }), "tailcall")).toBe(false);   // needs `spin`
+    expect(canBuyPerk(base({ lineage: 1 }), "spin")).toBe(false); // unaffordable
+    expect(canBuyPerk(base({ lineage: 5 }), "tailcall")).toBe(false); // needs `spin`
     expect(canBuyPerk(base({ perks: { spin: 1 }, lineage: 5 }), "tailcall")).toBe(true);
     expect(canBuyPerk(base({ perks: { spin: 1 }, lineage: 99 }), "spin")).toBe(false); // maxLevel 1
-    expect(canBuyPerk(base({ lineage: 99 }), "pipeline")).toBe(true);   // sink repeatable
-    expect(canBuyPerk(base({ lineage: 99 }), "nope")).toBe(false);      // unknown id
+    expect(canBuyPerk(base({ lineage: 99 }), "pipeline")).toBe(true); // sink repeatable
+    expect(canBuyPerk(base({ lineage: 99 }), "nope")).toBe(false); // unknown id
   });
 });
 ```
@@ -111,23 +118,23 @@ Expected: FAIL — `Cannot find module './perks'`.
 
 Roster (append in this order; `mod` is a `PerkMods` key):
 
-| id | branch | name | requires | maxLevel | costBase | costRate | mod | perLevel |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `spin` | growth | spin loop | — | 1 | 2 | 1 | `incomeMult` | 0.10 |
-| `tailcall` | growth | tail-call opt | `spin` | 1 | 5 | 1 | `tierCostMult` | 0.08 |
-| `prefetch` | growth | prefetcher | `spin` | 1 | 5 | 1 | `incomeMult` | 0.15 |
-| `vec` | growth | vectorized | `tailcall` | 1 | 10 | 1 | `rootMult` | 1.0 |
-| `pipeline` | growth | pipelining | `prefetch` | Infinity | 3 | 1.6 | `incomeMult` | 0.10 |
-| `renice` | survival | re-nice | — | 1 | 2 | 1 | `niceAdd` | 1 |
-| `oomguard` | survival | oom-guard | `renice` | 1 | 5 | 1 | `ramCapAdd` | 8 |
-| `heatsink` | survival | heatsink | `renice` | 1 | 5 | 1 | `heatGenMult` | 0.10 |
-| `sigblock` | survival | signal mask | `oomguard` | 1 | 10 | 1 | `startShieldsAdd` | 1 |
-| `reaper` | survival | lazy sweeper | `heatsink` | Infinity | 3 | 1.6 | `niceAdd` | 1 |
-| `echo` | lineage | lineage echo | — | 1 | 2 | 1 | `pointsMult` | 0.05 |
-| `cheapfork` | lineage | cheap fork | `echo` | 1 | 5 | 1 | `forkCostMult` | 0.10 |
-| `cache` | lineage | ancestor cache | `echo` | 1 | 5 | 1 | `legacyRateMult` | 0.05 |
-| `startup` | lineage | warm start | `cheapfork` | 1 | 10 | 1 | `startCycles` | 1000 |
-| `recursion` | lineage | recursion | `cache` | Infinity | 3 | 1.6 | `pointsMult` | 0.05 |
+| id          | branch   | name           | requires    | maxLevel | costBase | costRate | mod               | perLevel |
+| ----------- | -------- | -------------- | ----------- | -------- | -------- | -------- | ----------------- | -------- |
+| `spin`      | growth   | spin loop      | —           | 1        | 2        | 1        | `incomeMult`      | 0.10     |
+| `tailcall`  | growth   | tail-call opt  | `spin`      | 1        | 5        | 1        | `tierCostMult`    | 0.08     |
+| `prefetch`  | growth   | prefetcher     | `spin`      | 1        | 5        | 1        | `incomeMult`      | 0.15     |
+| `vec`       | growth   | vectorized     | `tailcall`  | 1        | 10       | 1        | `rootMult`        | 1.0      |
+| `pipeline`  | growth   | pipelining     | `prefetch`  | Infinity | 3        | 1.6      | `incomeMult`      | 0.10     |
+| `renice`    | survival | re-nice        | —           | 1        | 2        | 1        | `niceAdd`         | 1        |
+| `oomguard`  | survival | oom-guard      | `renice`    | 1        | 5        | 1        | `ramCapAdd`       | 8        |
+| `heatsink`  | survival | heatsink       | `renice`    | 1        | 5        | 1        | `heatGenMult`     | 0.10     |
+| `sigblock`  | survival | signal mask    | `oomguard`  | 1        | 10       | 1        | `startShieldsAdd` | 1        |
+| `reaper`    | survival | lazy sweeper   | `heatsink`  | Infinity | 3        | 1.6      | `niceAdd`         | 1        |
+| `echo`      | lineage  | lineage echo   | —           | 1        | 2        | 1        | `pointsMult`      | 0.05     |
+| `cheapfork` | lineage  | cheap fork     | `echo`      | 1        | 5        | 1        | `forkCostMult`    | 0.10     |
+| `cache`     | lineage  | ancestor cache | `echo`      | 1        | 5        | 1        | `legacyRateMult`  | 0.05     |
+| `startup`   | lineage  | warm start     | `cheapfork` | 1        | 10       | 1        | `startCycles`     | 1000     |
+| `recursion` | lineage  | recursion      | `cache`     | Infinity | 3        | 1.6      | `pointsMult`      | 0.05     |
 
 - [ ] **Step 4: Create `src/perks.ts`** with `PerkInput`, `perkCost`, `canBuyPerk`, and `export * from "./config/perks"` (so tests and `sim.ts` import from `./perks`). `perkCost` returns `Math.ceil(costBase * costRate ** level)` with `level = s.perks[id] ?? 0`, and `0` for an unknown id. `canBuyPerk` = `def !== undefined && level < def.maxLevel && (!def.requires || (s.perks[def.requires] ?? 0) >= 1) && s.lineage >= perkCost(s, id)`.
 
@@ -148,10 +155,12 @@ git commit -m "feat(perks): config roster, cost curve, and buy gating (#22)"
 ### Task 2: `perkMods` aggregate
 
 **Files:**
+
 - Modify: `src/perks.ts`
 - Test: `src/perks.test.ts`
 
 **Interfaces:**
+
 - Consumes: `PERKS`, `PerkMods`, `PerkInput`, `FORK_COST_FLOOR` (Task 1).
 - Produces: `perkMods(s: PerkInput): PerkMods`, `MOD_KIND: Record<keyof PerkMods, "add" | "multiply" | "divide">`.
 
@@ -185,7 +194,10 @@ describe("perkMods", () => {
   });
 
   it("uses sqrt for sink levels and floors forkCostMult", () => {
-    expect(perkMods(base({ perks: { pipeline: 4 } })).incomeMult.toNumber()).toBeCloseTo(1 + 0.1 * 2, 6);
+    expect(perkMods(base({ perks: { pipeline: 4 } })).incomeMult.toNumber()).toBeCloseTo(
+      1 + 0.1 * 2,
+      6,
+    );
     const cheap = perkMods(base({ perks: { cheapfork: 1 } }));
     expect(cheap.forkCostMult).toBeLessThan(1);
     expect(cheap.forkCostMult).toBeGreaterThanOrEqual(0.25);
@@ -224,10 +236,12 @@ git commit -m "feat(perks): fold purchased levels into PerkMods (#22)"
 ### Task 3: `pointsForFork`
 
 **Files:**
+
 - Modify: `src/perks.ts`
 - Test: `src/perks.test.ts`
 
 **Interfaces:**
+
 - Consumes: constants and `PerkInput` (Task 1).
 - Produces: `pointsForFork(s: PerkInput): number` (integer ≥ 0).
 
@@ -288,10 +302,12 @@ git commit -m "feat(perks): depth-based point award with anti-farm gating (#22)"
 ### Task 4: `GameState` fields, defaults, version bump, and `buyPerk`
 
 **Files:**
+
 - Modify: `src/sim.ts`
 - Test: `src/sim.test.ts`
 
 **Interfaces:**
+
 - Consumes: `PerkId`, `perkCost`, `canBuyPerk`, `perkById` (Tasks 1–2).
 - Produces: `GameState.lineage`, `GameState.perks`, `GameState.runBaseEarned`, `GameState.runStartPlaytime`; `SAVE_VERSION === 3`; `buyPerk(s: GameState, id: PerkId): boolean`.
 
@@ -361,10 +377,12 @@ git commit -m "feat(sim): lineage points state, save version 3, and buyPerk (#22
 ### Task 5: Apply `perkMods` across the economy formulas
 
 **Files:**
+
 - Modify: `src/sim.ts`
 - Test: `src/sim.test.ts`
 
 **Interfaces:**
+
 - Consumes: `perkMods` (Task 2), the new fields (Task 4).
 - Produces: exported `ramCapTotal(s: GameState): number`; perk-aware `cyclesPerSec`, `tierCost`, `heatEquilibrium`, `sweepVictimMult`, `forkCost`.
 
@@ -447,10 +465,12 @@ git commit -m "feat(sim): apply perkMods to income, cost, RAM, heat, sweep, fork
 ### Task 6: `doFork` awards points, snapshots the run, and applies start grants
 
 **Files:**
+
 - Modify: `src/sim.ts`
 - Test: `src/sim.test.ts`
 
 **Interfaces:**
+
 - Consumes: `pointsForFork` (Task 3), `perkMods` (Task 2), fields (Task 4).
 - Produces: perk-aware `doFork`.
 
@@ -460,10 +480,10 @@ git commit -m "feat(sim): apply perkMods to income, cost, RAM, heat, sweep, fork
 describe("doFork with perks", () => {
   it("awards points from the run, snapshots the run, and keeps perks + points", () => {
     const s = newGame();
-    s.perks = { echo: 1 };                    // pointsMult = 1 + 0.05*sqrt(1) = 1.05
-    s.lineage = 7;                            // must survive the fork
-    s.totalEarned = d(1e6);                   // == forkCost(0), so canFork is true
-    s.playtime = 600;                         // runSeconds 600 -> base 5; 5*1.05 -> 5
+    s.perks = { echo: 1 }; // pointsMult = 1 + 0.05*sqrt(1) = 1.05
+    s.lineage = 7; // must survive the fork
+    s.totalEarned = d(1e6); // == forkCost(0), so canFork is true
+    s.playtime = 600; // runSeconds 600 -> base 5; 5*1.05 -> 5
     expect(doFork(s)).toBe(true);
     expect(s.lineage).toBe(12);
     expect(s.perks.echo).toBe(1);
@@ -519,10 +539,12 @@ git commit -m "feat(sim): doFork awards lineage points and applies start grants 
 ### Task 7: Persistence — new fields, sanitizing, and staged migration
 
 **Files:**
+
 - Modify: `src/persistence.ts`
 - Test: `src/persistence.test.ts`
 
 **Interfaces:**
+
 - Consumes: `PERKS` (Task 1), `SAVE_VERSION`/fields (Task 4).
 - Produces: `sanitizePerks(raw: unknown): Record<string, number>`.
 
@@ -543,7 +565,10 @@ describe("perk persistence", () => {
     expect(out.runStartPlaytime).toBe(123);
   });
   it("sanitizes corrupt perks without throwing", () => {
-    expect(sanitizePerks({ spin: 99, pipeline: 3.7, ghost: 5, tailcall: "x" })).toEqual({ spin: 1, pipeline: 3 });
+    expect(sanitizePerks({ spin: 99, pipeline: 3.7, ghost: 5, tailcall: "x" })).toEqual({
+      spin: 1,
+      pipeline: 3,
+    });
     expect(sanitizePerks(null)).toEqual({});
     expect(sanitizePerks([1, 2])).toEqual({});
   });
@@ -551,11 +576,22 @@ describe("perk persistence", () => {
     const s = newGame();
     s.saveVersion = 2;
     s.legacy = [{ name: "legacy-1", rate: d(10), crashed: false, respawn: 0 }];
-    const out = decode(JSON.stringify({ ...s, cycles: "0", totalEarned: "0", legacy: [{ name: "legacy-1", rate: "10", crashed: false, respawn: 0 }] }));
+    const out = decode(
+      JSON.stringify({
+        ...s,
+        cycles: "0",
+        totalEarned: "0",
+        legacy: [{ name: "legacy-1", rate: "10", crashed: false, respawn: 0 }],
+      }),
+    );
     expect(out.legacy[0].rate.toNumber()).toBe(10);
   });
   it("still divides baked lineage out of a pre-versioning save", () => {
-    const raw = JSON.stringify({ cycles: "0", totalEarned: "0", legacy: [{ name: "legacy-1", rate: "11", crashed: false, respawn: 0 }] });
+    const raw = JSON.stringify({
+      cycles: "0",
+      totalEarned: "0",
+      legacy: [{ name: "legacy-1", rate: "11", crashed: false, respawn: 0 }],
+    });
     expect(decode(raw).legacy[0].rate.toNumber()).toBeCloseTo(10, 6); // /1.1
   });
 });
@@ -592,9 +628,11 @@ git commit -m "feat(persistence): lineage/perk fields, sanitizing, staged migrat
 ### Task 8: Perk-tree UI panel
 
 **Files:**
+
 - Modify: `index.html`, `src/main.ts`, `src/style.css`
 
 **Interfaces:**
+
 - Consumes: `PERKS`, `perkCost`, `canBuyPerk`, `pointsForFork`, `buyPerk`, `ramCapTotal`.
 
 - [ ] **Step 1: Add the panel container** to `index.html` inside `<main>`, after the "sacrifice order" section:
@@ -602,7 +640,9 @@ git commit -m "feat(persistence): lineage/perk fields, sanitizing, staged migrat
 ```html
 <section class="panel" id="perkSection" hidden>
   <h2>prestige <span id="lineageText">0 pt</span></h2>
-  <p class="hint">spend lineage on permanent perks; next fork grants ≈ <span id="lineageNext">0</span> pt</p>
+  <p class="hint">
+    spend lineage on permanent perks; next fork grants ≈ <span id="lineageNext">0</span> pt
+  </p>
   <div id="perkPanel" class="perks"></div>
 </section>
 ```
@@ -631,6 +671,7 @@ git commit -m "feat(ui): prestige perk-tree panel (#22)"
 ### Task 9: Docs lockstep and ADR
 
 **Files:**
+
 - Create: `docs/architecture/009-prestige-perk-tree.md`
 - Create: `docs/decisions/0008-branching-prestige-perk-tree.md`
 - Modify: `docs/architecture/004-prestige-and-legacy.md`, `001-simulation-core.md`, `002-render-system.md`, `003-persistence.md`, `docs/architecture/README.md`

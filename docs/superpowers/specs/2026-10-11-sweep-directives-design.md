@@ -13,8 +13,8 @@ one flat rule: `severity = min(0.35, 0.15 + sweepsSurvived * 0.002)`, a budget o
 identical in shape, and the "strategic meat" promised in `IDEA.md` — two knobs, a
 readable recurring threat — never materializes.
 
-`IDEA.md` is explicit about the intended feel: *"Lean deterministic with a visible
-countdown — readable tension beats surprise."*
+`IDEA.md` is explicit about the intended feel: _"Lean deterministic with a visible
+countdown — readable tension beats surprise."_
 
 Phase A's thesis is that the sweep should become the deep, adaptive core of the game.
 This design covers the first slice: the `SweepDirective` model and a roster of named
@@ -46,12 +46,7 @@ sweep types. It is the contract that #9 (player-set priority), #10 (SIGTERM shie
 ### Data model (`src/sim.ts`)
 
 ```ts
-export type DirectiveId =
-  | "standard"
-  | "sigkill"
-  | "scavenger"
-  | "group-kill"
-  | "backpressure";
+export type DirectiveId = "standard" | "sigkill" | "scavenger" | "group-kill" | "backpressure";
 
 export interface SweepDirective {
   id: DirectiveId;
@@ -77,13 +72,13 @@ Base severity is unchanged: `severity = min(0.35, 0.15 + sweepsSurvived * 0.002)
 `sweepVictimMult = max(0.3, 1 - nice * 0.03)` is unchanged and applies to every directive
 except those with `ignoresNice`.
 
-| id             | `unlockAt` | budget              | victim selection                        | `nice` applies | `pre`         |
-| -------------- | ---------- | ------------------- | --------------------------------------- | -------------- | ------------- |
-| `standard`     | 0          | `severity`          | lowest `priority` first                 | yes            | —             |
-| `sigkill`      | 3          | `severity`          | lowest `priority` first                 | **no**         | —             |
-| `scavenger`    | 6          | `0.6 * severity`    | highest `baseOutput` first              | yes            | —             |
-| `group-kill`   | 10         | `severity`          | densest tier first, then next-densest   | yes            | —             |
-| `backpressure` | 15         | `0.5 * severity`    | lowest `priority` first                 | yes            | zero the leak |
+| id             | `unlockAt` | budget           | victim selection                      | `nice` applies | `pre`         |
+| -------------- | ---------- | ---------------- | ------------------------------------- | -------------- | ------------- |
+| `standard`     | 0          | `severity`       | lowest `priority` first               | yes            | —             |
+| `sigkill`      | 3          | `severity`       | lowest `priority` first               | **no**         | —             |
+| `scavenger`    | 6          | `0.6 * severity` | highest `baseOutput` first            | yes            | —             |
+| `group-kill`   | 10         | `severity`       | densest tier first, then next-densest | yes            | —             |
+| `backpressure` | 15         | `0.5 * severity` | lowest `priority` first               | yes            | zero the leak |
 
 - All budgets are `max(1, round(totalChildren * <fraction> * (ignoresNice ? 1 : sweepVictimMult)))`,
   matching today's rounding. When `totalChildren == 0`, `runSweep` logs "nothing to reap"
@@ -113,9 +108,9 @@ except those with `ignoresNice`.
 
 Two fields are added to `GameState`:
 
-| Field           | Type          | Meaning                                        |
-| --------------- | ------------- | ---------------------------------------------- |
-| `rngState`      | number        | Int32 PRNG cursor.                             |
+| Field           | Type          | Meaning                                         |
+| --------------- | ------------- | ----------------------------------------------- |
+| `rngState`      | number        | Int32 PRNG cursor.                              |
 | `nextDirective` | `DirectiveId` | The directive that will fire at the next sweep. |
 
 Both are additive-safe: `encode` spreads all fields, and `decode` merges the parsed save

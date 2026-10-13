@@ -55,7 +55,14 @@ describe("METRICS reads a bare MetricInput (refactor)", () => {
 });
 
 describe("achievementMet / achievementProgress", () => {
-  const def: AchievementDef = { id: "x", name: "x", desc: "", metric: "ramCap", at: 64, mult: 0.02 };
+  const def: AchievementDef = {
+    id: "x",
+    name: "x",
+    desc: "",
+    metric: "ramCap",
+    at: 64,
+    mult: 0.02,
+  };
   it("is met at and above the threshold, not below", () => {
     expect(achievementMet(base({ ramCap: 63 }), def)).toBe(false);
     expect(achievementMet(base({ ramCap: 64 }), def)).toBe(true);
@@ -65,7 +72,14 @@ describe("achievementMet / achievementProgress", () => {
     expect(achievementProgress(base({ ramCap: 128 }), def)).toBe(1);
   });
   it("stays finite and clamped for a huge totalEarned (Decimal overflow)", () => {
-    const huge: AchievementDef = { id: "h", name: "h", desc: "", metric: "totalEarned", at: 1e9, mult: 0.02 };
+    const huge: AchievementDef = {
+      id: "h",
+      name: "h",
+      desc: "",
+      metric: "totalEarned",
+      at: 1e9,
+      mult: 0.02,
+    };
     expect(achievementProgress(base({ totalEarned: d("1e400") }), huge)).toBe(1);
   });
 });

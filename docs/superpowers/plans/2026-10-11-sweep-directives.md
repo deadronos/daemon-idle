@@ -34,10 +34,12 @@ Input classes / failure modes the spec implies but no unit test naturally pins (
 ### Task 1: `SweepDirective` model and the `standard` directive
 
 **Files:**
+
 - Modify: `src/sim.ts`
 - Test: `src/sim.test.ts`
 
 **Interfaces:**
+
 - Consumes: existing `TIERS`, `sweepsSurvived`, `nice`, `sweepVictimMult`, `log`.
 - Produces:
   - `export type DirectiveId = "standard" | "sigkill" | "scavenger" | "group-kill" | "backpressure"`
@@ -88,13 +90,20 @@ In `src/sim.ts`, add the `DirectiveId` union, the `SweepDirective` interface, `b
 ```ts
 // runSweep
 const total = s.counts.reduce((a, b) => a + b, 0);
-if (total === 0) { log(s, "cleanup sweep: nothing to reap"); s.sweepsSurvived++; return; }
+if (total === 0) {
+  log(s, "cleanup sweep: nothing to reap");
+  s.sweepsSurvived++;
+  return;
+}
 const d = directiveById.get("standard")!; // Task 3 replaces this with s.nextDirective
 d.pre?.(s);
 const victims = d.victims(s, d.budget(s, total));
 for (const i of victims) s.counts[i]--;
 s.sweepsSurvived++;
-log(s, `cleanup sweep [${d.name}]: reaped ${victims.length} process${victims.length === 1 ? "" : "es"}`);
+log(
+  s,
+  `cleanup sweep [${d.name}]: reaped ${victims.length} process${victims.length === 1 ? "" : "es"}`,
+);
 ```
 
 `standard.budget` = `sweepBudget(s, total, 1, false)`; `standard.victims` = `reapInOrder(s, ascendingPriorityOrder, budget)`; `ascendingPriorityOrder` sorts `TIERS` indices by `priority` ascending. `reapInOrder` walks the order, taking `min(count, remaining)` from each tier and pushing that tier index, never mutating `s`.
@@ -116,9 +125,11 @@ git commit -m "feat: introduce SweepDirective model with standard directive (#8)
 ### Task 2: The rival directives
 
 **Files:**
+
 - Modify: `src/sim.ts`, `src/sim.test.ts`
 
 **Interfaces:**
+
 - Consumes: `SweepDirective`, `reapInOrder`, `sweepBudget`, `directiveById` (Task 1).
 - Produces: `sigkill`, `scavenger`, `group-kill`, `backpressure` appended to `DIRECTIVES` (and thus to `directiveById`). `runSweep` is unchanged; these are exercised directly until Task 3 wires them to the draw.
 
@@ -127,8 +138,11 @@ git commit -m "feat: introduce SweepDirective model with standard directive (#8)
 ```ts
 describe("sweep directives", () => {
   it("sigkill ignores nice entirely", () => {
-    const noNice = newGame(); noNice.counts = [100, 0, 0, 0, 0];
-    const nice = newGame(); nice.counts = [100, 0, 0, 0, 0]; nice.nice = 20; // well past the floor
+    const noNice = newGame();
+    noNice.counts = [100, 0, 0, 0, 0];
+    const nice = newGame();
+    nice.counts = [100, 0, 0, 0, 0];
+    nice.nice = 20; // well past the floor
     const d = directiveById.get("sigkill")!;
     expect(d.budget(noNice, 100)).toBe(15);
     expect(d.budget(nice, 100)).toBe(d.budget(noNice, 100)); // nice does not reduce it
@@ -168,6 +182,7 @@ Expected: FAIL — `directiveById.get("sigkill")` (and the others) is `undefined
 - [ ] **Step 3: Implement the four directives**
 
 Append to `DIRECTIVES`, reusing `reapInOrder` and `sweepBudget`:
+
 - `sigkill`: `ignoresNice: true`, `unlockAt: 3`, budget `sweepBudget(s, total, 1, true)`, victims ascending priority.
 - `scavenger`: `unlockAt: 6`, budget `sweepBudget(s, total, 0.6, false)`, victims in descending-`baseOutput` order.
 - `group-kill`: `unlockAt: 10`, budget `sweepBudget(s, total, 1, false)`, victims in descending-`count` order.
@@ -190,9 +205,11 @@ git commit -m "feat: add sigkill, scavenger, group-kill, backpressure directives
 ### Task 3: Seeded draw, escalation pool, and `nextDirective`
 
 **Files:**
+
 - Modify: `src/sim.ts`, `src/sim.test.ts`
 
 **Interfaces:**
+
 - Consumes: `DIRECTIVES`, `directiveById` (Tasks 1–2); `sweepsSurvived`.
 - Produces: `GameState.rngState: number`, `GameState.nextDirective: DirectiveId`; `export function nextRng(s): number`; `export function unlockedDirectives(s): SweepDirective[]`; `export function pickNextDirective(s): DirectiveId`.
 
@@ -217,8 +234,12 @@ describe("directive scheduling", () => {
   });
 
   it("is deterministic for a fixed rngState", () => {
-    const a = newGame(); a.rngState = 12345; a.sweepsSurvived = 20;
-    const b = newGame(); b.rngState = 12345; b.sweepsSurvived = 20;
+    const a = newGame();
+    a.rngState = 12345;
+    a.sweepsSurvived = 20;
+    const b = newGame();
+    b.rngState = 12345;
+    b.sweepsSurvived = 20;
     expect(pickNextDirective(a)).toBe(pickNextDirective(b));
   });
 
@@ -233,24 +254,33 @@ describe("directive scheduling", () => {
   it("advances the next directive after a sweep", () => {
     const s = newGame();
     s.sweepsSurvived = 20;
-    s.counts = [10, 0, 0, 0, 0]; s.ramCap = 1000; s.sweepTimer = 0.001;
+    s.counts = [10, 0, 0, 0, 0];
+    s.ramCap = 1000;
+    s.sweepTimer = 0.001;
     tick(s, 0.01);
     expect(s.sweepsSurvived).toBe(21);
-    expect(["standard", "sigkill", "scavenger", "group-kill", "backpressure"]).toContain(s.nextDirective);
+    expect(["standard", "sigkill", "scavenger", "group-kill", "backpressure"]).toContain(
+      s.nextDirective,
+    );
   });
 
   it("still advances with no children to reap", () => {
     const s = newGame();
-    s.sweepsSurvived = 20; s.sweepTimer = 0.001;
+    s.sweepsSurvived = 20;
+    s.sweepTimer = 0.001;
     tick(s, 0.01);
     expect(s.sweepsSurvived).toBe(21);
-    expect(["standard", "sigkill", "scavenger", "group-kill", "backpressure"]).toContain(s.nextDirective);
+    expect(["standard", "sigkill", "scavenger", "group-kill", "backpressure"]).toContain(
+      s.nextDirective,
+    );
   });
 
   it("falls back to standard for an unknown loaded directive id", () => {
     const s = newGame();
     (s as unknown as { nextDirective: string }).nextDirective = "bogus";
-    s.counts = [10, 0, 0, 0, 0]; s.ramCap = 1000; s.sweepTimer = 0.001;
+    s.counts = [10, 0, 0, 0, 0];
+    s.ramCap = 1000;
+    s.sweepTimer = 0.001;
     expect(() => tick(s, 0.01)).not.toThrow();
   });
 });
@@ -279,7 +309,10 @@ if (total === 0) {
   d.pre?.(s);
   const victims = d.victims(s, d.budget(s, total));
   for (const i of victims) s.counts[i]--;
-  log(s, `cleanup sweep [${d.name}]: reaped ${victims.length} process${victims.length === 1 ? "" : "es"}`);
+  log(
+    s,
+    `cleanup sweep [${d.name}]: reaped ${victims.length} process${victims.length === 1 ? "" : "es"}`,
+  );
 }
 s.sweepsSurvived++;
 s.nextDirective = pickNextDirective(s);
@@ -302,9 +335,11 @@ git commit -m "feat: seeded escalating sweep directive selection (#8)"
 ### Task 4: Surface the directive on the countdown
 
 **Files:**
+
 - Modify: `src/main.ts`, `docs/architecture/002-render-system.md`
 
 **Interfaces:**
+
 - Consumes: `directiveById`, `GameState.nextDirective` (Tasks 1–3).
 
 - [ ] **Step 1: Implement the label**
@@ -337,6 +372,7 @@ git commit -m "feat: show the incoming sweep directive on the countdown (#8)"
 ### Task 5: Update the simulation-core doc
 
 **Files:**
+
 - Modify: `docs/architecture/001-simulation-core.md`
 
 - [ ] **Step 1: Rewrite the sweep section and state table**
