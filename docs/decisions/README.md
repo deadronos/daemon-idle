@@ -43,6 +43,7 @@ the alternatives you rejected. Record the trade-off, not a story.
 | [`0010`](./0010-offline-fidelity.md)                  | Offline fidelity and the upgradable cap  | Accepted |
 | [`0011`](./0011-decouple-auto-respawn-from-gc.md)     | Decouple legacy auto-respawn from `gc`   | Accepted |
 | [`0012`](./0012-achievements-multiplier-hook.md)      | Achievements pay through one multiplier hook | Accepted |
+| [`0013`](./0013-diminishing-return-repeatables.md)    | Diminishing-return repeatable upgrades   | Accepted |
 
 ## Naming
 

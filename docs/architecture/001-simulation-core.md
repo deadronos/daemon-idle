@@ -22,6 +22,7 @@ cosmetics, which use `Math.random`).
 | `forks`          | number         | Prestige count; drives the lineage multiplier.  |
 | `lineage`        | number         | Unspent lineage points for the perk tree.        |
 | `perks`          | Record<PerkId, number> | Purchased perk level per node id (absent = 0). |
+| `repeatables`    | Record<string, number> | Purchased repeatable level per id (absent = 0). |
 | `runBaseEarned`  | Decimal        | `totalEarned` at the last fork (depth base).     |
 | `runStartPlaytime` | number       | `playtime` at the last fork (depth base).        |
 | `sweepTimer`     | number         | Seconds until the next cleanup sweep.           |
@@ -59,36 +60,54 @@ See [ADR 0003](../decisions/0003-bignum-break-eternity.md).
 
 ## Tiers
 
-Five child types, defined in the `TIERS` array. Each tier has its own `costGrowth`: the
+Seven child types, defined in the `TIERS` array. Each tier has its own `costGrowth`: the
 cost of the next unit multiplies by that factor per purchase, so tiers have distinct cost
 curves. `baseOutput` is cycles/s per unit at lineage ×1 and `survivalMult` ×1; `priority` is
 only the source of the **default** sacrifice order (`DEFAULT_SACRIFICE_ORDER`, see below) —
 the live sweep order is the player-controlled `sacrificeOrder`. `trait` tags a tier's
 identity; `"leak-immune"` tiers (currently only the noop loop) consume RAM but never feed the
-leak.
+leak. `unlock` is an optional milestone unlock id: a tier with one is **locked** until that
+milestone fires (see [Tier gating](#tier-gating) and doc [010](./010-milestones.md)).
 
-| #   | name          | baseCost | costGrowth | baseOutput | ram | priority | trait       |
-| --- | ------------- | -------- | ---------- | ---------- | --- | -------- | ----------- |
-| 0   | noop loop     | 10       | 1.12       | 0.1        | 1   | 0        | leak-immune |
-| 1   | fork()        | 100      | 1.15       | 1          | 2   | 1        | none        |
-| 2   | worker thread | 1,000    | 1.15       | 12         | 4   | 2        | none        |
-| 3   | microservice  | 10,000   | 1.18       | 150        | 8   | 3        | none        |
-| 4   | cron daemon   | 100,000  | 1.22       | 2,000      | 16  | 4        | none        |
+| #   | name            | baseCost | costGrowth | baseOutput | ram | priority | trait       | unlock   |
+| --- | --------------- | -------- | ---------- | ---------- | --- | -------- | ----------- | -------- |
+| 0   | noop loop       | 10       | 1.12       | 0.1        | 1   | 0        | leak-immune | —        |
+| 1   | fork()          | 100      | 1.15       | 1          | 2   | 1        | none        | —        |
+| 2   | worker thread   | 1,000    | 1.15       | 12         | 4   | 2        | none        | —        |
+| 3   | microservice    | 10,000   | 1.18       | 150        | 8   | 3        | none        | —        |
+| 4   | cron daemon     | 100,000  | 1.22       | 2,000      | 16  | 4        | none        | —        |
+| 5   | k8s pod         | 1e6      | 1.25       | 30,000     | 24  | 5        | none        | `tier:5` |
+| 6   | bare-metal node | 1e8      | 1.3        | 500,000    | 32  | 6        | none        | `tier:6` |
 
-Cost of the next unit of tier `i`: `baseCost[i] * costGrowth[i]^counts[i]`.
+Cost of the next unit of tier `i`:
+`baseCost[i] * costGrowth[i]^counts[i] * perkTierCostMult * repeatableTierCostMult`.
 
-`baseOutput` is chosen so **payback does not worsen with tier**: `baseCost / baseOutput` is
-100 / 100 / 83.3 / 66.7 / 50 s for tiers 0–4 — flat-to-improving, so cheap spam no longer
-wins. (Output is linear in count; the exponential growth comes from the global
-`survivalMult`, below.)
+`baseOutput` is chosen so **payback does not worsen with tier** for the **ungated** curve:
+`baseCost / baseOutput` is 100 / 100 / 83.3 / 66.7 / 50 s for tiers 0–4 — flat-to-improving,
+so cheap spam no longer wins. (Output is linear in count; the exponential growth comes from
+the global `survivalMult`, below.) Tiers 5–6 are milestone-gated **goals**, not spam: they
+trade payback (33.3 s and 200 s) for raw output and RAM density, and each is locked until its
+milestone fires.
+
+### Tier gating
+
+`tierUnlocked(s, i) = !TIERS[i].unlock || hasUnlock(s, TIERS[i].unlock)` (false for an
+out-of-range index). The gate is a **sim rule**, so it cannot be bypassed by the UI:
+
+- `canSpawn(s, i)` returns `false` for a locked tier.
+- `maxAffordable(s, i)` returns `0` for a locked tier, so `spawnMax` (buy-max) cannot
+  bulk-buy a locked tier either.
+
+Tiers 0–4 carry no `unlock` and are always available; tiers 5–6 are granted by the `tier-5`
+and `tier-6` milestones (doc [010](./010-milestones.md)).
 
 ## Income
 
 ```
 survivalMult     = (1 + SURVIVAL_BONUS)^sweepsSurvived     // SURVIVAL_BONUS = 0.05
-baseCyclesPerSec = childOutput * survivalMult + BASE.rootOutput        // perk- AND achievement-free (legacy snapshot)
-perkedBase       = childOutput * survivalMult * incomeMult
-                 + BASE.rootOutput * incomeMult * rootMult             // growth perks
+baseCyclesPerSec = childOutput * survivalMult + BASE.rootOutput        // perk-, achievement-, AND repeatable-free (legacy snapshot)
+perkedBase       = childOutput * survivalMult * incomeMult * repeatableIncomeMult
+                 + BASE.rootOutput * incomeMult * rootMult * repeatableIncomeMult  // growth perks + repeatables
 achievementMult  = Π (1 + mult)  over earned achievements
 rawCyclesPerSec  = perkedBase * lineageMult * achievementMult
 cyclesPerSec     = rawCyclesPerSec * heatMult
@@ -108,10 +127,10 @@ heatMult         = 1 - MAX_THROTTLE * clamp((heat - HEAT_THROTTLE_AT) / (100 - H
 - The root is **outside** `survivalMult`: an empty board still earns exactly 1 cycle/s, so
   the bootstrap invariant holds no matter how many sweeps have been survived.
 - `baseCyclesPerSec = childOutput * survivalMult + BASE.rootOutput` — income before perks,
-  lineage, achievements, and heat. Perk- and achievement-free on purpose: legacy daemon rates
-  snapshot this (see [doc 004](./004-prestige-and-legacy.md)), so applying either here too
-  would double-count it; the snapshot therefore inherits the compounded `survivalMult` at fork
-  time.
+  lineage, achievements, repeatables, and heat. Perk-, achievement-, and repeatable-free on
+  purpose: legacy daemon rates snapshot this (see [doc 004](./004-prestige-and-legacy.md)), so
+  applying any of them here too would double-count it; the snapshot therefore inherits the
+  compounded `survivalMult` at fork time.
 - `lineageMult = 1 + forks * 0.1` multiplies _all_ income (children, root, legacy).
 - **Achievements** (see [doc 011](./011-achievements.md)) fold into `achievementMult`, the
   product of `(1 + mult)` over earned roster rows. It multiplies `rawCyclesPerSec` alongside
@@ -122,6 +141,11 @@ heatMult         = 1 - MAX_THROTTLE * clamp((heat - HEAT_THROTTLE_AT) / (100 - H
   `incomeMult` scales children and root, `rootMult` the root term only. They are applied in
   `perkedBase`, **not** in `baseCyclesPerSec`, so the legacy-rate snapshot stays perk-free;
   legacy daemons receive only the `legacyRateMult` perk (doc 004).
+- **Repeatable upgrades** (see [doc 012](./012-repeatables.md)) apply their `incomeMult` in
+  `perkedBase` alongside the perk income multiplier — children and root both. Like perks, they
+  are **excluded** from `baseCyclesPerSec` so the legacy snapshot stays clean. They are the
+  earned, in-run counterpart to perks: bought with `cycles` via `buyRepeatable`, and reset on
+  `fork()` with the working set.
 - `heatMult` throttles children + root income only, and only above `HEAT_THROTTLE_AT = 60`
   (see [Heat](#heat)). Legacy daemons are entirely unaffected by heat: their per-tick income
   is not part of `cyclesPerSec`, and their fork-time rate is seeded from the unthrottled,
@@ -133,14 +157,16 @@ Tiers reinforce each other, so the best board is a _composition_, not a stack of
 priciest tier. The links live in the data-driven `SYNERGY` table (`src/sim.ts`) and are
 applied per-tier by `synergyMult`:
 
-| boosted tier  | boosted by   | per-unit boost |
-| ------------- | ------------ | -------------- |
-| worker thread | microservice | +2% output     |
-| microservice  | cron daemon  | +5% output     |
+| boosted tier  | boosted by      | per-unit boost |
+| ------------- | --------------- | -------------- |
+| worker thread | microservice    | +2% output     |
+| microservice  | cron daemon     | +5% output     |
+| cron daemon   | k8s pod         | +3% output     |
+| k8s pod       | bare-metal node | +5% output     |
 
-So a worker's output is `baseOutput * (1 + 0.02 * counts[microservice])`, and a
-microservice's is `baseOutput * (1 + 0.05 * counts[cron daemon])`. Tiers with no incoming
-link (noop loop, fork(), cron daemon) are exactly `1×`. The table is declared as
+So a worker's output is `baseOutput * (1 + 0.02 * counts[microservice])`, a
+microservice's is `baseOutput * (1 + 0.05 * counts[cron daemon])`, and so on up the chain.
+Tiers with no incoming link (noop loop, fork(), bare-metal node) are exactly `1×`. The table is declared as
 `Array<{ tier; from; pct }>` and read in a loop, so adding a link is a data edit, not a new
 branch.
 
@@ -152,7 +178,8 @@ ramUsed  = childRam + leak
 ```
 
 A spawn is allowed only if `cycles >= cost` **and** `ramUsed + ram[i] <= ramCapTotal`,
-where `ramCapTotal = ramCap + perkMods.ramCapAdd` (the `oomguard` perk bonus). `malloc(+1)`
+where `ramCapTotal = ramCap + perkMods.ramCapAdd + repeatableMods.ramCapAdd` (the `oomguard`
+perk bonus plus the `swapfile` repeatable, doc [012](./012-repeatables.md)). `malloc(+1)`
 raises the stored `ramCap` by `MALLOC_STEP = 16`.
 
 ## The leak
@@ -187,7 +214,7 @@ A second pressure axis alongside RAM: children run hot, and heat throttles incom
 saturation. `tick` integrates the exponential exactly, so it is correct for any `dt`:
 
 ```
-eq    = heatEquilibrium(s) = childRam * HEAT_PER_RAM / (HEAT_DECAY_RATE * (1 + cooling * 0.5)) * heatGenMult
+eq    = heatEquilibrium(s) = childRam * HEAT_PER_RAM / (HEAT_DECAY_RATE * (1 + cooling * 0.5)) * heatGenMult * repeatableHeatGenMult
 rate  = HEAT_DECAY_RATE * (1 + cooling * 0.5)   // HEAT_DECAY_RATE = 0.02 /s
 heat  = eq + (heat - eq) * exp(-rate * dt)
 heat  = clamp(heat, 0, 100)
@@ -207,7 +234,8 @@ and `doFork` seeds a new legacy daemon's rate from the unthrottled, lineage-free
 `baseCyclesPerSec`, so a throttled board does not permanently cripple the daemons it forks
 off. `cooling` is the counter-upgrade: each level both sheds heat 50% faster **and lowers the
 equilibrium**, buying back headroom for a bigger footprint. The `heatsink` perk (doc 009)
-lowers the equilibrium by a further `heatGenMult` factor.
+and the `undervolt` repeatable (doc [012](./012-repeatables.md)) lower the equilibrium by
+further `heatGenMult` factors.
 
 ## Tick order (`tick(s, dt, opts)`)
 
@@ -307,6 +335,16 @@ aggregate, `perkMods(s)`, which the formulas above read in place: `incomeMult`/`
 (`forkCost`, floored), `pointsMult` and `legacyRateMult` (`doFork`). `buyPerk` spends lineage;
 `canBuyPerk` gates on prerequisite, level cap, and affordability. `baseCyclesPerSec` stays
 perk-free so the legacy snapshot is clean.
+
+## Repeatable upgrades
+
+The infinite, diminishing-return sink (see [doc 012](./012-repeatables.md)). Four data-driven
+rows (`overclock` income, `swapfile` RAM, `undervolt` heat, `bulk` spawn cost) each have an
+exponential cost (`baseCost * costGrowth^level`) and a `perLevel * sqrt(level)` effect, folded
+into one `repeatableMods(s)` aggregate. `buyRepeatable(s, id)` spends `cycles` and levels one
+up (returns `boolean`). `repeatableMods(s)` is read at **exactly four sites**: the income term
+in `perkedBaseCyclesPerSec`, `tierCost` (×`tierCostMult`), `ramCapTotal` (+`ramCapAdd`), and
+`heatEquilibrium` (×`heatGenMult`). Levels are per-run and reset on `fork()`.
 
 ## Milestones
 
