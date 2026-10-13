@@ -172,6 +172,9 @@ describe("tier identity", () => {
     }
     const payback = ungated.map((t) => t.baseCost / t.baseOutput);
     for (let i = 1; i < payback.length; i++) expect(payback[i]).toBeLessThanOrEqual(payback[i - 1]);
+    // The gated tiers trade payback for raw output — pin the documented numbers (doc 001).
+    expect(TIERS[5].baseCost / TIERS[5].baseOutput).toBeCloseTo(33.3, 1);
+    expect(TIERS[6].baseCost / TIERS[6].baseOutput).toBeCloseTo(200, 0);
   });
 });
 
@@ -1367,6 +1370,14 @@ describe("doFork with perks", () => {
     s.playtime = 600;
     doFork(s);
     expect(s.counts.every((n) => n === 0)).toBe(true);
+  });
+  it("keeps repeatable levels (permanent for the save, not part of the working set)", () => {
+    const s = newGame();
+    s.repeatables = { overclock: 3 };
+    s.totalEarned = d(1e6);
+    s.playtime = 600;
+    doFork(s);
+    expect(s.repeatables.overclock).toBe(3);
   });
 });
 

@@ -344,7 +344,8 @@ exponential cost (`baseCost * costGrowth^level`) and a `perLevel * sqrt(level)` 
 into one `repeatableMods(s)` aggregate. `buyRepeatable(s, id)` spends `cycles` and levels one
 up (returns `boolean`). `repeatableMods(s)` is read at **exactly four sites**: the income term
 in `perkedBaseCyclesPerSec`, `tierCost` (×`tierCostMult`), `ramCapTotal` (+`ramCapAdd`), and
-`heatEquilibrium` (×`heatGenMult`). Levels are per-run and reset on `fork()`.
+`heatEquilibrium` (×`heatGenMult`). Levels **persist across `fork()`** (permanent for the save);
+they are bought with `cycles`, the in-run currency, but are not part of the per-run working set.
 
 ## Milestones
 

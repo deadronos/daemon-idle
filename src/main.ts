@@ -343,7 +343,7 @@ function render(force = false): void {
     if (nameEl.dataset.locked !== lockSig) {
       nameEl.dataset.locked = lockSig;
       nameEl.innerHTML = locked
-        ? `🔒 ${TIERS[i].name} <small>${unlockSource(TIERS[i].unlock!)}</small>`
+        ? `🔒 ${TIERS[i].name} <small>${unlockGoal(TIERS[i].unlock!)}</small>`
         : `${TIERS[i].name} <small>${TIERS[i].desc}</small>`;
     }
     const costEl = b.el.querySelector(".cost") as HTMLElement;
@@ -423,6 +423,11 @@ const METRIC_UNIT: Partial<Record<MetricId, string>> = {
 /** Name of the milestone that grants `unlockId` (for the locked-upgrade hint). */
 function unlockSource(unlockId: string): string {
   return MILESTONES.find((m) => m.unlocks.includes(unlockId))?.name ?? "locked";
+}
+
+/** The goal text for a locked feature — the granting milestone's `desc` (e.g. "earn 10M"). */
+function unlockGoal(unlockId: string): string {
+  return MILESTONES.find((m) => m.unlocks.includes(unlockId))?.desc ?? "locked";
 }
 
 /**

@@ -7,10 +7,10 @@ upgrade-panel rows live in `src/main.ts`.
 
 Repeatables are the earned counterpart to the **prestige** perk tree (doc
 [009](./009-prestige-perk-tree.md)): perks are meta (bought with lineage across runs),
-repeatables are bought with `cycles` inside a run and reset on `fork()`. They share the same
-shape — a leaf data module, a narrow input, a `MOD_KIND` fold, and integration at documented
-sites — but keep separate currencies and lifecycles (ADR
-[0013](../decisions/0013-diminishing-return-repeatables.md)).
+repeatables are bought with `cycles` — the in-run currency — and, once bought, **persist across
+`fork()`** (levels are permanent for the save). They share the same shape — a leaf data module,
+a narrow input, a `MOD_KIND` fold, and integration at documented sites — but keep separate
+currencies (ADR [0013](../decisions/0013-diminishing-return-repeatables.md)).
 
 ## Data model (`src/config/repeatables.ts`)
 
@@ -79,8 +79,9 @@ subset of `GameState`, so it never imports `sim.ts` at runtime — no cycle.
 ## State and action (`src/sim.ts`)
 
 `GameState.repeatables: Record<string, number>` maps a repeatable id to its purchased level
-(a missing key means level 0); `newGame()` defaults it to `{}`. It resets on `fork()` with the
-rest of the working set — repeatables are per-run, unlike perks.
+(a missing key means level 0); `newGame()` defaults it to `{}`. `doFork` does **not** touch it —
+repeatable levels persist across `fork()` for the life of the save, unlike the per-run working
+set (`counts`, `nice`, `gc`, `cooling`, `ramCap`, `heat`).
 
 ```ts
 buyRepeatable(s, id) {

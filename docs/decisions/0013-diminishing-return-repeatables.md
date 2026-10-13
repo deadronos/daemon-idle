@@ -33,8 +33,9 @@ and a `sqrt` diminishing effect.**
 - **Four live generators.** `overclock` (income), `swapfile` (RAM), `undervolt` (heat), and
   `bulk` (spawn-cost discount, feeding `tierCostMult`). The `tierCost` site is therefore live,
   not reserved.
-- **Per-run, not meta.** `repeatables` resets on `fork()` with the working set; perks (lineage,
-  meta) are the deliberate counterpart. State is `Record<id, number>`, default `{}`.
+- **Bought with `cycles`, permanent for the save.** `repeatables` is **not** reset by `doFork` —
+  levels persist across runs, unlike the per-run working set; perks (lineage, meta) are the
+  deliberate counterpart and use a separate currency. State is `Record<id, number>`, default `{}`.
 - **Additive persistence.** `SAVE_VERSION` 7 → 8 with a staged `if (from < 8)` no-op;
   `sanitizeRepeatables` rebuilds the record from the roster and clamps to `MAX_SANE_COUNT`.
 
@@ -59,8 +60,9 @@ and a `sqrt` diminishing effect.**
   legacy snapshot; additive persistence; the numeric watchdog stays quiet at high levels
   (exponential cost + `sqrt` effect keep every value finite).
 - **Negative:** `costGrowth`/`perLevel` are first-pass data and will need tuning. Repeatables
-  reset on fork, so they do not compound across runs — that is intentional (perks are the meta
-  layer), but it means long-run meta growth still comes only from lineage and achievements.
+  persist across `fork()`, so they **do** compound with the meta layers over a save's life —
+  intentional (they are bought with `cycles`, but are permanent once bought), bounded by the
+  exponential cost and `sqrt` effect.
 - **Persistence:** `repeatables` is additive, so `SAVE_VERSION` 7 → 8 is a staged no-op
   (`if (from < 8)`); `sanitizeRepeatables` rebuilds the record from the roster.
 - **Follow-ups:** if legacy income should ever share the repeatable income multiplier, that is
