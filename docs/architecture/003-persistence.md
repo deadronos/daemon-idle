@@ -35,8 +35,9 @@ Every save stamps `state.lastSave = Date.now()` first.
    are therefore filled with fresh defaults — additive state changes are safe. A non-object
    JSON value (`null`, `42`, `"x"`, `true`) is treated as `{}`, so it decodes to a fresh
    game instead of throwing.
-3. **Version migration:** `decode()` runs a **staged** chain — one step per version it
-   upgrades *from* (`if (from < 2) …`, `if (from < 3) …`, with
+3. **Version migration:** `decode()` iterates the explicit, ordered `MIGRATIONS` table in
+   `src/persistence.ts` — one step per version it upgrades *from*
+   (`for (const m of MIGRATIONS) if (from < m.from) m.apply(s)`, with
    `from = coerceFinite(parsed.saveVersion, 0)`) — then stamps `saveVersion = SAVE_VERSION`.
    Staged steps matter: a single `saveVersion < SAVE_VERSION` check would re-run older steps
    on newer saves (see [Save versioning](#save-versioning)).
@@ -95,8 +96,13 @@ Every save stamps `state.lastSave = Date.now()` first.
 
 `GameState.saveVersion` records the semantics of the persisted fields; `newGame()` stamps
 it at `SAVE_VERSION = 8`. `encode()` spreads the field, so it round-trips. On load,
-`decode()` reads the parsed value into `from` and runs each staged migration whose `from`
-is older, before the numeric clamps.
+`decode()` reads the parsed value into `from` and iterates the explicit, ordered
+`MIGRATIONS` table — `{ from, describe, apply }` entries in `src/persistence.ts` — applying each
+step whose `from` is older, before the numeric clamps. The table below lists **every** version
+step; `MIGRATIONS` encodes only the non-additive ones (the rest are no-ops handled by the
+defaults merge), so today the code table has a single entry while the table below has a row per
+version. The code table is the single source of truth for "what migrates"; a test pins its
+ordering so a future step must be added deliberately.
 
 | from              | to  | migration                                                                    |
 | ----------------- | --- | ---------------------------------------------------------------------------- |
@@ -107,6 +113,19 @@ is older, before the numeric clamps.
 | `< 6`             | 6   | Additive only: `offlineCap` comes from `newGame()` defaults; no-op.          |
 | `< 7`             | 7   | Additive only: `achievementsDone` comes from `newGame()` defaults and is rebuilt by `sanitizeAchievements`; no-op. |
 | `< 8`             | 8   | Additive only: `repeatables` comes from `newGame()` defaults and is rebuilt by `sanitizeRepeatables`; short `counts` arrays pad the new tiers with `0` in `sanitizeCounts`; no-op. |
+
+**Pre-versioning path.** A save with a missing `saveVersion` (coerced to `0` by
+`coerceFinite(parsed.saveVersion, 0)`) or `saveVersion: 1` is `< 2`, so the v2 step runs and
+divides the `k`-th legacy `rate` by `1 + k*0.1`; the save is then stamped to `SAVE_VERSION`.
+Every other field comes from `newGame()` defaults and the sanitizers, so the result is a
+playable, finite state even when most fields are absent.
+
+**Forward compatibility.** A save with a **future** `saveVersion` (e.g. `99`) has
+`from ≥ 2`, so **no migration runs**. It loads best-effort: known fields are preserved, the
+sanitizers drop unknown **roster ids** (inside `perks`, `milestonesDone`, `achievementsDone`,
+`repeatables`, `unlocks`) and invalid `legacy` entries, and the save is stamped **down** to
+`SAVE_VERSION`. (`decode` does not whitelist top-level keys, so an arbitrary unknown
+top-level field survives the merge rather than being dropped.)
 
 **Why v2:** the old `doFork` snapshotted a new daemon's rate from `rawCyclesPerSec`, which
 already included the lineage multiplier `1 + forks*0.1` — so the `k`-th daemon's rate had
@@ -146,8 +165,8 @@ already maps over `TIERS`, so a pre-v8 save's short `counts` array pads `arr[5]`
 fails the permutation check in `sanitizeSacrificeOrder` and resets to the seven-element
 default — safe, and documented in doc [008](./008-sweep-directives.md).
 
-The chain is append-only: to migrate further, add the next `if (from < N)` step and bump
-`SAVE_VERSION`.
+The table is append-only: to migrate further, add the next `MIGRATIONS` entry (with a
+strictly greater `from`) and bump `SAVE_VERSION`.
 
 ## Offline progress
 
@@ -199,6 +218,6 @@ in-range value so a corrupt save can never divide by zero, soft-lock the OOM kil
 
 ## Known limitations
 
-- No export/import. Migrations are code-only (see [Save versioning](#save-versioning));
-  there is no data-driven or plugin migration registry.
+- No export/import. Migrations are a code-only ordered table (`MIGRATIONS` in
+  `src/persistence.ts`); there is no data-driven or plugin migration registry.
 - `localStorage` can throw (private mode, quota); `save()` swallows the error.

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { d } from "./bignum";
 import {
   MAX_SANE_COUNT,
+  MIGRATIONS,
   applyOffline,
   decode,
   encode,
@@ -491,5 +492,112 @@ describe("repeatables persistence", () => {
   it("pads a pre-v8 save's short counts array with zeros for the new tiers", () => {
     const s = decode('{"saveVersion":7,"counts":[1,2,3,4,5]}');
     expect(s.counts).toEqual([1, 2, 3, 4, 5, 0, 0]);
+  });
+});
+
+describe("MIGRATIONS table", () => {
+  it("is ordered by ascending from, each from > 1, and has one entry today", () => {
+    const froms = MIGRATIONS.map((m) => m.from);
+    expect(froms).toEqual([...froms].sort((a, b) => a - b));
+    for (const m of MIGRATIONS) expect(m.from).toBeGreaterThan(1);
+    expect(MIGRATIONS).toHaveLength(1);
+    expect(MIGRATIONS[0].from).toBe(2);
+    expect(typeof MIGRATIONS[0].apply).toBe("function");
+    for (const m of MIGRATIONS) expect(m.describe.length).toBeGreaterThan(0);
+  });
+});
+
+describe("save versioning — explicit table", () => {
+  it("runs the v2 migration for a saveVersion 1 save", () => {
+    const raw = JSON.stringify({
+      saveVersion: 1,
+      legacy: [
+        { name: "legacy-1", rate: "22", crashed: false, respawn: 0 },
+        { name: "legacy-2", rate: "33", crashed: false, respawn: 0 },
+      ],
+    });
+    const s = decode(raw);
+    expect(s.saveVersion).toBe(SAVE_VERSION);
+    expect(s.legacy[0].rate.toNumber()).toBeCloseTo(22, 5);
+    expect(s.legacy[1].rate.toNumber()).toBeCloseTo(33 / 1.1, 5);
+  });
+
+  it("is idempotent: decoding a SAVE_VERSION save twice leaves rates untouched", () => {
+    const g = newGame();
+    g.legacy = [
+      { name: "legacy-1", rate: d(22), crashed: false, respawn: 0 },
+      { name: "legacy-2", rate: d(33), crashed: false, respawn: 0 },
+    ];
+    const once = decode(encode(g));
+    const twice = decode(encode(once));
+    expect(once.legacy[1].rate.toNumber()).toBeCloseTo(33, 5);
+    expect(twice.legacy[1].rate.toNumber()).toBeCloseTo(33, 5);
+  });
+
+  it("is idempotent on a migrated save: a v1 save is not divided again", () => {
+    const raw = JSON.stringify({
+      saveVersion: 1,
+      legacy: [
+        { name: "legacy-1", rate: "22", crashed: false, respawn: 0 },
+        { name: "legacy-2", rate: "33", crashed: false, respawn: 0 },
+      ],
+    });
+    const migrated = decode(raw);
+    expect(migrated.legacy[1].rate.toNumber()).toBeCloseTo(33 / 1.1, 5);
+    // Re-encode (now stamped SAVE_VERSION) and decode again: no further division.
+    const again = decode(encode(migrated));
+    expect(again.legacy[1].rate.toNumber()).toBeCloseTo(33 / 1.1, 5);
+  });
+});
+
+describe("forward compatibility", () => {
+  it("loads a future-version save best-effort, runs no migration, and stamps down", () => {
+    const raw = JSON.stringify({
+      saveVersion: 99,
+      counts: [1, 2, 3],
+      cycles: "500",
+      legacy: [
+        { name: "legacy-1", rate: "22", crashed: false, respawn: 0 },
+        { name: "legacy-2", rate: "33", crashed: false, respawn: 0 },
+      ],
+      milestonesDone: { "first-blood": true, ghost: true },
+    });
+    const s = decode(raw);
+    expect(s.saveVersion).toBe(SAVE_VERSION);
+    expect(s.cycles.toNumber()).toBe(500);
+    expect(s.counts).toEqual([1, 2, 3, 0, 0, 0, 0]);
+    expect(s.legacy[1].rate.toNumber()).toBeCloseTo(33, 5); // no v2 division
+    expect(s.milestonesDone).toEqual({ "first-blood": true }); // unknown roster id dropped
+  });
+});
+
+describe("pre-versioning saves with missing fields", () => {
+  it("loads a sparse pre-versioning save to a playable, finite state", () => {
+    const s = decode('{"cycles":"123","legacy":[{"name":"legacy-1","rate":"22"}]}');
+    expect(s.saveVersion).toBe(SAVE_VERSION);
+    const required = [
+      s.ramCap,
+      s.leak,
+      s.heat,
+      s.sweepInterval,
+      s.sweepTimer,
+      s.playtime,
+      s.lastSave,
+      ...s.counts,
+    ];
+    for (const n of required) expect(Number.isFinite(n)).toBe(true);
+    expect(s.counts).toHaveLength(7); // TIERS.length
+    expect(s.legacy[0].rate.toNumber()).toBeCloseTo(22, 5);
+    expect(s.perks).toEqual({});
+    expect(s.repeatables).toEqual({});
+    expect(s.unlocks).toEqual({});
+  });
+});
+
+describe("counts shape drift", () => {
+  it("pads a short counts array to TIERS.length zeros", () => {
+    const s = decode('{"saveVersion":7,"counts":[1,2,3]}');
+    expect(s.counts).toHaveLength(7);
+    expect(s.counts).toEqual([1, 2, 3, 0, 0, 0, 0]);
   });
 });
