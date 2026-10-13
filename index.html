@@ -55,12 +55,31 @@
       <main>
         <section class="panel">
           <h2>spawn</h2>
+          <label id="buyMaxWrap" class="toggle" hidden>
+            <input type="checkbox" id="buyMaxToggle" /> buy max
+          </label>
           <div id="spawnPanel" class="buttons"></div>
         </section>
 
         <section class="panel">
           <h2>upgrades</h2>
+          <div id="autoWrap" class="automation" hidden>
+            <label><input type="checkbox" id="autoNiceToggle" /> auto-nice</label>
+            <label><input type="checkbox" id="autoMallocToggle" /> auto-malloc</label>
+            <label><input type="checkbox" id="autoFreeToggle" /> auto-free</label>
+            <label>leak ≥ <input type="number" id="freeThresholdInput" min="0" step="1" /> MB</label>
+          </div>
           <div id="upgradePanel" class="buttons"></div>
+        </section>
+
+        <section class="panel">
+          <h2>milestones</h2>
+          <div id="milestonePanel" class="milestones"></div>
+        </section>
+
+        <section class="panel">
+          <h2>achievements</h2>
+          <div id="achievementPanel" class="achievements"></div>
         </section>
 
         <section class="panel">
@@ -74,6 +93,15 @@
             priority-based sweeps reap from the top down; scavenger and group-kill ignore this
           </p>
           <div id="priorityPanel" class="priority"></div>
+        </section>
+
+        <section class="panel" id="perkSection" hidden>
+          <h2>prestige <span id="lineageText">0 pt</span></h2>
+          <p class="hint">
+            spend lineage on permanent perks; next fork grants ≈
+            <span id="lineageNext">0</span> pt
+          </p>
+          <div id="perkPanel" class="perks"></div>
         </section>
       </main>
 

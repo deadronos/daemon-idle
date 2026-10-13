@@ -2,20 +2,27 @@ import { describe, expect, it } from "vite-plus/test";
 import { d } from "./bignum";
 import {
   MAX_SANE_COUNT,
-  OFFLINE_CAP_S,
+  MIGRATIONS,
   applyOffline,
   decode,
   encode,
   loadFrom,
+  sanitizePerks,
+  sanitizeMilestones,
+  sanitizeUnlocks,
+  sanitizeAchievements,
+  sanitizeRepeatables,
 } from "./persistence";
-import { BASE, SAVE_VERSION, newGame, tick } from "./sim";
+import { BASE, BASE_OFFLINE_CAP_S, SAVE_VERSION, newGame, tick } from "./sim";
+import { UNLOCK } from "./milestones";
+import { ACHIEVEMENTS } from "./achievements";
 
 describe("decode — save hardening", () => {
   it("round-trips a healthy save", () => {
     const s = decode(encode(newGame()));
     expect(s.cycles.eq(0)).toBe(true);
     expect(s.totalEarned.eq(0)).toBe(true);
-    expect(s.counts).toEqual([0, 0, 0, 0, 0]);
+    expect(s.counts).toEqual([0, 0, 0, 0, 0, 0, 0]);
   });
 
   it("loads a corrupt save to a finite state and never throws", () => {
@@ -30,7 +37,7 @@ describe("decode — save hardening", () => {
     expect(s.sweepTimer).toBeLessThanOrEqual(s.sweepInterval);
     expect(s.playtime).toBe(0);
     expect(s.leak).toBe(0);
-    expect(s.counts).toEqual([0, 0, 2, 0, 0]);
+    expect(s.counts).toEqual([0, 0, 2, 0, 0, 0, 0]);
     expect(s.legacy).toEqual([]);
     expect(Array.isArray(s.log)).toBe(true);
   });
@@ -44,7 +51,7 @@ describe("decode — save hardening", () => {
   });
 
   it("resets a non-array counts to zeros", () => {
-    expect(decode('{"counts":"nope"}').counts).toEqual([0, 0, 0, 0, 0]);
+    expect(decode('{"counts":"nope"}').counts).toEqual([0, 0, 0, 0, 0, 0, 0]);
   });
 
   it("caps a huge finite count to MAX_SANE_COUNT", () => {
@@ -60,7 +67,7 @@ describe("decode — save hardening", () => {
     for (const raw of ["null", "42", '"nope"', "true"]) {
       expect(() => decode(raw)).not.toThrow();
       const s = decode(raw);
-      expect(s.counts).toEqual([0, 0, 0, 0, 0]);
+      expect(s.counts).toEqual([0, 0, 0, 0, 0, 0, 0]);
       expect(s.saveVersion).toBe(SAVE_VERSION);
     }
   });
@@ -134,7 +141,7 @@ describe("save versioning", () => {
 describe("offline progress", () => {
   it("does not reap the process table while offline", () => {
     const s = newGame();
-    s.counts = [0, 10, 0, 0, 0];
+    s.counts = [0, 10, 0, 0, 0, 0, 0];
     s.ramCap = 1000;
     s.sweepInterval = 1;
     s.sweepTimer = 1;
@@ -145,7 +152,7 @@ describe("offline progress", () => {
 
   it("is monotonic in cycles over an offline gap", () => {
     const s = newGame();
-    s.counts = [0, 10, 0, 0, 0];
+    s.counts = [0, 10, 0, 0, 0, 0, 0];
     s.ramCap = 1000;
     s.sweepInterval = 1;
     s.sweepTimer = 1;
@@ -173,18 +180,18 @@ describe("offline progress", () => {
     expect(again.playtime).toBe(first.playtime);
   });
 
-  it("caps offline at OFFLINE_CAP_S", () => {
+  it("caps offline at the base cap", () => {
     const now = 10_000_000_000;
     const g = newGame();
     g.lastSave = 1; // non-zero old stamp, so the gap is real (not masked by a `|| now`)
     const s = loadFrom(encode(g), now);
     expect(s.playtime).toBeGreaterThan(0);
-    expect(s.playtime).toBeLessThanOrEqual(OFFLINE_CAP_S + 1);
+    expect(s.playtime).toBeLessThanOrEqual(BASE_OFFLINE_CAP_S + 1);
   });
 
   it("never runs the OOM killer while offline", () => {
     const s = newGame();
-    s.counts = [0, 0, 0, 0, 10]; // 10 cron daemons = 160MB, far over the 16MB cap
+    s.counts = [0, 0, 0, 0, 10, 0, 0]; // 10 cron daemons = 160MB, far over the 16MB cap
     s.ramCap = 16;
     applyOffline(s, 10);
     expect(s.oomCount).toBe(0);
@@ -193,7 +200,7 @@ describe("offline progress", () => {
 
   it("bounds the offline leak at the RAM cap so returning does not wipe the board", () => {
     const s = newGame();
-    s.counts = [0, 5, 0, 0, 0]; // 10 MB leak-prone footprint
+    s.counts = [0, 5, 0, 0, 0, 0, 0]; // 10 MB leak-prone footprint
     s.ramCap = 1000;
     s.gc = 0; // no auto-flush: the leak would grow without bound if offline let it
     applyOffline(s, 8 * 3600);
@@ -201,6 +208,396 @@ describe("offline progress", () => {
     expect(s.leak).toBeCloseTo(s.ramCap, 5); // it did reach the cap
     tick(s, 0.01); // first live tick must not OOM the board away
     expect(s.oomCount).toBe(0);
-    expect(s.counts).toEqual([0, 5, 0, 0, 0]);
+    expect(s.counts).toEqual([0, 5, 0, 0, 0, 0, 0]);
+  });
+});
+
+describe("perk persistence", () => {
+  it("round-trips the new fields", () => {
+    const s = newGame();
+    s.lineage = 12;
+    s.perks = { spin: 1, pipeline: 4 };
+    s.runBaseEarned = d(1e6);
+    s.runStartPlaytime = 123;
+    const out = decode(encode(s));
+    expect(out.lineage).toBe(12);
+    expect(out.perks).toEqual({ spin: 1, pipeline: 4 });
+    expect(out.runBaseEarned.toNumber()).toBe(1e6);
+    expect(out.runStartPlaytime).toBe(123);
+  });
+
+  it("sanitizes corrupt perks without throwing", () => {
+    expect(sanitizePerks({ spin: 99, pipeline: 3.7, ghost: 5, tailcall: "x" })).toEqual({
+      spin: 1,
+      pipeline: 3,
+    });
+    expect(sanitizePerks(null)).toEqual({});
+    expect(sanitizePerks([1, 2])).toEqual({});
+  });
+
+  it("does NOT re-divide legacy rates for a v2 save under SAVE_VERSION 3", () => {
+    // A v2 save's legacy rates are already lineage-free; re-dividing the k>=1 entry
+    // would corrupt it. Only a pre-versioning save (no saveVersion) may be divided.
+    const raw = JSON.stringify({
+      saveVersion: 2,
+      legacy: [
+        { name: "legacy-1", rate: "22", crashed: false, respawn: 0 },
+        { name: "legacy-2", rate: "33", crashed: false, respawn: 0 },
+      ],
+    });
+    const s = decode(raw);
+    expect(s.legacy[0].rate.toNumber()).toBeCloseTo(22, 5);
+    expect(s.legacy[1].rate.toNumber()).toBeCloseTo(33, 5);
+  });
+
+  it("still divides baked lineage out of a pre-versioning save", () => {
+    const raw = JSON.stringify({
+      legacy: [
+        { name: "legacy-1", rate: "22", crashed: false, respawn: 0 },
+        { name: "legacy-2", rate: "33", crashed: false, respawn: 0 },
+      ],
+    });
+    const s = decode(raw);
+    expect(s.legacy[1].rate.toNumber()).toBeCloseTo(33 / 1.1, 5);
+  });
+});
+
+describe("offline progress with perks", () => {
+  it("applies perk income multipliers during offline catch-up", () => {
+    const perked = newGame();
+    perked.perks = { spin: 1 }; // +10% income
+    const plain = newGame();
+    applyOffline(perked, 60);
+    applyOffline(plain, 60);
+    expect(plain.cycles.toNumber()).toBeCloseTo(60, 3); // root 1/s
+    expect(perked.cycles.toNumber()).toBeCloseTo(66, 3); // 1.1/s
+  });
+});
+
+describe("milestone persistence", () => {
+  it("round-trips the two records", () => {
+    const s = newGame();
+    s.milestonesDone = { "first-blood": true };
+    s.unlocks = { nice: true, "auto-nice": true };
+    const out = decode(encode(s));
+    expect(out.milestonesDone).toEqual({ "first-blood": true });
+    expect(out.unlocks).toEqual({ nice: true, "auto-nice": true });
+  });
+  it("drops unknown milestone ids and garbage unlocks", () => {
+    expect(
+      sanitizeMilestones({ "first-blood": true, ghost: true, "grown-up": false }),
+    ).toEqual({ "first-blood": true });
+    expect(sanitizeMilestones(null)).toEqual({});
+    expect(sanitizeUnlocks({ nice: true, bad: false, zero: 0 })).toEqual({ nice: true });
+    expect(sanitizeUnlocks([1, 2])).toEqual({});
+    expect(sanitizeUnlocks("x")).toEqual({});
+  });
+  it("loads a pre-version save with empty records", () => {
+    const s = decode('{"cycles":"0","totalEarned":"0"}');
+    expect(s.milestonesDone).toEqual({});
+    expect(s.unlocks).toEqual({});
+    expect(s.saveVersion).toBe(SAVE_VERSION);
+  });
+});
+
+describe("sanitizeUnlocks cap", () => {
+  it("caps the number of unlock keys kept", () => {
+    const raw: Record<string, true> = {};
+    for (let i = 0; i < 300; i++) raw[`u${i}`] = true;
+    expect(Object.keys(sanitizeUnlocks(raw)).length).toBe(256);
+  });
+});
+
+describe("buyMax persistence", () => {
+  it("round-trips and coerces a corrupt value to boolean", () => {
+    const s = newGame();
+    s.buyMax = true;
+    expect(decode(encode(s)).buyMax).toBe(true);
+    expect(decode('{"buyMax":"nope"}').buyMax).toBe(true); // truthy
+    expect(decode("{}").buyMax).toBe(false);
+  });
+});
+
+describe("automation persistence", () => {
+  it("round-trips the fields and coerces/clamps corrupt values", () => {
+    const s = newGame();
+    s.autoNice = true;
+    s.autoFree = true;
+    s.freeThreshold = 40;
+    const out = decode(encode(s));
+    expect(out.autoNice).toBe(true);
+    expect(out.autoFree).toBe(true);
+    expect(out.freeThreshold).toBe(40);
+    expect(decode('{"autoMalloc":1,"freeThreshold":-5}').autoMalloc).toBe(true);
+    expect(decode('{"freeThreshold":-5}').freeThreshold).toBe(0);
+    expect(decode("{}").freeThreshold).toBe(16);
+  });
+});
+
+describe("offlineCap persistence", () => {
+  it("round-trips and coerces the level", () => {
+    const s = newGame();
+    s.offlineCap = 3;
+    expect(decode(encode(s)).offlineCap).toBe(3);
+    expect(decode('{"offlineCap":-2}').offlineCap).toBe(0);
+    expect(decode("{}").offlineCap).toBe(0);
+  });
+});
+
+describe("applyOffline cap and equivalence", () => {
+  it("never simulates more than offlineCapS seconds", () => {
+    const s = newGame();
+    const before = s.playtime;
+    applyOffline(s, 100 * 3600); // 100h requested, base cap 8h
+    expect(s.playtime - before).toBeLessThanOrEqual(BASE_OFFLINE_CAP_S + 1);
+  });
+
+  it("matches an online run in the safe regime (no sweep, RAM under cap)", () => {
+    const online = newGame();
+    const offline = newGame();
+    for (const s of [online, offline]) {
+      s.cycles = d(1e6);
+      s.counts = [4, 0, 0, 0, 0, 0, 0];
+      s.sweepTimer = 1e9; // no sweep fires within N seconds
+    }
+    const N = 600;
+    for (let t = 0; t < N; t++) tick(online, 1);
+    applyOffline(offline, N);
+    expect(offline.totalEarned.toNumber()).toBeCloseTo(online.totalEarned.toNumber(), 0);
+  });
+
+  it("stays within tolerance with a legacy daemon", () => {
+    const online = newGame();
+    const offline = newGame();
+    for (const s of [online, offline]) {
+      s.ramCap = 200; // room for the children, so no OOM in either run
+      s.sweepTimer = 1e9;
+      s.gc = 5; // flushes the leak so the online run stays under cap
+      s.unlocks[UNLOCK.legacyRespawn] = true; // auto-respawn, so crashes are transient
+      s.counts = [0, 0, 0, 0, 4, 0, 0]; // children income dominates the small legacy share
+      s.legacy = [{ name: "legacy-1", rate: d(100), crashed: false, respawn: 0 }];
+      // Earn the whole roster up front on both runs: achievements are live-only, so an
+      // empty record would let the live run compound a multiplier the offline one never
+      // earns. Holding the achievement layer equal isolates the offline equivalence.
+      s.achievementsDone = Object.fromEntries(ACHIEVEMENTS.map((a) => [a.id, true])) as Record<
+        string,
+        true
+      >;
+    }
+    const N = 3600;
+    for (let t = 0; t < N; t++) tick(online, 1);
+    applyOffline(offline, N);
+    const a = online.totalEarned.toNumber();
+    const b = offline.totalEarned.toNumber();
+    expect(Math.abs(a - b) / a).toBeLessThan(0.02);
+  });
+
+  it("does not advance sweepsSurvived offline (non-punishing retained)", () => {
+    const s = newGame();
+    s.counts = [4, 0, 0, 0, 0, 0, 0];
+    applyOffline(s, 600); // > the 60s sweep interval
+    expect(s.sweepsSurvived).toBe(0);
+  });
+});
+
+describe("offline legacy contribution", () => {
+  it("respawns a crashed daemon offline once the unlock is granted", () => {
+    const s = newGame();
+    s.unlocks[UNLOCK.legacyRespawn] = true;
+    s.legacy = [{ name: "legacy-1", rate: d(1000), crashed: true, respawn: 1 }];
+    applyOffline(s, 1); // one offline step: the respawn branch has no Math.random
+    expect(s.legacy[0].crashed).toBe(false);
+  });
+
+  it("keeps a crashed daemon down offline without the unlock", () => {
+    const s = newGame();
+    s.legacy = [{ name: "legacy-1", rate: d(1000), crashed: true, respawn: 1 }];
+    applyOffline(s, 1);
+    expect(s.legacy[0].crashed).toBe(true);
+  });
+
+  it("folds offline legacy output into the cycles total", () => {
+    const withLegacy = newGame();
+    // No unlock needed: production does not depend on it (only respawn does).
+    withLegacy.legacy = Array.from({ length: 10 }, (_, i) => ({
+      name: `legacy-${i + 1}`,
+      rate: d(1000),
+      crashed: false,
+      respawn: 0,
+    }));
+    const baseline = newGame();
+    applyOffline(withLegacy, 60);
+    applyOffline(baseline, 60);
+    // 10 daemons at 1000/s dwarf the root's 1/s; even heavy crash loss clears 100k
+    expect(withLegacy.cycles.toNumber()).toBeGreaterThan(baseline.cycles.toNumber() + 100_000);
+  });
+});
+
+describe("applyOffline cap reach", () => {
+  it("simulates the requested gap when it is under the cap", () => {
+    const s = newGame();
+    const before = s.playtime;
+    applyOffline(s, 120); // 2 min, well under the 8h base cap
+    expect(s.playtime - before).toBeCloseTo(120, 0);
+  });
+});
+
+describe("achievements persistence", () => {
+  it("round-trips earned achievements", () => {
+    const s = newGame();
+    s.achievementsDone["first-earnings"] = true;
+    expect(decode(encode(s)).achievementsDone["first-earnings"]).toBe(true);
+  });
+
+  it("sanitizeAchievements keeps roster ids with truthy values and drops the rest", () => {
+    expect(sanitizeAchievements({ "first-earnings": true, bogus: true })).toEqual({
+      "first-earnings": true,
+    });
+    expect(sanitizeAchievements({ "first-earnings": false })).toEqual({});
+    expect(sanitizeAchievements(null)).toEqual({});
+    expect(sanitizeAchievements([])).toEqual({});
+    expect(sanitizeAchievements("nope")).toEqual({});
+  });
+
+  it("loads a pre-v8 save with an empty record and stamps version 8", () => {
+    const s = decode('{"saveVersion":6}');
+    expect(s.achievementsDone).toEqual({});
+    expect(s.saveVersion).toBe(8);
+    expect(SAVE_VERSION).toBe(8);
+  });
+});
+
+describe("repeatables persistence", () => {
+  it("round-trips repeatable levels", () => {
+    const s = newGame();
+    s.repeatables.overclock = 3;
+    expect(decode(encode(s)).repeatables).toEqual({ overclock: 3 });
+  });
+
+  it("sanitizeRepeatables rebuilds from the roster, clamps, and drops zeros/junk", () => {
+    expect(sanitizeRepeatables({ overclock: 3, bogus: 9 })).toEqual({ overclock: 3 });
+    expect(sanitizeRepeatables({ overclock: 0 })).toEqual({});
+    expect(sanitizeRepeatables({ overclock: 1e9 })).toEqual({ overclock: MAX_SANE_COUNT });
+    expect(sanitizeRepeatables(null)).toEqual({});
+    expect(sanitizeRepeatables([])).toEqual({});
+  });
+
+  it("loads a pre-v8 save with defaults and stamps version 8", () => {
+    const s = decode('{"saveVersion":7}');
+    expect(s.repeatables).toEqual({});
+    expect(s.saveVersion).toBe(8);
+    expect(SAVE_VERSION).toBe(8);
+  });
+
+  it("pads a pre-v8 save's short counts array with zeros for the new tiers", () => {
+    const s = decode('{"saveVersion":7,"counts":[1,2,3,4,5]}');
+    expect(s.counts).toEqual([1, 2, 3, 4, 5, 0, 0]);
+  });
+});
+
+describe("MIGRATIONS table", () => {
+  it("is ordered by ascending from, each from > 1, and has one entry today", () => {
+    const froms = MIGRATIONS.map((m) => m.from);
+    expect(froms).toEqual([...froms].sort((a, b) => a - b));
+    for (const m of MIGRATIONS) expect(m.from).toBeGreaterThan(1);
+    expect(MIGRATIONS).toHaveLength(1);
+    expect(MIGRATIONS[0].from).toBe(2);
+    expect(typeof MIGRATIONS[0].apply).toBe("function");
+    for (const m of MIGRATIONS) expect(m.describe.length).toBeGreaterThan(0);
+  });
+});
+
+describe("save versioning — explicit table", () => {
+  it("runs the v2 migration for a saveVersion 1 save", () => {
+    const raw = JSON.stringify({
+      saveVersion: 1,
+      legacy: [
+        { name: "legacy-1", rate: "22", crashed: false, respawn: 0 },
+        { name: "legacy-2", rate: "33", crashed: false, respawn: 0 },
+      ],
+    });
+    const s = decode(raw);
+    expect(s.saveVersion).toBe(SAVE_VERSION);
+    expect(s.legacy[0].rate.toNumber()).toBeCloseTo(22, 5);
+    expect(s.legacy[1].rate.toNumber()).toBeCloseTo(33 / 1.1, 5);
+  });
+
+  it("is idempotent: decoding a SAVE_VERSION save twice leaves rates untouched", () => {
+    const g = newGame();
+    g.legacy = [
+      { name: "legacy-1", rate: d(22), crashed: false, respawn: 0 },
+      { name: "legacy-2", rate: d(33), crashed: false, respawn: 0 },
+    ];
+    const once = decode(encode(g));
+    const twice = decode(encode(once));
+    expect(once.legacy[1].rate.toNumber()).toBeCloseTo(33, 5);
+    expect(twice.legacy[1].rate.toNumber()).toBeCloseTo(33, 5);
+  });
+
+  it("is idempotent on a migrated save: a v1 save is not divided again", () => {
+    const raw = JSON.stringify({
+      saveVersion: 1,
+      legacy: [
+        { name: "legacy-1", rate: "22", crashed: false, respawn: 0 },
+        { name: "legacy-2", rate: "33", crashed: false, respawn: 0 },
+      ],
+    });
+    const migrated = decode(raw);
+    expect(migrated.legacy[1].rate.toNumber()).toBeCloseTo(33 / 1.1, 5);
+    // Re-encode (now stamped SAVE_VERSION) and decode again: no further division.
+    const again = decode(encode(migrated));
+    expect(again.legacy[1].rate.toNumber()).toBeCloseTo(33 / 1.1, 5);
+  });
+});
+
+describe("forward compatibility", () => {
+  it("loads a future-version save best-effort, runs no migration, and stamps down", () => {
+    const raw = JSON.stringify({
+      saveVersion: 99,
+      counts: [1, 2, 3],
+      cycles: "500",
+      legacy: [
+        { name: "legacy-1", rate: "22", crashed: false, respawn: 0 },
+        { name: "legacy-2", rate: "33", crashed: false, respawn: 0 },
+      ],
+      milestonesDone: { "first-blood": true, ghost: true },
+    });
+    const s = decode(raw);
+    expect(s.saveVersion).toBe(SAVE_VERSION);
+    expect(s.cycles.toNumber()).toBe(500);
+    expect(s.counts).toEqual([1, 2, 3, 0, 0, 0, 0]);
+    expect(s.legacy[1].rate.toNumber()).toBeCloseTo(33, 5); // no v2 division
+    expect(s.milestonesDone).toEqual({ "first-blood": true }); // unknown roster id dropped
+  });
+});
+
+describe("pre-versioning saves with missing fields", () => {
+  it("loads a sparse pre-versioning save to a playable, finite state", () => {
+    const s = decode('{"cycles":"123","legacy":[{"name":"legacy-1","rate":"22"}]}');
+    expect(s.saveVersion).toBe(SAVE_VERSION);
+    const required = [
+      s.ramCap,
+      s.leak,
+      s.heat,
+      s.sweepInterval,
+      s.sweepTimer,
+      s.playtime,
+      s.lastSave,
+      ...s.counts,
+    ];
+    for (const n of required) expect(Number.isFinite(n)).toBe(true);
+    expect(s.counts).toHaveLength(7); // TIERS.length
+    expect(s.legacy[0].rate.toNumber()).toBeCloseTo(22, 5);
+    expect(s.perks).toEqual({});
+    expect(s.repeatables).toEqual({});
+    expect(s.unlocks).toEqual({});
+  });
+});
+
+describe("counts shape drift", () => {
+  it("pads a short counts array to TIERS.length zeros", () => {
+    const s = decode('{"saveVersion":7,"counts":[1,2,3]}');
+    expect(s.counts).toHaveLength(7);
+    expect(s.counts).toEqual([1, 2, 3, 0, 0, 0, 0]);
   });
 });

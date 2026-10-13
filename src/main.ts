@@ -7,6 +7,8 @@ import {
   buyGc,
   buyMalloc,
   buyNice,
+  buyPerk,
+  buyRepeatable,
   buyShield,
   canFork,
   canSpawn,
@@ -26,15 +28,41 @@ import {
   newGame,
   niceCost,
   nudgeDaemon,
+  offlineCapS,
+  offlineCost,
+  buyOfflineCap,
+  ramCapTotal,
   ramUsed,
   shieldCost,
   spawn,
+  spawnMax,
   sweepVictimMult,
   tick,
   tierCost,
+  tierUnlocked,
 } from "./sim";
 import { d } from "./bignum";
+import {
+  PERKS,
+  canBuyPerk,
+  perkById,
+  perkCost,
+  perkMods,
+  pointsForFork,
+  type PerkDef,
+} from "./perks";
+import {
+  MILESTONES,
+  METRICS,
+  hasUnlock,
+  milestoneProgress,
+  orderedMilestones,
+  UNLOCK,
+  type MetricId,
+} from "./milestones";
+import { REPEATABLES, canBuyRepeatable, repeatableCost } from "./repeatables";
 import { type Alert, checkNumericHealth } from "./diagnostics";
+import { achievementProgress, orderedAchievements } from "./achievements";
 import { consoleSink, logFeedSink, makeReporter } from "./report";
 import { fmt, fmtRate, fmtTime } from "./format";
 import { encode, loadFrom } from "./persistence";
@@ -93,6 +121,19 @@ const el = {
   upgradePanel: $("upgradePanel"),
   legacyPanel: $("legacyPanel"),
   priorityPanel: $("priorityPanel"),
+  perkSection: $("perkSection"),
+  lineageText: $("lineageText"),
+  lineageNext: $("lineageNext"),
+  perkPanel: $("perkPanel"),
+  milestonePanel: $("milestonePanel"),
+  achievementPanel: $("achievementPanel"),
+  buyMaxWrap: $("buyMaxWrap"),
+  buyMaxToggle: $<HTMLInputElement>("buyMaxToggle"),
+  autoWrap: $("autoWrap"),
+  autoNiceToggle: $<HTMLInputElement>("autoNiceToggle"),
+  autoMallocToggle: $<HTMLInputElement>("autoMallocToggle"),
+  autoFreeToggle: $<HTMLInputElement>("autoFreeToggle"),
+  freeThresholdInput: $<HTMLInputElement>("freeThresholdInput"),
   log: $("log"),
 };
 
@@ -113,7 +154,8 @@ const spawnButtons: ActionButton[] = TIERS.map((tier, i) => {
     `<span class="name">${tier.name} <small>${tier.desc}</small></span>` +
     `<span class="cost"></span>`;
   b.addEventListener("click", () => {
-    spawn(state, i);
+    if (state.buyMax && hasUnlock(state, UNLOCK.buyMax)) spawnMax(state, i);
+    else spawn(state, i);
     render(true);
   });
   el.spawnPanel.appendChild(b);
@@ -124,6 +166,28 @@ const spawnButtons: ActionButton[] = TIERS.map((tier, i) => {
     enabled: () => canSpawn(state, i),
     run: () => spawn(state, i),
   };
+});
+
+el.buyMaxToggle.addEventListener("change", () => {
+  state.buyMax = el.buyMaxToggle.checked;
+  render(true);
+});
+
+el.autoNiceToggle.addEventListener("change", () => {
+  state.autoNice = el.autoNiceToggle.checked;
+  render(true);
+});
+el.autoMallocToggle.addEventListener("change", () => {
+  state.autoMalloc = el.autoMallocToggle.checked;
+  render(true);
+});
+el.autoFreeToggle.addEventListener("change", () => {
+  state.autoFree = el.autoFreeToggle.checked;
+  render(true);
+});
+el.freeThresholdInput.addEventListener("change", () => {
+  state.freeThreshold = Math.max(0, Math.floor(Number(el.freeThresholdInput.value) || 0));
+  render(true);
 });
 
 const upgradeButtons: ActionButton[] = [];
@@ -153,9 +217,11 @@ addUpgrade(
 );
 addUpgrade(
   () =>
-    `nice(+1)  ·  reap ${Math.round((1 - sweepVictimMult(state)) * 100)}% fewer  ·  lvl ${state.nice}`,
+    hasUnlock(state, UNLOCK.nice)
+      ? `nice(+1)  ·  reap ${Math.round((1 - sweepVictimMult(state)) * 100)}% fewer  ·  lvl ${state.nice}`
+      : `🔒 nice  ·  ${unlockSource(UNLOCK.nice)}`,
   () => niceCost(state),
-  () => state.cycles.gte(niceCost(state)),
+  () => hasUnlock(state, UNLOCK.nice) && state.cycles.gte(niceCost(state)),
   () => buyNice(state),
 );
 addUpgrade(
@@ -172,9 +238,14 @@ addUpgrade(
   () => buyShield(state),
 );
 addUpgrade(
-  () => (state.gc === 0 ? "gc  ·  auto-flush the leak" : `gc  ·  auto-flush lvl ${state.gc}`),
+  () =>
+    hasUnlock(state, UNLOCK.gc)
+      ? state.gc === 0
+        ? "gc  ·  auto-flush the leak"
+        : `gc  ·  auto-flush lvl ${state.gc}`
+      : `🔒 gc  ·  ${unlockSource(UNLOCK.gc)}`,
   () => gcCost(state),
-  () => state.cycles.gte(gcCost(state)),
+  () => hasUnlock(state, UNLOCK.gc) && state.cycles.gte(gcCost(state)),
   () => buyGc(state),
 );
 addUpgrade(
@@ -192,11 +263,25 @@ addUpgrade(
   () => canFork(state),
   () => doFork(state),
 );
+addUpgrade(
+  () => `nohup(+4h)  ·  offline cap ${Math.round(offlineCapS(state) / 3600)}h`,
+  () => offlineCost(state),
+  () => state.cycles.gte(offlineCost(state)),
+  () => buyOfflineCap(state),
+);
+
+for (const r of REPEATABLES) {
+  addUpgrade(
+    () => `${r.name} L${state.repeatables[r.id] ?? 0}  ·  ${r.desc}`,
+    () => repeatableCost(state, r.id),
+    () => canBuyRepeatable(state, r.id),
+    () => buyRepeatable(state, r.id),
+  );
+}
 
 // --- render ----------------------------------------------------------------
 
 let lastLogSig = "";
-
 function render(force = false): void {
   el.cycles.textContent = fmt(state.cycles);
   el.cps.textContent = fmt(cyclesPerSec(state));
@@ -206,7 +291,7 @@ function render(force = false): void {
 
   // RAM meter
   const used = ramUsed(state);
-  const cap = state.ramCap;
+  const cap = ramCapTotal(state);
   const child = childRam(state);
   el.ramText.textContent =
     `${Math.ceil(used)} / ${cap} MB` +
@@ -236,13 +321,33 @@ function render(force = false): void {
   el.shieldText.textContent = String(state.shields);
 
   // action buttons
+  el.buyMaxWrap.hidden = !hasUnlock(state, UNLOCK.buyMax);
+  el.buyMaxToggle.checked = state.buyMax;
+  el.autoWrap.hidden = !hasUnlock(state, UNLOCK.autoNice);
+  el.autoNiceToggle.checked = state.autoNice;
+  el.autoMallocToggle.checked = state.autoMalloc;
+  el.autoFreeToggle.checked = state.autoFree;
+  // don't clobber a field the user is typing into (change fires on blur/Enter only)
+  if (document.activeElement !== el.freeThresholdInput) {
+    el.freeThresholdInput.value = String(state.freeThreshold);
+  }
+  const maxOn = state.buyMax && hasUnlock(state, UNLOCK.buyMax);
   for (let i = 0; i < spawnButtons.length; i++) {
     const b = spawnButtons[i];
     const ok = b.enabled();
-    const ramFull = ramUsed(state) + TIERS[i].ram > state.ramCap;
+    const ramFull = ramUsed(state) + TIERS[i].ram > ramCapTotal(state);
     b.el.disabled = !ok;
+    const locked = !tierUnlocked(state, i);
+    const nameEl = b.el.querySelector(".name") as HTMLElement;
+    const lockSig = locked ? "1" : "0";
+    if (nameEl.dataset.locked !== lockSig) {
+      nameEl.dataset.locked = lockSig;
+      nameEl.innerHTML = locked
+        ? `🔒 ${TIERS[i].name} <small>${unlockGoal(TIERS[i].unlock!)}</small>`
+        : `${TIERS[i].name} <small>${TIERS[i].desc}</small>`;
+    }
     const costEl = b.el.querySelector(".cost") as HTMLElement;
-    costEl.textContent = `${state.counts[i]}  ·  ${fmt(b.cost())}${ramFull ? "  ⚠ ram" : ""}`;
+    costEl.textContent = `${state.counts[i]}  ·  ${fmt(b.cost())}${maxOn ? "  ×max" : ""}${ramFull ? "  ⚠ ram" : ""}`;
     costEl.classList.toggle("ok", ok);
   }
 
@@ -258,6 +363,9 @@ function render(force = false): void {
 
   renderLegacy();
   renderPriority();
+  renderPerks();
+  renderMilestones();
+  renderAchievements();
   renderLog(force);
 }
 
@@ -296,8 +404,142 @@ function renderLegacy(): void {
   state.legacy.forEach((dm, i) => {
     const row = el.legacyPanel.children[i];
     const rateEl = row?.querySelector(".rate");
-    if (rateEl && !dm.crashed) rateEl.textContent = fmtRate(dm.rate.mul(lineageMult(state)));
+    if (rateEl && !dm.crashed)
+      rateEl.textContent = fmtRate(
+        dm.rate.mul(lineageMult(state)).mul(perkMods(state).legacyRateMult),
+      );
   });
+}
+
+const METRIC_UNIT: Partial<Record<MetricId, string>> = {
+  totalEarned: "cycles",
+  sweepsSurvived: "sweeps",
+  forks: "forks",
+  playtime: "s",
+  children: "children",
+  ramCap: "MB",
+};
+
+/** Name of the milestone that grants `unlockId` (for the locked-upgrade hint). */
+function unlockSource(unlockId: string): string {
+  return MILESTONES.find((m) => m.unlocks.includes(unlockId))?.name ?? "locked";
+}
+
+/** The goal text for a locked feature — the granting milestone's `desc` (e.g. "earn 10M"). */
+function unlockGoal(unlockId: string): string {
+  return MILESTONES.find((m) => m.unlocks.includes(unlockId))?.desc ?? "locked";
+}
+
+/**
+ * The milestones panel: pending first (closest to firing on top), achieved dimmed below.
+ * Rows are rebuilt only when the done/unlock sets change; progress refreshes each frame.
+ */
+function renderMilestones(): void {
+  const ordered = orderedMilestones(state);
+  const sig = `${ordered.map((m) => m.id).join(",")}|${Object.keys(state.unlocks).sort().join(",")}`;
+  if (el.milestonePanel.dataset.sig !== sig) {
+    el.milestonePanel.dataset.sig = sig;
+    el.milestonePanel.innerHTML = "";
+    for (const m of ordered) {
+      const row = document.createElement("div");
+      row.className = "milestone";
+      row.dataset.milestone = m.id;
+
+      const head = document.createElement("div");
+      head.className = "milestone-head";
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = m.name;
+      const status = document.createElement("span");
+      status.className = "status";
+      head.append(name, status);
+
+      const bar = document.createElement("div");
+      bar.className = "bar";
+      const fill = document.createElement("div");
+      fill.className = "fill";
+      bar.appendChild(fill);
+
+      const desc = document.createElement("p");
+      desc.className = "hint";
+      desc.textContent = m.desc;
+
+      row.append(head, bar, desc);
+      el.milestonePanel.appendChild(row);
+    }
+  }
+
+  for (const m of ordered) {
+    const row = el.milestonePanel.querySelector(`[data-milestone="${m.id}"]`);
+    if (!row) continue;
+    const doneNow = Boolean(state.milestonesDone[m.id]);
+    row.classList.toggle("done", doneNow);
+    const fill = row.querySelector(".fill") as HTMLElement;
+    const status = row.querySelector(".status") as HTMLElement;
+    if (doneNow) {
+      fill.style.width = "100%";
+      status.textContent = `✓ unlocked: ${m.unlocks.join(", ")}`;
+    } else {
+      const value = Math.floor(METRICS[m.metric](state));
+      fill.style.width = `${Math.min(100, milestoneProgress(state, m) * 100)}%`;
+      const unit = METRIC_UNIT[m.metric] ? ` ${METRIC_UNIT[m.metric]}` : "";
+      status.textContent = `${value} / ${m.at}${unit}`;
+    }
+  }
+}
+
+/**
+ * The achievements panel: pending first (closest to earning on top), earned dimmed below.
+ * Rows are rebuilt only when the earned set changes; progress refreshes each frame. Reuses
+ * the milestone row classes.
+ */
+function renderAchievements(): void {
+  const ordered = orderedAchievements(state);
+  const sig = ordered.map((a) => `${a.id}:${state.achievementsDone[a.id] ? 1 : 0}`).join(",");
+  if (el.achievementPanel.dataset.sig !== sig) {
+    el.achievementPanel.dataset.sig = sig;
+    el.achievementPanel.innerHTML = "";
+    for (const a of ordered) {
+      const row = document.createElement("div");
+      row.className = "milestone";
+      row.dataset.achievement = a.id;
+      const head = document.createElement("div");
+      head.className = "milestone-head";
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = a.name;
+      const status = document.createElement("span");
+      status.className = "status";
+      head.append(name, status);
+      const bar = document.createElement("div");
+      bar.className = "bar";
+      const fill = document.createElement("div");
+      fill.className = "fill";
+      bar.appendChild(fill);
+      const desc = document.createElement("p");
+      desc.className = "hint";
+      desc.textContent = a.desc;
+      row.append(head, bar, desc);
+      el.achievementPanel.appendChild(row);
+    }
+  }
+  for (const a of ordered) {
+    const row = el.achievementPanel.querySelector(`[data-achievement="${a.id}"]`);
+    if (!row) continue;
+    const doneNow = Boolean(state.achievementsDone[a.id]);
+    row.classList.toggle("done", doneNow);
+    const fill = row.querySelector(".fill") as HTMLElement;
+    const status = row.querySelector(".status") as HTMLElement;
+    if (doneNow) {
+      fill.style.width = "100%";
+      status.textContent = `✓ +${Math.round(a.mult * 100)}% income`;
+    } else {
+      const value = Math.floor(METRICS[a.metric](state));
+      fill.style.width = `${Math.min(100, achievementProgress(state, a) * 100)}%`;
+      const unit = METRIC_UNIT[a.metric] ? ` ${METRIC_UNIT[a.metric]}` : "";
+      status.textContent = `${value} / ${a.at}${unit}`;
+    }
+  }
 }
 
 function renderPriority(): void {
@@ -339,6 +581,122 @@ function renderPriority(): void {
       row.append(name, up, down);
       el.priorityPanel.appendChild(row);
     });
+  }
+}
+
+/** Human-readable effect of a node, from its `mod`/`perLevel`. */
+function perkEffectText(p: PerkDef): string {
+  const v = p.perLevel;
+  let text: string;
+  switch (p.mod) {
+    case "incomeMult":
+      text = `+${Math.round(v * 100)}% income`;
+      break;
+    case "rootMult":
+      text = `root ×${1 + v}`;
+      break;
+    case "tierCostMult":
+      text = `−${Math.round(v * 100)}% tier cost`;
+      break;
+    case "niceAdd":
+      text = `+${v} nice`;
+      break;
+    case "ramCapAdd":
+      text = `+${v} MB ram`;
+      break;
+    case "heatGenMult":
+      text = `−${Math.round(v * 100)}% heat`;
+      break;
+    case "startShieldsAdd":
+      text = `+${v} start shield`;
+      break;
+    case "forkCostMult":
+      text = `−${Math.round(v * 100)}% fork cost`;
+      break;
+    case "pointsMult":
+      text = `+${Math.round(v * 100)}% points`;
+      break;
+    case "legacyRateMult":
+      text = `legacy ×${1 + v}`;
+      break;
+    case "startCycles":
+      text = `+${v} start cycles`;
+      break;
+  }
+  return p.maxLevel === Infinity ? `${text} · √L` : text;
+}
+
+/** Depth of a node in its branch's prerequisite chain (branch roots are 0). */
+function perkDepth(p: PerkDef): number {
+  let depth = 0;
+  let cur: PerkDef | undefined = p;
+  while (cur?.requires) {
+    const next = PERKS.find((q) => q.id === cur!.requires);
+    if (!next) break;
+    depth++;
+    cur = next;
+    if (depth > PERKS.length) break; // cycle guard; the roster is a DAG
+  }
+  return depth;
+}
+
+/**
+ * The prestige / perk-tree panel. Hidden until the player has forked at least once
+ * (fork #1 creates the first claimable points). Nodes are rebuilt only when lineage or
+ * the owned perks change; the "next fork" preview updates every frame.
+ */
+function renderPerks(): void {
+  const show = state.forks >= 1;
+  el.perkSection.hidden = !show;
+  if (!show) return;
+
+  el.lineageText.textContent = `${state.lineage} pt`;
+  el.lineageNext.textContent = String(
+    Math.floor(pointsForFork(state) * perkMods(state).pointsMult),
+  );
+
+  const owned = Object.entries(state.perks)
+    .filter(([, lvl]) => lvl > 0)
+    .map(([id, lvl]) => `${id}${lvl}`)
+    .sort()
+    .join(",");
+  const sig = `${state.lineage}|${owned}`;
+  if (el.perkPanel.dataset.sig === sig) return;
+  el.perkPanel.dataset.sig = sig;
+  el.perkPanel.innerHTML = "";
+
+  for (const branch of ["growth", "survival", "lineage"] as const) {
+    const col = document.createElement("div");
+    col.className = "perk-branch";
+    const head = document.createElement("div");
+    head.className = "perk-branch-head";
+    head.textContent = branch;
+    col.appendChild(head);
+
+    const nodes = PERKS.filter((p) => p.branch === branch).sort(
+      (a, b) => perkDepth(a) - perkDepth(b),
+    );
+    for (const p of nodes) {
+      const level = state.perks[p.id] ?? 0;
+      const cost = perkCost(state, p.id);
+      const b = document.createElement("button");
+      b.className = "act perk";
+      const effect = perkEffectText(p);
+      const req = p.requires ? `  ← ${perkById(p.requires)?.name ?? p.requires}` : "";
+      b.innerHTML =
+        `<span class="name">${p.name} <small>${effect}${req}</small></span>` +
+        `<span class="cost"></span>`;
+      b.disabled = !canBuyPerk(state, p.id);
+      const costEl = b.querySelector(".cost") as HTMLElement;
+      costEl.textContent = `L${level}  ·  ${cost}pt${p.maxLevel === Infinity ? "  ∞" : ""}`;
+      costEl.classList.toggle("ok", !b.disabled);
+      b.addEventListener("click", () => {
+        buyPerk(state, p.id);
+        render(true);
+      });
+      col.appendChild(b);
+    }
+    el.perkPanel.appendChild(col);
   }
 }
 

@@ -32,6 +32,8 @@ Three cheap diffs avoid needless DOM churn:
   (`legacyPanel.dataset.sig`); live rates are refreshed in place each frame.
 - **Sacrifice order:** rows rebuilt only when the joined `sacrificeOrder` changes
   (`priorityPanel.dataset.sig`).
+- **Prestige panel:** node buttons rebuilt only when lineage or the owned perks change
+  (`perkPanel.dataset.sig`); the next-fork preview is refreshed each frame.
 
 ## DOM binding
 
@@ -49,14 +51,36 @@ Both panels share an `ActionButton` shape:
 
 - **Spawn buttons** are built once from `TIERS`. Each shows `count · cost` and is disabled
   when `canSpawn` is false; a `⚠ ram` suffix appears when the tier would exceed the RAM cap.
+  A tier whose milestone `unlock` has not fired is rendered locked — its `.name` becomes
+  `🔒 <name> · <milestone>` (the granting milestone's name, via `unlockSource`) and the button
+  is disabled, since `canSpawn` is false while locked. The label is written once, guarded by a
+  `dataset.locked` signature, so it does not churn each frame (doc [010](./010-milestones.md)).
 - **Upgrade buttons** are registered via `addUpgrade(...)` with closures over the current
   state, so labels and affordability track live state. The panel covers `free()`, `nice`,
-  `malloc`, `SIGTERM handler`, `gc`, `cooling`, and `fork()`; the `cooling` button labels
+  `malloc`, `SIGTERM handler`, `gc`, `cooling`, `fork()`, and `nohup` (the offline-cap upgrade,
+  `nohup(+4h) · offline cap Nh`, costs `offlineCost(state)`); the `cooling` button labels
   the current level, costs `coolCost(state)`, and runs `buyCooling(state)` — it is disabled
   while `state.cycles` is below the cost.
+- **Repeatable rows** follow `nohup`: one `addUpgrade(...)` per `REPEATABLES` entry, labelled
+  `<name> L<n> · <desc>`, cost `repeatableCost(state, id)`, enabled by
+  `canBuyRepeatable(state, id)`, running `buyRepeatable(state, id)` (doc
+  [012](./012-repeatables.md)). They are level-label rows like `cooling` — no new HTML or CSS.
 
 `enabled()` gates the button; `run()` performs the action; both call back into `sim.ts`.
-Cost text is tinted green (`.ok`) when affordable.
+Cost text is tinted green (`.ok`) when affordable. The `nice` and `gc` buttons render disabled
+with a `🔒 <milestone name>` hint until their milestone fires (see
+[doc 010](./010-milestones.md)) — the lock is a sim rule, so `enabled()` checks `hasUnlock`.
+
+The spawn panel also has a **`buy max` toggle** (`#buyMaxToggle`), shown only once
+`hasUnlock(state, "buy-max")`. While it is on, a spawn click calls `spawnMax` (buy the maximum
+affordable units) instead of `spawn`, and the cost line gains a `×max` marker; the preference is
+the persisted `state.buyMax`.
+
+The upgrades panel has an **`automation` group** (`#autoWrap`), shown only once
+`hasUnlock(state, "auto-nice")`: three checkboxes (`auto-nice`, `auto-malloc`, `auto-free`) bound
+to `state.autoNice`/`autoMalloc`/`autoFree`, plus a number input for `state.freeThreshold`. The
+group uses a `[hidden]`-safe rule (`.automation[hidden] { display: none }`) so the attribute is
+not defeated by the flex layout.
 
 ## Sacrifice order panel
 
@@ -67,6 +91,38 @@ call `movePriority(state, tier, -1 | 1)` and re-render; `▲` is disabled on the
 (`priorityPanel.dataset.sig`). A `.hint` caption explains that only priority-based sweeps
 honour this order — scavenger and group-kill ignore it. The panel never reorders state
 itself; `main.ts` delegates the swap to `sim.ts`.
+
+## Prestige panel
+
+The `prestige` panel (`#perkSection`) is hidden until `forks >= 1` (the first fork creates
+claimable points). `renderPerks()` builds three columns — `growth | survival | lineage` —
+from `PERKS`, ordered within a branch by prerequisite depth. Each node is an `ActionButton`
+line showing the name, current level, next cost (`perkCost`), and effect; it is disabled
+unless `canBuyPerk` is true, and clicking it calls `buyPerk` and re-renders. The header shows
+`lineage: N pt` and a `next fork grants ≈ P pt` preview
+(`floor(pointsForFork(state) * perkMods(state).pointsMult)`). Node buttons are rebuilt only
+when lineage or the owned perks change (`perkPanel.dataset.sig`); the preview text updates
+every frame. See [doc 009](./009-prestige-perk-tree.md) for the tree itself.
+
+## Milestones panel
+
+The `milestones` panel (`#milestonePanel`) lists `MILESTONES` pending-first by
+`milestoneProgress` descending, then achieved ones dimmed below. Each row shows the name,
+description, and — for a pending goal — a progress bar and `value / at`; an achieved goal
+shows `✓ unlocked: <ids>`. Rows are rebuilt only when the `milestonesDone` + `unlocks`
+signature changes (`milestonePanel.dataset.sig`); the progress numbers refresh each frame.
+Rows are never interactive (milestones fire from state, not clicks). The locked `nice`/`gc`
+buttons in the upgrades panel point at their milestone by name.
+
+## Achievements panel
+
+The `achievements` panel (`#achievementPanel`, `renderAchievements()`) mirrors the milestones
+panel: `ACHIEVEMENTS` pending-first by `achievementProgress` descending, then earned ones dimmed
+below. A pending row shows the name, description, a progress bar, and `value / at <unit>`; an
+earned row shows `✓ +N% income`. Rows are rebuilt only when the earned-set signature changes
+(`achievementPanel.dataset.sig`); the progress numbers refresh each frame. Rows are never
+interactive. It reuses the milestone row classes (`.milestones, .achievements` share the
+container style). See [doc 011](./011-achievements.md).
 
 ## Meters
 

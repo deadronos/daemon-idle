@@ -5,6 +5,21 @@
 // ./bignum. Bounded values (counts, RAM, timers) stay plain numbers.
 
 import { d, Decimal } from "./bignum";
+import { type PerkId } from "./config/perks";
+import { type MilestoneId } from "./config/milestones";
+import { type AchievementId } from "./config/achievements";
+import { type RepeatableId } from "./config/repeatables";
+import { canBuyRepeatable, repeatableById, repeatableCost, repeatableMods } from "./repeatables";
+import { achievementById, achievementMult, evaluateAchievements } from "./achievements";
+import {
+  canBuyPerk,
+  perkById,
+  perkCost,
+  perkMods,
+  pointsForFork,
+  MAX_POINTS_PER_FORK,
+} from "./perks";
+import { evaluateMilestones, hasUnlock, milestoneById, UNLOCK } from "./milestones";
 
 export interface TierDef {
   name: string;
@@ -18,6 +33,8 @@ export interface TierDef {
   priority: number;
   /** Identity tag; `"leak-immune"` tiers consume RAM but never feed the leak. */
   trait: "none" | "leak-immune";
+  /** Milestone unlock id gating this tier; undefined = always available. */
+  unlock?: string;
 }
 
 export const TIERS: TierDef[] = [
@@ -71,6 +88,28 @@ export const TIERS: TierDef[] = [
     priority: 4,
     trait: "none",
   },
+  {
+    name: "k8s pod",
+    desc: "it has a namespace and everything",
+    baseCost: 1e6,
+    costGrowth: 1.25,
+    baseOutput: 3e4,
+    ram: 24,
+    priority: 5,
+    trait: "none",
+    unlock: UNLOCK.tier5,
+  },
+  {
+    name: "bare-metal node",
+    desc: "you own the rack now",
+    baseCost: 1e8,
+    costGrowth: 1.3,
+    baseOutput: 5e5,
+    ram: 32,
+    priority: 6,
+    trait: "none",
+    unlock: UNLOCK.tier6,
+  },
 ];
 
 /**
@@ -86,11 +125,14 @@ export const DEFAULT_SACRIFICE_ORDER: readonly number[] = Object.freeze(
  * Cross-tier synergy links. Owning `from` units multiplies the output of tier
  * `tier` by `1 + pct * counts[from]`. Data-driven on purpose: links are declared
  * here, not branched in `childOutput`, so composition (not raw tier spam) matters.
- * Tier indices: 2 = worker thread, 3 = microservice, 4 = cron daemon.
+ * Tier indices: 2 = worker thread, 3 = microservice, 4 = cron daemon, 5 = k8s pod,
+ * 6 = bare-metal node.
  */
 export const SYNERGY: Array<{ tier: number; from: number; pct: number }> = [
   { tier: 2 /* worker thread */, from: 3 /* microservice */, pct: 0.02 },
   { tier: 3 /* microservice */, from: 4 /* cron daemon */, pct: 0.05 },
+  { tier: 4 /* cron daemon */, from: 5 /* k8s pod */, pct: 0.03 },
+  { tier: 5 /* k8s pod */, from: 6 /* bare-metal node */, pct: 0.05 },
 ];
 
 const LEAK_RATE = 0.01; // fraction of footprint leaked per second
@@ -144,6 +186,34 @@ export interface GameState {
   oomCount: number;
   ramWarned: boolean;
   legacy: LegacyDaemon[];
+  /** Lineage points earned at fork; spent on permanent perks. */
+  lineage: number;
+  /** Purchased perk level per node id; a missing key means level 0. */
+  perks: Record<PerkId, number>;
+  /** Purchased level per repeatable id; a missing key means level 0. */
+  repeatables: Record<RepeatableId, number>;
+  /** `totalEarned` at the last fork (base for the per-run earnings delta). */
+  runBaseEarned: Decimal;
+  /** `playtime` at the last fork (base for the per-run duration). */
+  runStartPlaytime: number;
+  /** Milestones that have fired (sticky). */
+  milestonesDone: Record<MilestoneId, true>;
+  /** Achievements that have fired (sticky); each grants a small permanent income multiplier. */
+  achievementsDone: Record<AchievementId, true>;
+  /** Unlock ids granted by milestones; features gate via `hasUnlock`. */
+  unlocks: Record<string, true>;
+  /** `buy max` toggle preference (is a bulk-buy capability unlocked). */
+  buyMax: boolean;
+  /** Auto-buy `nice` when affordable (needs the `auto-nice` unlock). */
+  autoNice: boolean;
+  /** Auto-buy `malloc` when affordable (needs the `auto-malloc` unlock). */
+  autoMalloc: boolean;
+  /** Auto-`free()` the leak at `freeThreshold` (needs the `auto-free` unlock). */
+  autoFree: boolean;
+  /** Leak MB at which auto-free fires. */
+  freeThreshold: number;
+  /** `nohup` level; each adds `OFFLINE_CAP_STEP` to the offline cap. */
+  offlineCap: number;
   log: string[];
   playtime: number;
   lastSave: number;
@@ -155,8 +225,14 @@ export interface GameState {
  * Current save format. Version 2 fixed `doFork` to snapshot legacy rates from the
  * lineage-free `baseCyclesPerSec`; saves below it still have lineage baked into their
  * legacy `rate`s and must be migrated in `decode` (see `src/persistence.ts`).
+ * Version 3 added the lineage/perk fields (`lineage`, `perks`, `runBaseEarned`,
+ * `runStartPlaytime`) and the milestone records (`milestonesDone`, `unlocks`) — both additive.
+ * Version 4 added the `buyMax` toggle. Version 5 added the automation toggles
+ * (`autoNice`, `autoMalloc`, `autoFree`) and `freeThreshold`. Version 6 added the `offlineCap`
+ * level. Version 7 added `achievementsDone` (additive). Version 8 added `repeatables`
+ * (additive). Versions 3–8 are additive.
  */
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 8;
 
 export const BASE = {
   ramCap: 8,
@@ -164,6 +240,11 @@ export const BASE = {
   /** Baseline cycles/s from the root process itself, before any children. */
   rootOutput: 1,
 };
+
+/** Offline cap: 8 h base, +4 h per `nohup` level; a step budget bounds the replay loop. */
+export const BASE_OFFLINE_CAP_S = 8 * 3600;
+export const OFFLINE_CAP_STEP = 4 * 3600;
+export const OFFLINE_MAX_STEPS = 200_000;
 
 /** Sweep cadence floor (s) reached once escalation saturates. */
 export const SWEEP_INTERVAL_MIN = 10;
@@ -197,6 +278,20 @@ export function newGame(): GameState {
     oomCount: 0,
     ramWarned: false,
     legacy: [],
+    lineage: 0,
+    perks: {},
+    repeatables: {},
+    runBaseEarned: d(0),
+    runStartPlaytime: 0,
+    milestonesDone: {},
+    achievementsDone: {},
+    unlocks: {},
+    buyMax: false,
+    autoNice: false,
+    autoMalloc: false,
+    autoFree: false,
+    freeThreshold: 16,
+    offlineCap: 0,
     log: ["boot: daemon pid 1 started (unattended)"],
     playtime: 0,
     lastSave: Date.now(),
@@ -216,6 +311,11 @@ export function ramUsed(s: GameState): number {
   return childRam(s) + s.leak;
 }
 
+/** Effective RAM ceiling: the purchased cap plus the `oomguard` perk and `swapfile` bonuses. */
+export function ramCapTotal(s: GameState): number {
+  return s.ramCap + perkMods(s).ramCapAdd + repeatableMods(s).ramCapAdd;
+}
+
 /**
  * RAM that feeds the leak: like `childRam`, but skips `"leak-immune"` tiers.
  * Immune tiers still count toward `childRam`/`ramUsed` and spawn gating.
@@ -228,7 +328,10 @@ function leakFootprint(s: GameState): number {
 }
 
 export function tierCost(s: GameState, i: number): Decimal {
-  return d(TIERS[i].baseCost).mul(d(TIERS[i].costGrowth).pow(s.counts[i]));
+  return d(TIERS[i].baseCost)
+    .mul(d(TIERS[i].costGrowth).pow(s.counts[i]))
+    .mul(perkMods(s).tierCostMult)
+    .mul(repeatableMods(s).tierCostMult);
 }
 
 export function childOutput(s: GameState): Decimal {
@@ -257,7 +360,11 @@ export function synergyMult(s: GameState, i: number): number {
  * roughly 1 heat per MB of child RAM, halved per two cooling levels.
  */
 export function heatEquilibrium(s: GameState): number {
-  return (childRam(s) * HEAT_PER_RAM) / (HEAT_DECAY_RATE * (1 + s.cooling * 0.5));
+  return (
+    ((childRam(s) * HEAT_PER_RAM) / (HEAT_DECAY_RATE * (1 + s.cooling * 0.5))) *
+    perkMods(s).heatGenMult *
+    repeatableMods(s).heatGenMult
+  );
 }
 
 /**
@@ -290,12 +397,25 @@ export function baseCyclesPerSec(s: GameState): Decimal {
 }
 
 /**
- * Income before the heat throttle: `baseCyclesPerSec` scaled by the lineage multiplier.
- * Forked legacy daemon rates are based on `baseCyclesPerSec`, not this, so lineage is
- * not baked into the new daemon's output.
+ * Live income base: `baseCyclesPerSec` with perk income applied (children scaled by
+ * `incomeMult`, the root term additionally by `rootMult`). Kept out of `baseCyclesPerSec`
+ * so the legacy-rate snapshot stays perk-free.
+ */
+function perkedBaseCyclesPerSec(s: GameState): Decimal {
+  const m = perkMods(s);
+  const r = repeatableMods(s);
+  const children = childOutput(s).mul(survivalMult(s)).mul(m.incomeMult).mul(r.incomeMult);
+  const root = d(BASE.rootOutput).mul(m.incomeMult).mul(m.rootMult).mul(r.incomeMult);
+  return children.add(root);
+}
+
+/**
+ * Income before the heat throttle: `baseCyclesPerSec` scaled by the lineage and achievement
+ * multipliers. Both ride this same per-tick hook; forked legacy daemon rates are based on
+ * `baseCyclesPerSec`, not this, so neither is baked into the new daemon's output.
  */
 export function rawCyclesPerSec(s: GameState): Decimal {
-  return baseCyclesPerSec(s).mul(lineageMult(s));
+  return perkedBaseCyclesPerSec(s).mul(lineageMult(s)).mul(achievementMult(s));
 }
 
 export function cyclesPerSec(s: GameState): Decimal {
@@ -303,7 +423,7 @@ export function cyclesPerSec(s: GameState): Decimal {
 }
 
 export function sweepVictimMult(s: GameState): number {
-  return Math.max(0.3, 1 - s.nice * 0.03);
+  return Math.max(0.3, 1 - (s.nice + perkMods(s).niceAdd) * 0.03);
 }
 
 /**
@@ -514,13 +634,41 @@ export function coolCost(s: GameState): Decimal {
 }
 
 export function forkCost(s: GameState): Decimal {
-  return d(1e6).mul(d(10).pow(s.forks));
+  return d(1e6).mul(d(10).pow(s.forks)).mul(perkMods(s).forkCostMult);
+}
+
+/** Offline cap in seconds for the current `nohup` level, saturated at the step budget. */
+export function offlineCapS(s: GameState): number {
+  return Math.min(BASE_OFFLINE_CAP_S + s.offlineCap * OFFLINE_CAP_STEP, OFFLINE_MAX_STEPS);
+}
+
+export function offlineCost(s: GameState): Decimal {
+  return d(1e7).mul(d(5).pow(s.offlineCap));
+}
+
+export function buyOfflineCap(s: GameState): boolean {
+  // Refuse once the cap is saturated, so a purchase never silently buys nothing.
+  if (offlineCapS(s) >= OFFLINE_MAX_STEPS) return false;
+  const cost = offlineCost(s);
+  if (s.cycles.lt(cost)) return false;
+  s.cycles = s.cycles.sub(cost);
+  s.offlineCap++;
+  log(s, `nohup: offline cap ${Math.round(offlineCapS(s) / 3600)}h`);
+  return true;
 }
 
 // --- actions ---------------------------------------------------------------
 
+/** True when tier `i` exists and its milestone unlock (if any) has been granted. */
+export function tierUnlocked(s: GameState, i: number): boolean {
+  const def = TIERS[i];
+  if (!def) return false;
+  return !def.unlock || hasUnlock(s, def.unlock);
+}
+
 export function canSpawn(s: GameState, i: number): boolean {
-  const ramOk = ramUsed(s) + TIERS[i].ram <= s.ramCap;
+  if (!tierUnlocked(s, i)) return false;
+  const ramOk = ramUsed(s) + TIERS[i].ram <= ramCapTotal(s);
   return s.cycles.gte(tierCost(s, i)) && ramOk;
 }
 
@@ -531,7 +679,50 @@ export function spawn(s: GameState, i: number): boolean {
   return true;
 }
 
+/** Largest number of units of tier `i` buyable now, bounded by `cycles` and RAM. Pure. */
+export function maxAffordable(s: GameState, i: number): number {
+  const def = TIERS[i];
+  if (!def || !tierUnlocked(s, i)) return 0;
+  const room = Math.floor((ramCapTotal(s) - ramUsed(s)) / def.ram);
+  if (room <= 0) return 0;
+  const next = tierCost(s, i); // cost of the next unit
+  const growth = def.costGrowth;
+  let k = 0;
+  if (s.cycles.gt(0)) {
+    // solve next * (growth^k - 1) / (growth - 1) <= cycles  ->  k
+    const ratio = s.cycles.mul(growth - 1).div(next).add(1);
+    k = Math.floor(ratio.ln().div(Math.log(growth)).toNumber());
+  }
+  if (!Number.isFinite(k) || k < 0) k = 0;
+  k = Math.min(k, room);
+  const total = (n: number) => next.mul(d(growth).pow(n).sub(1)).div(growth - 1);
+  while (k > 0 && total(k).gt(s.cycles)) k--; // absorb Decimal rounding
+  while (k + 1 <= room && total(k + 1).lte(s.cycles)) k++;
+  return k;
+}
+
+/** Buy the maximum affordable units of tier `i` in one action. Gated by the `buy-max` unlock. */
+export function spawnMax(s: GameState, i: number): boolean {
+  if (!hasUnlock(s, UNLOCK.buyMax)) return false;
+  const k = maxAffordable(s, i);
+  if (k <= 0) return false;
+  const growth = TIERS[i].costGrowth;
+  const total = tierCost(s, i).mul(d(growth).pow(k).sub(1)).div(growth - 1);
+  s.cycles = s.cycles.sub(total);
+  s.counts[i] += k;
+  log(s, `spawn x${k}: ${TIERS[i].name}`);
+  return true;
+}
+
+/** Earned automation: at most one action of each kind per tick, live ticks only. */
+export function runAutomation(s: GameState): void {
+  if (hasUnlock(s, UNLOCK.autoFree) && s.autoFree && s.leak >= s.freeThreshold) freeMemory(s);
+  if (hasUnlock(s, UNLOCK.autoMalloc) && s.autoMalloc && s.cycles.gte(mallocCost(s))) buyMalloc(s);
+  if (hasUnlock(s, UNLOCK.autoNice) && s.autoNice && s.cycles.gte(niceCost(s))) buyNice(s);
+}
+
 export function buyNice(s: GameState): boolean {
+  if (!hasUnlock(s, UNLOCK.nice)) return false;
   const cost = niceCost(s);
   if (s.cycles.lt(cost)) return false;
   s.cycles = s.cycles.sub(cost);
@@ -559,6 +750,7 @@ export function buyMalloc(s: GameState): boolean {
 }
 
 export function buyGc(s: GameState): boolean {
+  if (!hasUnlock(s, UNLOCK.gc)) return false;
   const cost = gcCost(s);
   if (s.cycles.lt(cost)) return false;
   s.cycles = s.cycles.sub(cost);
@@ -593,12 +785,30 @@ export function nudgeDaemon(s: GameState, index: number): boolean {
   return true;
 }
 
+export function buyPerk(s: GameState, id: PerkId): boolean {
+  if (!canBuyPerk(s, id)) return false;
+  s.lineage -= perkCost(s, id);
+  s.perks[id] = (s.perks[id] ?? 0) + 1;
+  log(s, `lineage: bought ${perkById(id)?.name ?? id} (L${s.perks[id]})`);
+  return true;
+}
+
+export function buyRepeatable(s: GameState, id: RepeatableId): boolean {
+  if (!canBuyRepeatable(s, id)) return false;
+  s.cycles = s.cycles.sub(repeatableCost(s, id));
+  s.repeatables[id] = (s.repeatables[id] ?? 0) + 1;
+  log(s, `repeatable: ${repeatableById(id)?.name ?? id} (L${s.repeatables[id]})`);
+  return true;
+}
+
 export function canFork(s: GameState): boolean {
   return s.totalEarned.gte(forkCost(s));
 }
 
 export function doFork(s: GameState): boolean {
   if (!canFork(s)) return false;
+  const m = perkMods(s); // pre-reset: earning perks apply to the fork that earns
+  s.lineage += Math.min(MAX_POINTS_PER_FORK, Math.floor(pointsForFork(s) * m.pointsMult));
   const peak = baseCyclesPerSec(s); // unthrottled + lineage-free: heat and lineage are not baked in
   const rate = Decimal.max(0.1, peak.mul(LEGACY_SHARE));
   s.forks++;
@@ -608,16 +818,18 @@ export function doFork(s: GameState): boolean {
     crashed: false,
     respawn: 0,
   });
-  // reset the working set, keep lineage + legacy
-  s.cycles = d(0);
+  // reset the working set, keep lineage + legacy + perks
+  s.cycles = m.startCycles; // warm start grants a head start
   s.counts = TIERS.map(() => 0);
   s.leak = 0;
   s.ramCap = BASE.ramCap;
   s.heat = 0;
   s.cooling = 0;
-  s.shields = 0;
+  s.shields = m.startShieldsAdd; // signal-mask charges for the new run
   s.nice = 0;
   s.gc = 0;
+  s.runBaseEarned = s.totalEarned;
+  s.runStartPlaytime = s.playtime;
   s.sweepInterval = sweepIntervalFor(s);
   s.sweepTimer = s.sweepInterval;
   log(s, `fork(): new instance spawned — lineage ×${lineageMult(s).toNumber().toFixed(1)}`);
@@ -664,16 +876,16 @@ export function tick(s: GameState, dt: number, opts: TickOptions = {}): void {
 
   // Offline catch-up skips the OOM killer, so bound the leak here: otherwise hours away
   // would grow it without limit and the first live tick would wipe the board.
-  if (opts.offline) s.leak = Math.min(s.leak, s.ramCap);
+  if (opts.offline) s.leak = Math.min(s.leak, ramCapTotal(s));
 
-  // legacy daemons: produce, occasionally crash, maybe auto-respawn
-  const mult = lineageMult(s);
+  // legacy daemons: produce, occasionally crash, auto-respawn once unlocked
+  const mult = lineageMult(s).mul(perkMods(s).legacyRateMult);
   for (const dm of s.legacy) {
     if (dm.crashed) {
       dm.respawn -= dt;
-      if (dm.respawn <= 0 && s.gc > 0) {
+      if (dm.respawn <= 0 && hasUnlock(s, UNLOCK.legacyRespawn)) {
         dm.crashed = false;
-        log(s, `${dm.name} respawned by gc`);
+        log(s, `${dm.name} respawned`);
       }
     } else {
       const legacyGain = dm.rate.mul(dt).mul(mult);
@@ -690,6 +902,9 @@ export function tick(s: GameState, dt: number, opts: TickOptions = {}): void {
   // Offline catch-up skips the sweep and the OOM machinery: idling must not punish.
   if (opts.offline) return;
 
+  // earned automation — live only, at most one action of each kind per tick
+  runAutomation(s);
+
   // cleanup sweep — cadence escalates with progress; the countdown previews it
   s.sweepInterval = sweepIntervalFor(s);
   s.sweepTimer -= dt;
@@ -700,13 +915,26 @@ export function tick(s: GameState, dt: number, opts: TickOptions = {}): void {
 
   // memory pressure warning, then out of memory
   const used = ramUsed(s);
-  if (!s.ramWarned && used > s.ramCap * 0.9) {
+  const cap = ramCapTotal(s);
+  if (!s.ramWarned && used > cap * 0.9) {
     s.ramWarned = true;
-    log(s, `memory pressure: ${Math.ceil(used)}/${s.ramCap}MB — OOM killer imminent`);
-  } else if (s.ramWarned && used < s.ramCap * 0.8) {
+    log(s, `memory pressure: ${Math.ceil(used)}/${cap}MB — OOM killer imminent`);
+  } else if (s.ramWarned && used < cap * 0.8) {
     s.ramWarned = false;
   }
-  if (used > s.ramCap * OOM_TOLERANCE) runOom(s);
+  if (used > cap * OOM_TOLERANCE) runOom(s);
+
+  // milestones: evaluate once per live tick (after the offline early-return), fire-once
+  for (const id of evaluateMilestones(s)) {
+    const def = milestoneById(id);
+    if (def && def.unlocks.length > 0) log(s, `milestone: ${def.name} — unlocked`);
+  }
+
+  // achievements: micro-multipliers, evaluated once per live tick alongside milestones
+  for (const id of evaluateAchievements(s)) {
+    const def = achievementById(id);
+    if (def) log(s, `achievement: ${def.name} — +${Math.round(def.mult * 100)}% income`);
+  }
 }
 
 /**
@@ -755,16 +983,16 @@ function runOom(s: GameState): void {
   // Drain in bulk: remove as many of the current tier as needed to fit under the cap.
   // A per-iteration `counts[i]--` loop would stall for a huge (but finite) count.
   for (const i of order) {
-    if (ramUsed(s) <= s.ramCap) break;
-    const need = Math.ceil((ramUsed(s) - s.ramCap) / TIERS[i].ram);
+    if (ramUsed(s) <= ramCapTotal(s)) break;
+    const need = Math.ceil((ramUsed(s) - ramCapTotal(s)) / TIERS[i].ram);
     const take = Math.min(s.counts[i], need);
     if (take <= 0) continue;
     s.counts[i] -= take;
     killed += take;
   }
   // if the leak alone is over the ceiling, reclaim it
-  if (ramUsed(s) > s.ramCap) {
-    s.leak = Math.max(0, s.ramCap - childRam(s));
+  if (ramUsed(s) > ramCapTotal(s)) {
+    s.leak = Math.max(0, ramCapTotal(s) - childRam(s));
   }
   s.cycles = s.cycles.mul(0.9);
   s.oomCount++;

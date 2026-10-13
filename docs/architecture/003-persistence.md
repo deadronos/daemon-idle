@@ -35,17 +35,36 @@ Every save stamps `state.lastSave = Date.now()` first.
    are therefore filled with fresh defaults — additive state changes are safe. A non-object
    JSON value (`null`, `42`, `"x"`, `true`) is treated as `{}`, so it decodes to a fresh
    game instead of throwing.
-3. **Version migration:** if the parsed `saveVersion` is missing or `< SAVE_VERSION`, the
-   migration chain runs (see [Save versioning](#save-versioning)) and the result is stamped
-   `saveVersion = SAVE_VERSION`.
+3. **Version migration:** `decode()` iterates the explicit, ordered `MIGRATIONS` table in
+   `src/persistence.ts` — one step per version it upgrades *from*
+   (`for (const m of MIGRATIONS) if (from < m.from) m.apply(s)`, with
+   `from = coerceFinite(parsed.saveVersion, 0)`) — then stamps `saveVersion = SAVE_VERSION`.
+   Staged steps matter: a single `saveVersion < SAVE_VERSION` check would re-run older steps
+   on newer saves (see [Save versioning](#save-versioning)).
 4. **Coercion (harden):** `decode()` sanitizes every field before it reaches the sim:
-   - `cycles` / `totalEarned` / each legacy `rate` → `coerceDecimal` (finite number,
-     numeric string, or `Decimal`; else the fallback). `d("abc")` is lenient and yields
-     `0`; `NaN`/`Infinity` coerce to the fallback.
+   - `cycles` / `totalEarned` / `runBaseEarned` / each legacy `rate` → `coerceDecimal` (finite
+     number, numeric string, or `Decimal`; else the fallback). `d("abc")` is lenient and
+     yields `0`; `NaN`/`Infinity` coerce to the fallback.
    - `counts` → `sanitizeCounts`: one `coerceCount` per tier (capped at
      `MAX_SANE_COUNT = 1_000_000`), a non-array becomes zeros.
    - `legacy` → `sanitizeLegacy`: non-object entries are dropped; `name` defaults to
      `"legacy"`, `rate`/`respawn` coerced.
+   - `perks` → `sanitizePerks`: for each `PERKS` entry, clamp the level to `[0, maxLevel]` and
+     drop zeros; unknown ids never survive because the result is rebuilt from the roster.
+   - `repeatables` → `sanitizeRepeatables`: for each `REPEATABLES` entry, clamp the level to
+     `MAX_SANE_COUNT` and drop zeros; unknown ids never survive because the result is rebuilt
+     from the roster.
+   - `lineage` → `coerceCount`.
+   - `milestonesDone` → `sanitizeMilestones`: keep only ids present in `MILESTONES` (stale ids
+     never survive); a non-object yields `{}`.
+   - `achievementsDone` → `sanitizeAchievements`: keep only ids present in `ACHIEVEMENTS` (stale
+     ids never survive); a non-object or array yields `{}`.
+   - `unlocks` → `sanitizeUnlocks`: keep string keys with a truthy value, capped at
+     `MAX_UNLOCKS = 256` (open-ended — later issues add ids); an array or other non-object
+     yields `{}`.
+   - `buyMax` → `Boolean(...)`.
+   - `autoNice` / `autoMalloc` / `autoFree` → `Boolean(...)`.
+   - `freeThreshold` → `max(0, coerceFinite(…, 16))`.
    - `log` → mapped to strings if it is an array, else `[]`.
    - `sacrificeOrder` → `sanitizeSacrificeOrder` (valid permutation, else the default).
 5. **Numeric clamps (`sanitizeNumericState`):** every bounded field is made finite and
@@ -64,23 +83,49 @@ Every save stamps `state.lastSave = Date.now()` first.
    | `rngState`                                              | `(finite \| 0) \|\| 1` (nonzero int32)    |
    | `ramWarned`                                             | `Boolean(…)`                              |
    | `lastSave`                                              | finite, else `Date.now()`                 |
+   | `lineage`                                               | `coerceCount`                             |
+   | `runStartPlaytime`                                      | `max(0, …)`                               |
    | `counts[i]`                                             | `coerceCount`, capped at `MAX_SANE_COUNT` |
 
 6. If more than `OFFLINE_MIN_S = 5` seconds elapsed since `lastSave`, apply offline
-   progress (capped at `OFFLINE_CAP_S`), then **stamp `lastSave = now`** so a crash before
+   progress (capped by `applyOffline` at `offlineCapS(s)`), then **stamp `lastSave = now`** so a crash before
    the next save cannot re-apply the same window.
 7. Any parse error → `newGame()` (fail closed to a clean game, never a crash).
 
 ## Save versioning
 
 `GameState.saveVersion` records the semantics of the persisted fields; `newGame()` stamps
-it at `SAVE_VERSION = 2`. `encode()` spreads the field, so it round-trips. On load,
-`decode()` compares the parsed value against `SAVE_VERSION` and, when it is missing or
-older, applies the migration chain to the coerced `legacy` array before the numeric clamps.
+it at `SAVE_VERSION = 8`. `encode()` spreads the field, so it round-trips. On load,
+`decode()` reads the parsed value into `from` and iterates the explicit, ordered
+`MIGRATIONS` table — `{ from, describe, apply }` entries in `src/persistence.ts` — applying each
+step whose `from` is older, before the numeric clamps. The table below lists **every** version
+step; `MIGRATIONS` encodes only the non-additive ones (the rest are no-ops handled by the
+defaults merge), so today the code table has a single entry while the table below has a row per
+version. The code table is the single source of truth for "what migrates"; a test pins its
+ordering so a future step must be added deliberately.
 
 | from              | to  | migration                                                                    |
 | ----------------- | --- | ---------------------------------------------------------------------------- |
 | (missing) / `< 2` | 2   | For each legacy daemon at array index `k`, divide its `rate` by `1 + k*0.1`. |
+| `< 3`             | 3   | Additive only: the perk fields + milestone records come from `newGame()` defaults; no-op. |
+| `< 4`             | 4   | Additive only: `buyMax` comes from `newGame()` defaults; no-op.              |
+| `< 5`             | 5   | Additive only: the automation toggles + `freeThreshold`; no-op.              |
+| `< 6`             | 6   | Additive only: `offlineCap` comes from `newGame()` defaults; no-op.          |
+| `< 7`             | 7   | Additive only: `achievementsDone` comes from `newGame()` defaults and is rebuilt by `sanitizeAchievements`; no-op. |
+| `< 8`             | 8   | Additive only: `repeatables` comes from `newGame()` defaults and is rebuilt by `sanitizeRepeatables`; short `counts` arrays pad the new tiers with `0` in `sanitizeCounts`; no-op. |
+
+**Pre-versioning path.** A save with a missing `saveVersion` (coerced to `0` by
+`coerceFinite(parsed.saveVersion, 0)`) or `saveVersion: 1` is `< 2`, so the v2 step runs and
+divides the `k`-th legacy `rate` by `1 + k*0.1`; the save is then stamped to `SAVE_VERSION`.
+Every other field comes from `newGame()` defaults and the sanitizers, so the result is a
+playable, finite state even when most fields are absent.
+
+**Forward compatibility.** A save with a **future** `saveVersion` (e.g. `99`) has
+`from ≥ 2`, so **no migration runs**. It loads best-effort: known fields are preserved, the
+sanitizers drop unknown **roster ids** (inside `perks`, `milestonesDone`, `achievementsDone`,
+`repeatables`, `unlocks`) and invalid `legacy` entries, and the save is stamped **down** to
+`SAVE_VERSION`. (`decode` does not whitelist top-level keys, so an arbitrary unknown
+top-level field survives the merge rather than being dropped.)
 
 **Why v2:** the old `doFork` snapshotted a new daemon's rate from `rawCyclesPerSec`, which
 already included the lineage multiplier `1 + forks*0.1` — so the `k`-th daemon's rate had
@@ -88,23 +133,71 @@ already included the lineage multiplier `1 + forks*0.1` — so the `k`-th daemon
 lineage-free rates; the migration divides the baked factor back out of pre-v2 saves so
 their legacy income matches a fresh fork's.
 
-The chain is append-only: to migrate further, add the next step and bump `SAVE_VERSION`.
+**Why v3:** the perk tree added `lineage`, `perks`, `runBaseEarned`, `runStartPlaytime`, and
+the milestone system added `milestonesDone` and `unlocks`. Both changes are additive —
+`decode` merges the save over `newGame()` defaults and rebuilds the roster-backed records — so
+the v3 step is a no-op placeholder. It exists to keep the chain staged: had the v2 step stayed
+keyed to `from < SAVE_VERSION`, bumping to 3 would have re-divided already lineage-free legacy
+rates on every v2 save. A test pins both directions.
+
+**Why v4:** buy-max added the `buyMax` toggle. Additive too — `newGame()` defaults it to
+`false` and `decode` coerces it with `Boolean(...)` — so the v4 step is likewise a no-op
+placeholder.
+
+**Why v5:** automation added `autoNice`, `autoMalloc`, `autoFree`, and `freeThreshold`.
+Additive — the booleans default `false` and coerce with `Boolean(...)`, and `freeThreshold`
+defaults `16` and is clamped `>= 0` — so the v5 step is a no-op placeholder.
+
+**Why v6:** the offline rework added `offlineCap` (the `nohup` level). Additive too —
+`newGame()` defaults it to `0` and `decode` coerces it with `coerceCount` — so the v6 step is
+a no-op placeholder.
+
+**Why v7:** achievements added `achievementsDone`, a sticky record of earned roster rows.
+Additive too — `newGame()` defaults it to `{}` and `decode` rebuilds it from `ACHIEVEMENTS`
+with `sanitizeAchievements` (stale ids never survive) — so the v7 step is a no-op placeholder.
+Earned achievements therefore survive a reload, and a pre-v7 save loads with an empty record.
+
+**Why v8:** #23 added the two unlock-gated tiers (indices 5–6) and the `repeatables` record.
+Both are additive: `newGame()` defaults `repeatables` to `{}` and `decode` rebuilds it from
+`REPEATABLES` with `sanitizeRepeatables` (stale ids never survive), and `sanitizeCounts`
+already maps over `TIERS`, so a pre-v8 save's short `counts` array pads `arr[5]`/`arr[6]` with
+`0`. The v8 step is therefore a no-op placeholder. A pre-v8 `sacrificeOrder` (five elements)
+fails the permutation check in `sanitizeSacrificeOrder` and resets to the seven-element
+default — safe, and documented in doc [008](./008-sweep-directives.md).
+
+The table is append-only: to migrate further, add the next `MIGRATIONS` entry (with a
+strictly greater `from`) and bump `SAVE_VERSION`.
 
 ## Offline progress
 
 `applyOffline(s, seconds)` simulates the gap in **1-second steps** by calling
-`tick(s, dt, { offline: true })`, capped at `OFFLINE_CAP_S = 8 * 3600` (8 hours). It logs
-the elapsed time and the cycles gained.
+`tick(s, dt, { offline: true })`, capped at the **upgradable** `offlineCapS(s) =
+BASE_OFFLINE_CAP_S + s.offlineCap * OFFLINE_CAP_STEP` (8 h base, +4 h per `nohup` level),
+**saturated at `OFFLINE_MAX_STEPS`** (the replay loop's step budget — a `nohup` purchase is
+refused once the cap saturates, so the advertised cap is always the effective one). It logs the
+elapsed time and the cycles gained.
 
 The `offline` flag is the whole policy: offline ticks accrue income (heat-throttled), heat,
 leak + `gc` drain, and legacy crashes, but skip the cleanup sweep and the memory-pressure
 latch + OOM killer (tick-order steps 6–8, see [doc 001](./001-simulation-core.md)). So
 idling is never punished — the process table is never reaped and RAM pressure never fires —
 and, because `heatMult ≥ 0.5` and the root always produces, cycles are strictly monotonic.
+Legacy respawn during replay is unlock-gated (`legacy-respawn`), so a pre-crashed daemon only
+comes back offline once that milestone fires.
 
-Because the offline path skips the OOM killer, it also **clamps the leak to `ramCap`**
-after the leak/`gc` step (`s.leak = Math.min(s.leak, s.ramCap)`). Without that bound, hours
-away with `gc = 0` would grow the leak without limit and the first live tick would
+**Equivalence.** The replay matches an online run in the *safe regime* — no sweep fires and RAM
+stays under the cap, which is exactly what offline promises. With no legacy daemons and
+`N < sweepInterval` the two are equal (same code; the `offline` branch only skips events, none
+of which fire); with a legacy daemon they match within **~2%** (unseeded `Math.random` crash
+timing). This is the sense in which offline "matches an equivalent online run" — see
+[ADR 0010](../decisions/0010-offline-fidelity.md). Achievements are **live-only** (doc
+[011](./011-achievements.md)): an online run that earns a micro-multiplier mid-window pulls
+ahead of its offline replay, so a like-for-like comparison holds the `achievementsDone` record
+equal across both.
+
+Because the offline path skips the OOM killer, it also **clamps the leak to `ramCapTotal`**
+after the leak/`gc` step (`s.leak = Math.min(s.leak, ramCapTotal(s))`). Without that bound,
+hours away with `gc = 0` would grow the leak without limit and the first live tick would
 immediately OOM the board — contradicting "idling is never punished". The clamp means a
 returning player is at worst at the RAM ceiling, never arbitrarily past it.
 
@@ -125,6 +218,6 @@ in-range value so a corrupt save can never divide by zero, soft-lock the OOM kil
 
 ## Known limitations
 
-- No export/import. Migrations are code-only (see [Save versioning](#save-versioning));
-  there is no data-driven or plugin migration registry.
+- No export/import. Migrations are a code-only ordered table (`MIGRATIONS` in
+  `src/persistence.ts`); there is no data-driven or plugin migration registry.
 - `localStorage` can throw (private mode, quota); `save()` swallows the error.

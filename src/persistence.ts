@@ -6,20 +6,25 @@
 // finite, sane value before it reaches the simulation.
 
 import { d, Decimal } from "./bignum";
+import { PERKS } from "./config/perks";
+import { MILESTONES } from "./config/milestones";
+import { ACHIEVEMENTS } from "./config/achievements";
+import { REPEATABLES } from "./config/repeatables";
 import { fmt, fmtTime } from "./format";
 import {
   type GameState,
   type LegacyDaemon,
   BASE,
+  OFFLINE_MAX_STEPS,
   SAVE_VERSION,
   TIERS,
   log,
   newGame,
+  offlineCapS,
   sanitizeSacrificeOrder,
   tick,
 } from "./sim";
 
-export const OFFLINE_CAP_S = 8 * 3600;
 const OFFLINE_MIN_S = 5;
 
 /** A finite number, else `fallback`. Rejects strings, `NaN`, and `±Infinity`. */
@@ -73,6 +78,82 @@ export function sanitizeLegacy(raw: unknown): LegacyDaemon[] {
 }
 
 /**
+ * Perk levels: read each known node's level, clamp to `[0, maxLevel]`, and drop zeros
+ * and unknown ids (the result is rebuilt from `PERKS`, so a stale id never survives).
+ * A non-object (including an array) yields `{}`.
+ */
+export function sanitizePerks(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!raw || typeof raw !== "object") return out;
+  const rec = raw as Record<string, unknown>;
+  for (const p of PERKS) {
+    const level = Math.min(p.maxLevel, coerceCount(rec[p.id]));
+    if (level > 0) out[p.id] = level;
+  }
+  return out;
+}
+
+/**
+ * Repeatable levels: read each known row's level, clamp to `MAX_SANE_COUNT`, and drop
+ * zeros and unknown ids (the result is rebuilt from `REPEATABLES`, so a stale id never
+ * survives). A non-object (including an array) yields `{}`.
+ */
+export function sanitizeRepeatables(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  const rec = raw as Record<string, unknown>;
+  for (const r of REPEATABLES) {
+    const level = Math.min(MAX_SANE_COUNT, coerceCount(rec[r.id]));
+    if (level > 0) out[r.id] = level;
+  }
+  return out;
+}
+
+/**
+ * Milestones that have fired: keep only ids present in `MILESTONES` whose value is truthy;
+ * a non-object yields `{}`. Rebuilt from the roster, so stale ids never survive.
+ */
+export function sanitizeMilestones(raw: unknown): Record<string, true> {
+  const out: Record<string, true> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  const rec = raw as Record<string, unknown>;
+  for (const m of MILESTONES) if (rec[m.id]) out[m.id] = true;
+  return out;
+}
+
+/**
+ * Achievements that have fired: keep only ids present in `ACHIEVEMENTS` whose value is
+ * truthy; a non-object (or array) yields `{}`. Rebuilt from the roster, so stale ids never
+ * survive.
+ */
+export function sanitizeAchievements(raw: unknown): Record<string, true> {
+  const out: Record<string, true> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  const rec = raw as Record<string, unknown>;
+  for (const a of ACHIEVEMENTS) if (rec[a.id]) out[a.id] = true;
+  return out;
+}
+
+/**
+ * Unlock ids: keep string keys with a truthy value, capped at `MAX_UNLOCKS`. Open-ended on
+ * purpose (later issues add ids), so this is deliberately NOT restricted to the current
+ * `UNLOCK` registry.
+ */
+export const MAX_UNLOCKS = 256;
+export function sanitizeUnlocks(raw: unknown): Record<string, true> {
+  const out: Record<string, true> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  const rec = raw as Record<string, unknown>;
+  let n = 0;
+  for (const key of Object.keys(rec)) {
+    if (!rec[key]) continue;
+    out[key] = true;
+    if (++n >= MAX_UNLOCKS) break;
+  }
+  return out;
+}
+
+/**
  * Clamp every bounded numeric field of `s` in place. This is what stops a corrupt
  * save from soft-locking: `sweepInterval` can never be 0 (the `render()` ÷0), `ramCap`
  * never below `BASE.ramCap` (the OOM soft-lock), and no field can stay `NaN`/`Infinity`.
@@ -97,6 +178,8 @@ export function sanitizeNumericState(s: GameState): void {
   s.rngState = coerceFinite(s.rngState, 1) | 0 || 1;
   s.ramWarned = Boolean(s.ramWarned);
   s.lastSave = coerceFinite(s.lastSave, Date.now());
+  s.lineage = coerceCount(s.lineage);
+  s.runStartPlaytime = Math.max(0, coerceFinite(s.runStartPlaytime, 0));
   s.counts = sanitizeCounts(s.counts);
 }
 
@@ -106,9 +189,34 @@ export function encode(s: GameState): string {
     ...s,
     cycles: s.cycles.toString(),
     totalEarned: s.totalEarned.toString(),
+    runBaseEarned: s.runBaseEarned.toString(),
     legacy: s.legacy.map((l) => ({ ...l, rate: l.rate.toString() })),
   });
 }
+
+/**
+ * Ordered, code-only migration steps. Each entry upgrades saves whose `saveVersion` is
+ * strictly older than `from` (keyed to the version it upgrades *from*, so a newer save
+ * never re-runs an older step). Add a new entry with the next `from` and bump
+ * `SAVE_VERSION`; additive versions need no entry.
+ */
+export interface Migration {
+  from: number;
+  describe: string;
+  apply(s: GameState): void;
+}
+
+export const MIGRATIONS: Migration[] = [
+  {
+    from: 2,
+    describe: "divide the lineage baked into pre-v2 legacy rates",
+    apply: (s) => {
+      s.legacy.forEach((dm, k) => {
+        dm.rate = dm.rate.div(d(1 + k * 0.1));
+      });
+    },
+  },
+];
 
 /**
  * Parse a save, merging over fresh defaults, then coerce every field. Throws only if
@@ -123,15 +231,34 @@ export function decode(raw: string): GameState {
   const s: GameState = { ...newGame(), ...parsed };
   s.cycles = coerceDecimal(parsed.cycles, d(0));
   s.totalEarned = coerceDecimal(parsed.totalEarned, d(0));
+  s.runBaseEarned = coerceDecimal(parsed.runBaseEarned, d(0));
   s.legacy = sanitizeLegacy(parsed.legacy);
-  // Pre-versioning saves have lineage baked into each legacy `rate` (the old `doFork`
-  // snapshotted `rawCyclesPerSec`), and `tick` now applies lineage again — so divide the
-  // baked factor back out, keyed by the daemon's lineage index `k`.
-  if (coerceFinite(parsed.saveVersion, 0) < SAVE_VERSION) {
-    s.legacy.forEach((dm, k) => {
-      dm.rate = dm.rate.div(d(1 + k * 0.1));
-    });
-  }
+  s.perks = sanitizePerks(parsed.perks);
+  s.repeatables = sanitizeRepeatables(parsed.repeatables);
+  s.lineage = coerceCount(parsed.lineage);
+  s.milestonesDone = sanitizeMilestones(parsed.milestonesDone);
+  s.achievementsDone = sanitizeAchievements(parsed.achievementsDone);
+  s.unlocks = sanitizeUnlocks(parsed.unlocks);
+  s.buyMax = Boolean(parsed.buyMax);
+  s.autoNice = Boolean(parsed.autoNice);
+  s.autoMalloc = Boolean(parsed.autoMalloc);
+  s.autoFree = Boolean(parsed.autoFree);
+  s.freeThreshold = Math.max(0, coerceFinite(parsed.freeThreshold, 16));
+  s.offlineCap = coerceCount(parsed.offlineCap);
+  const from = coerceFinite(parsed.saveVersion, 0);
+  // Staged migrations, each keyed to the version it upgrades *from* (never a single
+  // `saveVersion < SAVE_VERSION` check, which would re-run older steps on newer saves).
+  for (const m of MIGRATIONS) if (from < m.from) m.apply(s);
+  // from < 3: the lineage/perk fields and the milestone records are additive only —
+  // newGame() defaults already filled them and the rosters rebuild them.
+  // from < 4: `buyMax` is additive too — newGame() defaults it to false.
+  // from < 5: the automation toggles + `freeThreshold` are additive as well.
+  // from < 6: `offlineCap` is additive too — newGame() defaults it to 0.
+  // from < 7: `achievementsDone` is additive too — newGame() defaults it to {} and the
+  // roster rebuilds it in `sanitizeAchievements`.
+  // from < 8: `repeatables` is additive too — newGame() defaults it to {} and the roster
+  // rebuilds it in `sanitizeRepeatables`; short `counts` arrays pad the new tiers with 0
+  // in `sanitizeCounts`.
   s.saveVersion = SAVE_VERSION;
   s.log = Array.isArray(s.log) ? s.log.map(String) : [];
   s.sacrificeOrder = sanitizeSacrificeOrder(s.sacrificeOrder);
@@ -139,29 +266,30 @@ export function decode(raw: string): GameState {
   return s;
 }
 
-/** Simulate an offline gap in 1-second steps, then log the cycles gained. */
+/** Simulate an offline gap in 1-second steps, capped at the upgraded `offlineCapS(s)`. */
 export function applyOffline(s: GameState, seconds: number): void {
   const before = s.cycles;
-  let remaining = seconds;
-  while (remaining > 0) {
+  let remaining = Math.min(seconds, offlineCapS(s));
+  let budget = OFFLINE_MAX_STEPS;
+  while (remaining > 0 && budget-- > 0) {
     const dt = Math.min(1, remaining);
-    tick(s, dt, { offline: true });
+    tick(s, dt, { offline: true }); // non-punishing semantics: no sweep, no OOM
     remaining -= dt;
   }
   log(s, `offline ${fmtTime(seconds)}: +${fmt(s.cycles.sub(before))} cycles`);
 }
 
 /**
- * Decode a raw save and apply offline progress for the elapsed gap (capped at
- * `OFFLINE_CAP_S`, skipped below `OFFLINE_MIN_S`), then stamp `lastSave = now` so a
- * crash before the next save cannot re-apply the same window.
+ * Decode a raw save and apply offline progress for the elapsed gap (capped by
+ * `applyOffline` at `offlineCapS(s)`, skipped below `OFFLINE_MIN_S`), then stamp
+ * `lastSave = now` so a crash before the next save cannot re-apply the same window.
  */
 export function loadFrom(raw: string, now: number): GameState {
   const s = decode(raw);
   // A real timestamp is always positive; a missing, invalid, or non-positive stamp
   // falls back to `now` (no gap).
   const last = Number.isFinite(s.lastSave) && s.lastSave > 0 ? s.lastSave : now;
-  const elapsed = Math.min(OFFLINE_CAP_S, (now - last) / 1000);
+  const elapsed = (now - last) / 1000;
   if (elapsed > OFFLINE_MIN_S) applyOffline(s, elapsed);
   s.lastSave = now;
   return s;

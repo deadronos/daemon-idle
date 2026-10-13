@@ -35,6 +35,10 @@ purpose per file.
 | [`006-diagnostics-and-reporting.md`](./006-diagnostics-and-reporting.md) | Numeric watchdog: detection, alert routing, sinks                 |
 | [`007-deployment.md`](./007-deployment.md)                               | GitHub Pages deployment: pipeline, triggers, base path            |
 | [`008-sweep-directives.md`](./008-sweep-directives.md)                   | Sweep directive roster, escalation, sacrifice order               |
+| [`009-prestige-perk-tree.md`](./009-prestige-perk-tree.md)               | Prestige perk tree: lineage points, branches, curves, `perkMods`  |
+| [`010-milestones.md`](./010-milestones.md)                               | Milestones: goals, metrics, unlock flags, `hasUnlock`             |
+| [`011-achievements.md`](./011-achievements.md)                           | Achievements: roster, micro-multipliers, income hook, panel       |
+| [`012-repeatables.md`](./012-repeatables.md)                             | Repeatables: roster, `sqrt` fold, four integration sites, panel   |
 
 ## Conventions
 
