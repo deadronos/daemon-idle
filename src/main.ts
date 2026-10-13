@@ -8,6 +8,7 @@ import {
   buyMalloc,
   buyNice,
   buyPerk,
+  buyRepeatable,
   buyShield,
   canFork,
   canSpawn,
@@ -59,6 +60,7 @@ import {
   UNLOCK,
   type MetricId,
 } from "./milestones";
+import { REPEATABLES, canBuyRepeatable, repeatableCost } from "./repeatables";
 import { type Alert, checkNumericHealth } from "./diagnostics";
 import { achievementProgress, orderedAchievements } from "./achievements";
 import { consoleSink, logFeedSink, makeReporter } from "./report";
@@ -267,6 +269,15 @@ addUpgrade(
   () => state.cycles.gte(offlineCost(state)),
   () => buyOfflineCap(state),
 );
+
+for (const r of REPEATABLES) {
+  addUpgrade(
+    () => `${r.name} L${state.repeatables[r.id] ?? 0}  ·  ${r.desc}`,
+    () => repeatableCost(state, r.id),
+    () => canBuyRepeatable(state, r.id),
+    () => buyRepeatable(state, r.id),
+  );
+}
 
 // --- render ----------------------------------------------------------------
 

@@ -8,6 +8,8 @@ import { d, Decimal } from "./bignum";
 import { type PerkId } from "./config/perks";
 import { type MilestoneId } from "./config/milestones";
 import { type AchievementId } from "./config/achievements";
+import { type RepeatableId } from "./config/repeatables";
+import { canBuyRepeatable, repeatableById, repeatableCost, repeatableMods } from "./repeatables";
 import { achievementById, achievementMult, evaluateAchievements } from "./achievements";
 import {
   canBuyPerk,
@@ -188,6 +190,8 @@ export interface GameState {
   lineage: number;
   /** Purchased perk level per node id; a missing key means level 0. */
   perks: Record<PerkId, number>;
+  /** Purchased level per repeatable id; a missing key means level 0. */
+  repeatables: Record<RepeatableId, number>;
   /** `totalEarned` at the last fork (base for the per-run earnings delta). */
   runBaseEarned: Decimal;
   /** `playtime` at the last fork (base for the per-run duration). */
@@ -275,6 +279,7 @@ export function newGame(): GameState {
     legacy: [],
     lineage: 0,
     perks: {},
+    repeatables: {},
     runBaseEarned: d(0),
     runStartPlaytime: 0,
     milestonesDone: {},
@@ -305,9 +310,9 @@ export function ramUsed(s: GameState): number {
   return childRam(s) + s.leak;
 }
 
-/** Effective RAM ceiling: the purchased cap plus the `oomguard` perk bonus. */
+/** Effective RAM ceiling: the purchased cap plus the `oomguard` perk and `swapfile` bonuses. */
 export function ramCapTotal(s: GameState): number {
-  return s.ramCap + perkMods(s).ramCapAdd;
+  return s.ramCap + perkMods(s).ramCapAdd + repeatableMods(s).ramCapAdd;
 }
 
 /**
@@ -324,7 +329,8 @@ function leakFootprint(s: GameState): number {
 export function tierCost(s: GameState, i: number): Decimal {
   return d(TIERS[i].baseCost)
     .mul(d(TIERS[i].costGrowth).pow(s.counts[i]))
-    .mul(perkMods(s).tierCostMult);
+    .mul(perkMods(s).tierCostMult)
+    .mul(repeatableMods(s).tierCostMult);
 }
 
 export function childOutput(s: GameState): Decimal {
@@ -355,7 +361,8 @@ export function synergyMult(s: GameState, i: number): number {
 export function heatEquilibrium(s: GameState): number {
   return (
     ((childRam(s) * HEAT_PER_RAM) / (HEAT_DECAY_RATE * (1 + s.cooling * 0.5))) *
-    perkMods(s).heatGenMult
+    perkMods(s).heatGenMult *
+    repeatableMods(s).heatGenMult
   );
 }
 
@@ -395,8 +402,9 @@ export function baseCyclesPerSec(s: GameState): Decimal {
  */
 function perkedBaseCyclesPerSec(s: GameState): Decimal {
   const m = perkMods(s);
-  const children = childOutput(s).mul(survivalMult(s)).mul(m.incomeMult);
-  const root = d(BASE.rootOutput).mul(m.incomeMult).mul(m.rootMult);
+  const r = repeatableMods(s);
+  const children = childOutput(s).mul(survivalMult(s)).mul(m.incomeMult).mul(r.incomeMult);
+  const root = d(BASE.rootOutput).mul(m.incomeMult).mul(m.rootMult).mul(r.incomeMult);
   return children.add(root);
 }
 
@@ -781,6 +789,14 @@ export function buyPerk(s: GameState, id: PerkId): boolean {
   s.lineage -= perkCost(s, id);
   s.perks[id] = (s.perks[id] ?? 0) + 1;
   log(s, `lineage: bought ${perkById(id)?.name ?? id} (L${s.perks[id]})`);
+  return true;
+}
+
+export function buyRepeatable(s: GameState, id: RepeatableId): boolean {
+  if (!canBuyRepeatable(s, id)) return false;
+  s.cycles = s.cycles.sub(repeatableCost(s, id));
+  s.repeatables[id] = (s.repeatables[id] ?? 0) + 1;
+  log(s, `repeatable: ${repeatableById(id)?.name ?? id} (L${s.repeatables[id]})`);
   return true;
 }
 

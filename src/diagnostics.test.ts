@@ -72,3 +72,13 @@ describe("checkNumericHealth", () => {
     expect(codes).toContain("numeric.nan.counts.2");
   });
 });
+
+describe("repeatables and the watchdog", () => {
+  it("stays quiet at a high repeatable level", () => {
+    const s = newGame();
+    s.repeatables = { overclock: 1e6, swapfile: 1e6, undervolt: 1e6 };
+    s.cycles = d(1e12);
+    s.counts = [0, 0, 0, 0, 0, 0, 0];
+    expect(checkNumericHealth(s)).toEqual([]);
+  });
+});

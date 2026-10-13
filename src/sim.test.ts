@@ -19,6 +19,7 @@ import {
   buyMalloc,
   buyNice,
   buyPerk,
+  buyRepeatable,
   buyShield,
   canSpawn,
   childOutput,
@@ -1639,5 +1640,77 @@ describe("achievement tick evaluation", () => {
     s.totalEarned = d(1e3);
     tick(s, 0, { offline: true });
     expect(s.achievementsDone["first-earnings"]).toBeUndefined();
+  });
+});
+
+// --- repeatables -----------------------------------------------------------
+
+describe("repeatable integration", () => {
+  it("scales perked income by incomeMult but leaves baseCyclesPerSec clean", () => {
+    const modded = newGame();
+    modded.repeatables.overclock = 4; // mag 0.2
+    expect(rawCyclesPerSec(modded).toNumber()).toBeCloseTo(
+      rawCyclesPerSec(newGame()).toNumber() * 1.2,
+      10,
+    );
+    const clean = newGame();
+    clean.repeatables.overclock = 4;
+    expect(baseCyclesPerSec(clean).eq(baseCyclesPerSec(newGame()))).toBe(true);
+  });
+
+  it("lifts the RAM cap by ramCapAdd", () => {
+    const s = newGame();
+    s.repeatables.swapfile = 4; // +8
+    expect(ramCapTotal(s)).toBe(BASE.ramCap + 8);
+  });
+
+  it("lowers heat equilibrium by heatGenMult", () => {
+    const base = newGame();
+    base.counts = [0, 0, 0, 0, 10, 0, 0];
+    const modded = newGame();
+    modded.counts = [0, 0, 0, 0, 10, 0, 0];
+    modded.repeatables.undervolt = 4; // /1.16
+    expect(heatEquilibrium(modded)).toBeCloseTo(heatEquilibrium(base) / 1.16, 8);
+  });
+
+  it("discounts tierCost by tierCostMult once bulk is owned, unchanged at level 0", () => {
+    const plain = newGame();
+    const base = tierCost(plain, 0); // no counts, no repeatables
+    expect(tierCost(plain, 0).eq(base)).toBe(true); // identity at level 0
+    const bulk = newGame();
+    bulk.repeatables.bulk = 4; // /(1 + 0.05 * 2) = /1.1
+    expect(tierCost(bulk, 0).div(base).toNumber()).toBeCloseTo(1 / 1.1, 10);
+  });
+});
+
+describe("buyRepeatable", () => {
+  it("spends cycles, levels up, and refuses unaffordable/unknown ids", () => {
+    const s = newGame();
+    s.cycles = d(1e6);
+    expect(buyRepeatable(s, "overclock")).toBe(true);
+    expect(s.repeatables.overclock).toBe(1);
+    expect(s.cycles.lt(d(1e6))).toBe(true);
+    expect(buyRepeatable(s, "nope")).toBe(false);
+    expect(buyRepeatable(newGame(), "overclock")).toBe(false);
+  });
+});
+
+describe("buy-max with the bulk discount", () => {
+  it("maxAffordable stays exact for an unlocked tier with bulk owned", () => {
+    const s = newGame();
+    s.unlocks[UNLOCK.tier5] = true;
+    s.cycles = d(1e12);
+    s.ramCap = 10_000;
+    s.repeatables.bulk = 4;
+
+    const brute = newGame();
+    brute.unlocks[UNLOCK.tier5] = true;
+    brute.cycles = d(1e12);
+    brute.ramCap = 10_000;
+    brute.repeatables.bulk = 4;
+    let n = 0;
+    while (spawn(brute, 5)) n++;
+    expect(n).toBeGreaterThan(0);
+    expect(maxAffordable(s, 5)).toBe(n);
   });
 });
