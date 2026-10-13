@@ -50,6 +50,9 @@ Every save stamps `state.lastSave = Date.now()` first.
      `"legacy"`, `rate`/`respawn` coerced.
    - `perks` → `sanitizePerks`: for each `PERKS` entry, clamp the level to `[0, maxLevel]` and
      drop zeros; unknown ids never survive because the result is rebuilt from the roster.
+   - `repeatables` → `sanitizeRepeatables`: for each `REPEATABLES` entry, clamp the level to
+     `MAX_SANE_COUNT` and drop zeros; unknown ids never survive because the result is rebuilt
+     from the roster.
    - `lineage` → `coerceCount`.
    - `milestonesDone` → `sanitizeMilestones`: keep only ids present in `MILESTONES` (stale ids
      never survive); a non-object yields `{}`.
@@ -91,7 +94,7 @@ Every save stamps `state.lastSave = Date.now()` first.
 ## Save versioning
 
 `GameState.saveVersion` records the semantics of the persisted fields; `newGame()` stamps
-it at `SAVE_VERSION = 7`. `encode()` spreads the field, so it round-trips. On load,
+it at `SAVE_VERSION = 8`. `encode()` spreads the field, so it round-trips. On load,
 `decode()` reads the parsed value into `from` and runs each staged migration whose `from`
 is older, before the numeric clamps.
 
@@ -103,6 +106,7 @@ is older, before the numeric clamps.
 | `< 5`             | 5   | Additive only: the automation toggles + `freeThreshold`; no-op.              |
 | `< 6`             | 6   | Additive only: `offlineCap` comes from `newGame()` defaults; no-op.          |
 | `< 7`             | 7   | Additive only: `achievementsDone` comes from `newGame()` defaults and is rebuilt by `sanitizeAchievements`; no-op. |
+| `< 8`             | 8   | Additive only: `repeatables` comes from `newGame()` defaults and is rebuilt by `sanitizeRepeatables`; short `counts` arrays pad the new tiers with `0` in `sanitizeCounts`; no-op. |
 
 **Why v2:** the old `doFork` snapshotted a new daemon's rate from `rawCyclesPerSec`, which
 already included the lineage multiplier `1 + forks*0.1` — so the `k`-th daemon's rate had
@@ -133,6 +137,14 @@ a no-op placeholder.
 Additive too — `newGame()` defaults it to `{}` and `decode` rebuilds it from `ACHIEVEMENTS`
 with `sanitizeAchievements` (stale ids never survive) — so the v7 step is a no-op placeholder.
 Earned achievements therefore survive a reload, and a pre-v7 save loads with an empty record.
+
+**Why v8:** #23 added the two unlock-gated tiers (indices 5–6) and the `repeatables` record.
+Both are additive: `newGame()` defaults `repeatables` to `{}` and `decode` rebuilds it from
+`REPEATABLES` with `sanitizeRepeatables` (stale ids never survive), and `sanitizeCounts`
+already maps over `TIERS`, so a pre-v8 save's short `counts` array pads `arr[5]`/`arr[6]` with
+`0`. The v8 step is therefore a no-op placeholder. A pre-v8 `sacrificeOrder` (five elements)
+fails the permutation check in `sanitizeSacrificeOrder` and resets to the seven-element
+default — safe, and documented in doc [008](./008-sweep-directives.md).
 
 The chain is append-only: to migrate further, add the next `if (from < N)` step and bump
 `SAVE_VERSION`.

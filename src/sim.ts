@@ -8,6 +8,8 @@ import { d, Decimal } from "./bignum";
 import { type PerkId } from "./config/perks";
 import { type MilestoneId } from "./config/milestones";
 import { type AchievementId } from "./config/achievements";
+import { type RepeatableId } from "./config/repeatables";
+import { canBuyRepeatable, repeatableById, repeatableCost, repeatableMods } from "./repeatables";
 import { achievementById, achievementMult, evaluateAchievements } from "./achievements";
 import {
   canBuyPerk,
@@ -31,6 +33,8 @@ export interface TierDef {
   priority: number;
   /** Identity tag; `"leak-immune"` tiers consume RAM but never feed the leak. */
   trait: "none" | "leak-immune";
+  /** Milestone unlock id gating this tier; undefined = always available. */
+  unlock?: string;
 }
 
 export const TIERS: TierDef[] = [
@@ -84,6 +88,28 @@ export const TIERS: TierDef[] = [
     priority: 4,
     trait: "none",
   },
+  {
+    name: "k8s pod",
+    desc: "it has a namespace and everything",
+    baseCost: 1e6,
+    costGrowth: 1.25,
+    baseOutput: 3e4,
+    ram: 24,
+    priority: 5,
+    trait: "none",
+    unlock: UNLOCK.tier5,
+  },
+  {
+    name: "bare-metal node",
+    desc: "you own the rack now",
+    baseCost: 1e8,
+    costGrowth: 1.3,
+    baseOutput: 5e5,
+    ram: 32,
+    priority: 6,
+    trait: "none",
+    unlock: UNLOCK.tier6,
+  },
 ];
 
 /**
@@ -99,11 +125,14 @@ export const DEFAULT_SACRIFICE_ORDER: readonly number[] = Object.freeze(
  * Cross-tier synergy links. Owning `from` units multiplies the output of tier
  * `tier` by `1 + pct * counts[from]`. Data-driven on purpose: links are declared
  * here, not branched in `childOutput`, so composition (not raw tier spam) matters.
- * Tier indices: 2 = worker thread, 3 = microservice, 4 = cron daemon.
+ * Tier indices: 2 = worker thread, 3 = microservice, 4 = cron daemon, 5 = k8s pod,
+ * 6 = bare-metal node.
  */
 export const SYNERGY: Array<{ tier: number; from: number; pct: number }> = [
   { tier: 2 /* worker thread */, from: 3 /* microservice */, pct: 0.02 },
   { tier: 3 /* microservice */, from: 4 /* cron daemon */, pct: 0.05 },
+  { tier: 4 /* cron daemon */, from: 5 /* k8s pod */, pct: 0.03 },
+  { tier: 5 /* k8s pod */, from: 6 /* bare-metal node */, pct: 0.05 },
 ];
 
 const LEAK_RATE = 0.01; // fraction of footprint leaked per second
@@ -161,6 +190,8 @@ export interface GameState {
   lineage: number;
   /** Purchased perk level per node id; a missing key means level 0. */
   perks: Record<PerkId, number>;
+  /** Purchased level per repeatable id; a missing key means level 0. */
+  repeatables: Record<RepeatableId, number>;
   /** `totalEarned` at the last fork (base for the per-run earnings delta). */
   runBaseEarned: Decimal;
   /** `playtime` at the last fork (base for the per-run duration). */
@@ -198,9 +229,10 @@ export interface GameState {
  * `runStartPlaytime`) and the milestone records (`milestonesDone`, `unlocks`) — both additive.
  * Version 4 added the `buyMax` toggle. Version 5 added the automation toggles
  * (`autoNice`, `autoMalloc`, `autoFree`) and `freeThreshold`. Version 6 added the `offlineCap`
- * level. Version 7 added `achievementsDone` (additive). Versions 3–7 are additive.
+ * level. Version 7 added `achievementsDone` (additive). Version 8 added `repeatables`
+ * (additive). Versions 3–8 are additive.
  */
-export const SAVE_VERSION = 7;
+export const SAVE_VERSION = 8;
 
 export const BASE = {
   ramCap: 8,
@@ -248,6 +280,7 @@ export function newGame(): GameState {
     legacy: [],
     lineage: 0,
     perks: {},
+    repeatables: {},
     runBaseEarned: d(0),
     runStartPlaytime: 0,
     milestonesDone: {},
@@ -278,9 +311,9 @@ export function ramUsed(s: GameState): number {
   return childRam(s) + s.leak;
 }
 
-/** Effective RAM ceiling: the purchased cap plus the `oomguard` perk bonus. */
+/** Effective RAM ceiling: the purchased cap plus the `oomguard` perk and `swapfile` bonuses. */
 export function ramCapTotal(s: GameState): number {
-  return s.ramCap + perkMods(s).ramCapAdd;
+  return s.ramCap + perkMods(s).ramCapAdd + repeatableMods(s).ramCapAdd;
 }
 
 /**
@@ -297,7 +330,8 @@ function leakFootprint(s: GameState): number {
 export function tierCost(s: GameState, i: number): Decimal {
   return d(TIERS[i].baseCost)
     .mul(d(TIERS[i].costGrowth).pow(s.counts[i]))
-    .mul(perkMods(s).tierCostMult);
+    .mul(perkMods(s).tierCostMult)
+    .mul(repeatableMods(s).tierCostMult);
 }
 
 export function childOutput(s: GameState): Decimal {
@@ -328,7 +362,8 @@ export function synergyMult(s: GameState, i: number): number {
 export function heatEquilibrium(s: GameState): number {
   return (
     ((childRam(s) * HEAT_PER_RAM) / (HEAT_DECAY_RATE * (1 + s.cooling * 0.5))) *
-    perkMods(s).heatGenMult
+    perkMods(s).heatGenMult *
+    repeatableMods(s).heatGenMult
   );
 }
 
@@ -368,8 +403,9 @@ export function baseCyclesPerSec(s: GameState): Decimal {
  */
 function perkedBaseCyclesPerSec(s: GameState): Decimal {
   const m = perkMods(s);
-  const children = childOutput(s).mul(survivalMult(s)).mul(m.incomeMult);
-  const root = d(BASE.rootOutput).mul(m.incomeMult).mul(m.rootMult);
+  const r = repeatableMods(s);
+  const children = childOutput(s).mul(survivalMult(s)).mul(m.incomeMult).mul(r.incomeMult);
+  const root = d(BASE.rootOutput).mul(m.incomeMult).mul(m.rootMult).mul(r.incomeMult);
   return children.add(root);
 }
 
@@ -623,7 +659,15 @@ export function buyOfflineCap(s: GameState): boolean {
 
 // --- actions ---------------------------------------------------------------
 
+/** True when tier `i` exists and its milestone unlock (if any) has been granted. */
+export function tierUnlocked(s: GameState, i: number): boolean {
+  const def = TIERS[i];
+  if (!def) return false;
+  return !def.unlock || hasUnlock(s, def.unlock);
+}
+
 export function canSpawn(s: GameState, i: number): boolean {
+  if (!tierUnlocked(s, i)) return false;
   const ramOk = ramUsed(s) + TIERS[i].ram <= ramCapTotal(s);
   return s.cycles.gte(tierCost(s, i)) && ramOk;
 }
@@ -638,7 +682,7 @@ export function spawn(s: GameState, i: number): boolean {
 /** Largest number of units of tier `i` buyable now, bounded by `cycles` and RAM. Pure. */
 export function maxAffordable(s: GameState, i: number): number {
   const def = TIERS[i];
-  if (!def) return 0;
+  if (!def || !tierUnlocked(s, i)) return 0;
   const room = Math.floor((ramCapTotal(s) - ramUsed(s)) / def.ram);
   if (room <= 0) return 0;
   const next = tierCost(s, i); // cost of the next unit
@@ -746,6 +790,14 @@ export function buyPerk(s: GameState, id: PerkId): boolean {
   s.lineage -= perkCost(s, id);
   s.perks[id] = (s.perks[id] ?? 0) + 1;
   log(s, `lineage: bought ${perkById(id)?.name ?? id} (L${s.perks[id]})`);
+  return true;
+}
+
+export function buyRepeatable(s: GameState, id: RepeatableId): boolean {
+  if (!canBuyRepeatable(s, id)) return false;
+  s.cycles = s.cycles.sub(repeatableCost(s, id));
+  s.repeatables[id] = (s.repeatables[id] ?? 0) + 1;
+  log(s, `repeatable: ${repeatableById(id)?.name ?? id} (L${s.repeatables[id]})`);
   return true;
 }
 

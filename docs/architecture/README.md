@@ -38,6 +38,7 @@ purpose per file.
 | [`009-prestige-perk-tree.md`](./009-prestige-perk-tree.md)               | Prestige perk tree: lineage points, branches, curves, `perkMods`  |
 | [`010-milestones.md`](./010-milestones.md)                               | Milestones: goals, metrics, unlock flags, `hasUnlock`             |
 | [`011-achievements.md`](./011-achievements.md)                           | Achievements: roster, micro-multipliers, income hook, panel       |
+| [`012-repeatables.md`](./012-repeatables.md)                             | Repeatables: roster, `sqrt` fold, four integration sites, panel   |
 
 ## Conventions
 

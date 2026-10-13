@@ -19,6 +19,7 @@ import {
   buyMalloc,
   buyNice,
   buyPerk,
+  buyRepeatable,
   buyShield,
   canSpawn,
   childOutput,
@@ -59,6 +60,7 @@ import {
   synergyMult,
   tick,
   tierCost,
+  tierUnlocked,
   unlockedDirectives,
 } from "./sim";
 import { UNLOCK } from "./milestones";
@@ -90,6 +92,8 @@ describe("cost curve", () => {
       const s = newGame();
       s.cycles = d(1e12);
       s.ramCap = 10_000;
+      s.unlocks[UNLOCK.tier5] = true; // the two new tiers are unlock-gated
+      s.unlocks[UNLOCK.tier6] = true;
       const first = tierCost(s, i);
       expect(spawn(s, i)).toBe(true);
       expect(tierCost(s, i).div(first).toNumber()).toBeCloseTo(TIERS[i].costGrowth, 5);
@@ -146,17 +150,31 @@ describe("upgrade cost curves", () => {
 
 describe("tier identity", () => {
   it("gives every tier an explicit costGrowth and trait", () => {
-    expect(TIERS.map((t) => t.costGrowth)).toEqual([1.12, 1.15, 1.15, 1.18, 1.22]);
-    expect(TIERS.map((t) => t.trait)).toEqual(["leak-immune", "none", "none", "none", "none"]);
+    expect(TIERS.map((t) => t.costGrowth)).toEqual([1.12, 1.15, 1.15, 1.18, 1.22, 1.25, 1.3]);
+    expect(TIERS.map((t) => t.trait)).toEqual([
+      "leak-immune",
+      "none",
+      "none",
+      "none",
+      "none",
+      "none",
+      "none",
+    ]);
   });
 
   it("does not worsen payback with tier (flat-to-improving)", () => {
     // cost / output per tier: 100 / 100 / 83.3 / 66.7 / 50 — cheap spam no longer wins.
-    for (const tier of TIERS) {
+    // Tiers 5–6 are milestone-gated goals, not spam: they trade payback for raw output,
+    // so the flat-to-improving claim is scoped to the ungated curve (0–4).
+    const ungated = TIERS.slice(0, 5);
+    for (const tier of ungated) {
       expect(tier.baseCost / tier.baseOutput).toBeLessThanOrEqual(100);
     }
-    const payback = TIERS.map((t) => t.baseCost / t.baseOutput);
+    const payback = ungated.map((t) => t.baseCost / t.baseOutput);
     for (let i = 1; i < payback.length; i++) expect(payback[i]).toBeLessThanOrEqual(payback[i - 1]);
+    // The gated tiers trade payback for raw output — pin the documented numbers (doc 001).
+    expect(TIERS[5].baseCost / TIERS[5].baseOutput).toBeCloseTo(33.3, 1);
+    expect(TIERS[6].baseCost / TIERS[6].baseOutput).toBeCloseTo(200, 0);
   });
 });
 
@@ -187,7 +205,7 @@ describe("survival multiplier", () => {
 
     const one = newGame();
     one.sweepsSurvived = 100;
-    one.counts = [0, 1, 0, 0, 0]; // one fork(): childOutput = 1
+    one.counts = [0, 1, 0, 0, 0, 0, 0]; // one fork(): childOutput = 1
     expect(baseCyclesPerSec(one).toNumber()).toBeCloseTo(1.05 ** 100 + 1, 4);
   });
 
@@ -216,15 +234,62 @@ describe("spawn gating", () => {
   });
 });
 
+// --- tier unlocks ----------------------------------------------------------
+
+describe("tier unlocks", () => {
+  it("appends two unlock-gated tiers and leaves 0-4 ungated", () => {
+    expect(TIERS.length).toBe(7);
+    expect(TIERS[5]).toMatchObject({ name: "k8s pod", unlock: UNLOCK.tier5 });
+    expect(TIERS[6]).toMatchObject({ name: "bare-metal node", unlock: UNLOCK.tier6 });
+    for (let i = 0; i < 5; i++) expect(TIERS[i].unlock).toBeUndefined();
+  });
+
+  it("starts with one zero count per tier", () => {
+    expect(newGame().counts).toEqual([0, 0, 0, 0, 0, 0, 0]);
+  });
+
+  it("refuses spawn and buy-max for a locked tier even when affordable", () => {
+    const s = newGame();
+    s.cycles = d(1e12);
+    s.ramCap = 1000;
+    s.unlocks[UNLOCK.buyMax] = true; // isolate the tier gate from the buy-max gate
+    expect(tierUnlocked(s, 5)).toBe(false);
+    expect(canSpawn(s, 5)).toBe(false);
+    expect(maxAffordable(s, 5)).toBe(0);
+    expect(spawn(s, 5)).toBe(false);
+    expect(spawnMax(s, 5)).toBe(false);
+    expect(s.counts[5]).toBe(0);
+  });
+
+  it("allows spawn once the unlock is granted", () => {
+    const s = newGame();
+    s.cycles = d(1e12);
+    s.ramCap = 1000;
+    s.unlocks[UNLOCK.tier5] = true;
+    expect(tierUnlocked(s, 5)).toBe(true);
+    expect(canSpawn(s, 5)).toBe(true);
+    expect(spawn(s, 5)).toBe(true);
+    expect(s.counts[5]).toBe(1);
+  });
+
+  it("links the new tiers into SYNERGY (higher boosts lower)", () => {
+    const s = newGame();
+    s.counts = [0, 0, 0, 0, 0, 0, 10]; // 10 bare-metal nodes
+    expect(synergyMult(s, 5)).toBeCloseTo(1 + 0.05 * 10, 10);
+    s.counts = [0, 0, 0, 0, 0, 10, 0]; // 10 k8s pods
+    expect(synergyMult(s, 4)).toBeCloseTo(1 + 0.03 * 10, 10);
+  });
+});
+
 // --- cross-tier synergy ----------------------------------------------------
 
 describe("cross-tier synergy", () => {
   // tier indices: 2 = worker thread, 3 = microservice, 4 = cron daemon
   it("boosts workers 2% per microservice (10 workers + 5 microservices = 1.10x)", () => {
     const alone = newGame();
-    alone.counts = [0, 0, 10, 0, 0];
+    alone.counts = [0, 0, 10, 0, 0, 0, 0];
     const mixed = newGame();
-    mixed.counts = [0, 0, 10, 5, 0];
+    mixed.counts = [0, 0, 10, 5, 0, 0, 0];
 
     expect(synergyMult(mixed, 2)).toBeCloseTo(1 + 0.02 * 5, 10);
 
@@ -242,7 +307,7 @@ describe("cross-tier synergy", () => {
 
   it("boosts microservices 5% per cron daemon", () => {
     const s = newGame();
-    s.counts = [0, 0, 0, 10, 4]; // 10 microservices, 4 cron daemons
+    s.counts = [0, 0, 0, 10, 4, 0, 0]; // 10 microservices, 4 cron daemons
     expect(synergyMult(s, 3)).toBeCloseTo(1 + 0.05 * 4, 10);
 
     const microComponent = d(TIERS[3].baseOutput).mul(10).mul(synergyMult(s, 3));
@@ -252,7 +317,7 @@ describe("cross-tier synergy", () => {
 
   it("leaves tiers without a booster at 1x regardless of unrelated counts", () => {
     const s = newGame();
-    s.counts = [5, 5, 5, 5, 5]; // every tier populated
+    s.counts = [5, 5, 5, 5, 5, 0, 0]; // every tier populated
     expect(synergyMult(s, 0)).toBe(1); // noop loop: no booster
     expect(synergyMult(s, 1)).toBe(1); // fork(): no booster
     expect(synergyMult(s, 4)).toBe(1); // cron daemon: no booster (top of the chain)
@@ -274,7 +339,7 @@ describe("cleanup sweep", () => {
   it("reaps the lowest-priority children first", () => {
     const s = newGame();
     s.ramCap = 1000; // roomy: isolate sweep behavior from the OOM killer
-    s.counts = [10, 10, 0, 0, 0];
+    s.counts = [10, 10, 0, 0, 0, 0, 0];
     s.sweepTimer = 0.001;
     tick(s, 0.01);
     expect(s.sweepsSurvived).toBe(1);
@@ -285,14 +350,14 @@ describe("cleanup sweep", () => {
   it("reduces victims as `nice` rises", () => {
     const base = newGame();
     base.ramCap = 1000;
-    base.counts = [100, 0, 0, 0, 0];
+    base.counts = [100, 0, 0, 0, 0, 0, 0];
     base.sweepTimer = 0.001;
     tick(base, 0.01);
     const withoutNice = 100 - base.counts[0];
 
     const nice = newGame();
     nice.ramCap = 1000;
-    nice.counts = [100, 0, 0, 0, 0];
+    nice.counts = [100, 0, 0, 0, 0, 0, 0];
     nice.nice = 5;
     nice.sweepTimer = 0.001;
     tick(nice, 0.01);
@@ -352,21 +417,21 @@ describe("sweep cadence", () => {
 describe("sweep directive model", () => {
   it("standard reaps the lowest-priority tier first", () => {
     const s = newGame();
-    s.counts = [10, 10, 0, 0, 0];
+    s.counts = [10, 10, 0, 0, 0, 0, 0];
     const d = directiveById.get("standard")!;
     expect(d.victims(s, 5)).toEqual([0, 0, 0, 0, 0]);
   });
 
   it("standard budget matches the severity formula", () => {
     const s = newGame(); // sweepsSurvived 0 -> severity 0.15, nice 0 -> mult 1
-    s.counts = [100, 0, 0, 0, 0];
+    s.counts = [100, 0, 0, 0, 0, 0, 0];
     const d = directiveById.get("standard")!;
     expect(d.budget(s, 100)).toBe(15);
   });
 
   it("never returns more victims than are owned", () => {
     const s = newGame();
-    s.counts = [2, 0, 0, 0, 0];
+    s.counts = [2, 0, 0, 0, 0, 0, 0];
     const d = directiveById.get("standard")!;
     expect(d.victims(s, 50)).toEqual([0, 0]);
   });
@@ -375,9 +440,9 @@ describe("sweep directive model", () => {
 describe("sweep directives", () => {
   it("sigkill ignores nice entirely", () => {
     const noNice = newGame();
-    noNice.counts = [100, 0, 0, 0, 0];
+    noNice.counts = [100, 0, 0, 0, 0, 0, 0];
     const nice = newGame();
-    nice.counts = [100, 0, 0, 0, 0];
+    nice.counts = [100, 0, 0, 0, 0, 0, 0];
     nice.nice = 20; // well past the floor
     const d = directiveById.get("sigkill")!;
     expect(d.budget(noNice, 100)).toBe(15);
@@ -386,21 +451,21 @@ describe("sweep directives", () => {
 
   it("scavenger reaps the highest-output tier first", () => {
     const s = newGame();
-    s.counts = [10, 10, 10, 10, 10];
+    s.counts = [10, 10, 10, 10, 10, 0, 0];
     const d = directiveById.get("scavenger")!;
     expect(d.victims(s, 3)).toEqual([4, 4, 4]); // tier 4 has the highest baseOutput
   });
 
   it("group-kill reaps the densest tier first", () => {
     const s = newGame();
-    s.counts = [0, 9, 2, 0, 0]; // tier 1 is densest
+    s.counts = [0, 9, 2, 0, 0, 0, 0]; // tier 1 is densest
     const d = directiveById.get("group-kill")!;
     expect(d.victims(s, 11)).toEqual([1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2]);
   });
 
   it("backpressure reclaims the leak and reaps half the usual budget", () => {
     const s = newGame();
-    s.counts = [100, 0, 0, 0, 0];
+    s.counts = [100, 0, 0, 0, 0, 0, 0];
     s.leak = 50;
     const d = directiveById.get("backpressure")!;
     d.pre?.(s);
@@ -445,13 +510,13 @@ describe("SIGTERM handler shields", () => {
   it("absorbs one sweep victim per charge", () => {
     const bare = newGame();
     bare.ramCap = 1000;
-    bare.counts = [0, 20, 0, 0, 0];
+    bare.counts = [0, 20, 0, 0, 0, 0, 0];
     bare.sweepTimer = 0.001;
     tick(bare, 0.01);
 
     const shielded = newGame();
     shielded.ramCap = 1000;
-    shielded.counts = [0, 20, 0, 0, 0];
+    shielded.counts = [0, 20, 0, 0, 0, 0, 0];
     shielded.shields = 2;
     shielded.sweepTimer = 0.001;
     tick(shielded, 0.01);
@@ -463,7 +528,7 @@ describe("SIGTERM handler shields", () => {
   it("consumes charges, floors at zero, and reaps nothing when it covers the budget", () => {
     const s = newGame();
     s.ramCap = 1000;
-    s.counts = [0, 20, 0, 0, 0];
+    s.counts = [0, 20, 0, 0, 0, 0, 0];
     s.shields = 5; // budget is 3, so the surplus must survive
     s.sweepTimer = 0.001;
     tick(s, 0.01);
@@ -478,7 +543,7 @@ describe("estimateVictims", () => {
   it("matches the count the standard sweep actually reaps", () => {
     const s = newGame();
     s.ramCap = 1000; // isolate from the OOM killer
-    s.counts = [10, 10, 0, 0, 0];
+    s.counts = [10, 10, 0, 0, 0, 0, 0];
     const est = estimateVictims(s);
     const before = s.counts.reduce((a, b) => a + b, 0);
     s.sweepTimer = 0.001;
@@ -493,7 +558,7 @@ describe("estimateVictims", () => {
     s.sweepsSurvived = 6; // scavenger unlocked
     s.nextDirective = "scavenger";
     s.ramCap = 1000;
-    s.counts = [3, 3, 3, 3, 3];
+    s.counts = [3, 3, 3, 3, 3, 0, 0];
     const est = estimateVictims(s);
     const before = s.counts.reduce((a, b) => a + b, 0);
     s.sweepTimer = 0.001;
@@ -507,7 +572,7 @@ describe("estimateVictims", () => {
   it("subtracts shields from the estimate and never goes below zero", () => {
     const s = newGame();
     s.ramCap = 1000;
-    s.counts = [0, 20, 0, 0, 0]; // standard budget = round(20 * 0.15) = 3
+    s.counts = [0, 20, 0, 0, 0, 0, 0]; // standard budget = round(20 * 0.15) = 3
     s.shields = 2;
     expect(estimateVictims(s)).toBe(1);
 
@@ -519,7 +584,7 @@ describe("estimateVictims", () => {
   it("does not mutate state", () => {
     const s = newGame();
     s.ramCap = 1000;
-    s.counts = [0, 20, 0, 0, 0];
+    s.counts = [0, 20, 0, 0, 0, 0, 0];
     s.shields = 3;
     s.leak = 12;
     s.heat = 40;
@@ -546,28 +611,28 @@ describe("estimateVictims", () => {
 describe("sacrifice order", () => {
   it("defaults to the current tier priority order", () => {
     const s = newGame();
-    expect(s.sacrificeOrder).toEqual([0, 1, 2, 3, 4]);
+    expect(s.sacrificeOrder).toEqual([0, 1, 2, 3, 4, 5, 6]);
     expect(priorityOf(s, 0)).toBe(0);
   });
 
   it("standard reaps in the player's order", () => {
     const s = newGame();
-    s.counts = [10, 10, 0, 0, 0];
+    s.counts = [10, 10, 0, 0, 0, 0, 0];
     expect(movePriority(s, 1, -1)).toBe(true); // tier 1 to the front
-    expect(s.sacrificeOrder).toEqual([1, 0, 2, 3, 4]);
+    expect(s.sacrificeOrder).toEqual([1, 0, 2, 3, 4, 5, 6]);
     expect(directiveById.get("standard")!.victims(s, 5)).toEqual([1, 1, 1, 1, 1]);
   });
 
   it("sigkill reaps in the player's order", () => {
     const s = newGame();
-    s.counts = [10, 10, 0, 0, 0];
+    s.counts = [10, 10, 0, 0, 0, 0, 0];
     expect(movePriority(s, 1, -1)).toBe(true); // tier 1 to the front
     expect(directiveById.get("sigkill")!.victims(s, 5)).toEqual([1, 1, 1, 1, 1]);
   });
 
   it("backpressure reaps in the player's order", () => {
     const s = newGame();
-    s.counts = [10, 10, 0, 0, 0];
+    s.counts = [10, 10, 0, 0, 0, 0, 0];
     expect(movePriority(s, 1, -1)).toBe(true); // tier 1 to the front
     expect(directiveById.get("backpressure")!.victims(s, 5)).toEqual([1, 1, 1, 1, 1]);
   });
@@ -575,19 +640,19 @@ describe("sacrifice order", () => {
   it("refuses to move past either end", () => {
     const s = newGame();
     expect(movePriority(s, 0, -1)).toBe(false);
-    expect(movePriority(s, 4, 1)).toBe(false);
-    expect(s.sacrificeOrder).toEqual([0, 1, 2, 3, 4]); // unchanged
+    expect(movePriority(s, 6, 1)).toBe(false);
+    expect(s.sacrificeOrder).toEqual([0, 1, 2, 3, 4, 5, 6]); // unchanged
   });
 
   it("priorityOrder reflects priorityOf", () => {
     const s = newGame();
     movePriority(s, 4, -1); // [0, 1, 2, 4, 3]
-    expect(priorityOrder(s)).toEqual([0, 1, 2, 4, 3]);
+    expect(priorityOrder(s)).toEqual([0, 1, 2, 4, 3, 5, 6]);
   });
 
   it("scavenger and group-kill ignore the sacrifice order", () => {
     const s = newGame();
-    s.counts = [5, 5, 5, 5, 5];
+    s.counts = [5, 5, 5, 5, 5, 0, 0];
     for (let i = 0; i < 4; i++) movePriority(s, 4, -1); // tier 4 first in the player's order
     expect(s.sacrificeOrder[0]).toBe(4);
     expect(directiveById.get("scavenger")!.victims(s, 3)).toEqual([4, 4, 4]); // by output, not order
@@ -597,10 +662,10 @@ describe("sacrifice order", () => {
 
 describe("sanitizeSacrificeOrder", () => {
   it("keeps a valid permutation", () => {
-    expect(sanitizeSacrificeOrder([2, 0, 1, 3, 4])).toEqual([2, 0, 1, 3, 4]);
+    expect(sanitizeSacrificeOrder([2, 0, 1, 3, 4, 5, 6])).toEqual([2, 0, 1, 3, 4, 5, 6]);
   });
   it("returns a fresh array, not the input or shared default", () => {
-    const input = [2, 0, 1, 3, 4];
+    const input = [2, 0, 1, 3, 4, 5, 6];
     const result = sanitizeSacrificeOrder(input);
     expect(result).toEqual(input);
     expect(result).not.toBe(input);
@@ -654,7 +719,7 @@ describe("directive scheduling", () => {
   it("advances the next directive after a sweep", () => {
     const s = newGame();
     s.sweepsSurvived = 20;
-    s.counts = [10, 0, 0, 0, 0];
+    s.counts = [10, 0, 0, 0, 0, 0, 0];
     s.ramCap = 1000;
     s.sweepTimer = 0.001;
     tick(s, 0.01);
@@ -678,7 +743,7 @@ describe("directive scheduling", () => {
   it("falls back to standard for an unknown loaded directive id", () => {
     const s = newGame();
     (s as unknown as { nextDirective: string }).nextDirective = "bogus";
-    s.counts = [10, 0, 0, 0, 0];
+    s.counts = [10, 0, 0, 0, 0, 0, 0];
     s.ramCap = 1000;
     s.sweepTimer = 0.001;
     expect(() => tick(s, 0.01)).not.toThrow();
@@ -692,7 +757,7 @@ describe("directive scheduling", () => {
     s.sweepsSurvived = 6; // scavenger unlocks exactly here
     s.nextDirective = "scavenger";
     s.ramCap = 1000;
-    s.counts = [1, 1, 1, 1, 1];
+    s.counts = [1, 1, 1, 1, 1, 0, 0];
     s.sweepTimer = 0.001;
     tick(s, 0.01);
     expect(s.counts[4]).toBe(0); // tier 4 has the highest baseOutput; scavenger hits it first
@@ -705,7 +770,7 @@ describe("directive scheduling", () => {
 describe("memory leak and gc", () => {
   it("grows the leak at 1% of the non-immune footprint per second", () => {
     const s = newGame();
-    s.counts = [0, 10, 0, 0, 0]; // 10 fork()s = 20 MB, all leak-prone
+    s.counts = [0, 10, 0, 0, 0, 0, 0]; // 10 fork()s = 20 MB, all leak-prone
     s.ramCap = 100;
     tick(s, 10);
     expect(s.leak).toBeCloseTo(20 * 0.01 * 10, 3);
@@ -713,7 +778,7 @@ describe("memory leak and gc", () => {
 
   it("a leak-immune tier consumes RAM but never feeds the leak", () => {
     const s = newGame();
-    s.counts = [10, 0, 0, 0, 0]; // 10 noop loops = 10 MB, leak-immune
+    s.counts = [10, 0, 0, 0, 0, 0, 0]; // 10 noop loops = 10 MB, leak-immune
     s.ramCap = 100;
     expect(childRam(s)).toBe(10);
     tick(s, 30); // under the sweep interval, so the counts are stable
@@ -723,7 +788,7 @@ describe("memory leak and gc", () => {
 
   it("only the non-immune share of a mixed footprint leaks", () => {
     const s = newGame();
-    s.counts = [10, 10, 0, 0, 0]; // 10 MB immune + 20 MB leak-prone
+    s.counts = [10, 10, 0, 0, 0, 0, 0]; // 10 MB immune + 20 MB leak-prone
     s.ramCap = 1000;
     tick(s, 10);
     expect(s.leak).toBeCloseTo(20 * 0.01 * 10, 3); // immune 10 MB contributes nothing
@@ -739,7 +804,7 @@ describe("memory leak and gc", () => {
 
   it("gc keeps the leak near zero", () => {
     const s = newGame();
-    s.counts = [0, 10, 0, 0, 0];
+    s.counts = [0, 10, 0, 0, 0, 0, 0];
     s.ramCap = 100;
     s.gc = 2;
     tick(s, 10);
@@ -777,7 +842,7 @@ describe("memory leak and gc", () => {
 describe("OOM killer", () => {
   it("kills highest-output children when over the cap", () => {
     const s = newGame();
-    s.counts = [0, 0, 0, 0, 2]; // two cron daemons (16 MB each)
+    s.counts = [0, 0, 0, 0, 2, 0, 0]; // two cron daemons (16 MB each)
     s.ramCap = 16; // room for one
     tick(s, 0.01);
     expect(s.oomCount).toBe(1);
@@ -788,7 +853,7 @@ describe("OOM killer", () => {
   it("applies a ~10% cycle penalty", () => {
     const s = newGame();
     s.cycles = d(1000);
-    s.counts = [0, 0, 0, 0, 2];
+    s.counts = [0, 0, 0, 0, 2, 0, 0];
     s.ramCap = 16;
     // income accrues before the killer fires; the penalty is applied to that total
     const afterIncome = d(1000).add(cyclesPerSec(s).mul(0.01));
@@ -798,7 +863,7 @@ describe("OOM killer", () => {
 
   it("bulk-drains a huge count without stalling", () => {
     const s = newGame();
-    s.counts = [1e9, 0, 0, 0, 0]; // noop loop, 1 MB each
+    s.counts = [1e9, 0, 0, 0, 0, 0, 0]; // noop loop, 1 MB each
     s.ramCap = 8;
     tick(s, 0.01);
     expect(s.oomCount).toBe(1);
@@ -807,7 +872,7 @@ describe("OOM killer", () => {
 
   it("does not OOM when RAM is exactly at the cap", () => {
     const s = newGame();
-    s.counts = [0, 0, 0, 0, 1]; // one cron daemon, exactly 16 MB
+    s.counts = [0, 0, 0, 0, 1, 0, 0]; // one cron daemon, exactly 16 MB
     s.ramCap = 16;
     tick(s, 0.01);
     expect(s.oomCount).toBe(0);
@@ -815,7 +880,7 @@ describe("OOM killer", () => {
 
   it("does not compound the penalty while a full bar leaks past the cap", () => {
     const s = newGame();
-    s.counts = [0, 0, 0, 0, 1]; // one cron daemon = 16 MB = ramCap
+    s.counts = [0, 0, 0, 0, 1, 0, 0]; // one cron daemon = 16 MB = ramCap
     s.ramCap = 16;
     // The old `used > ramCap` trigger fired every tick; the 2% grace holds the
     // killer off while the leak creeps up toward `ramCap * OOM_TOLERANCE`.
@@ -844,7 +909,7 @@ describe("heat", () => {
   it("heatEquilibrium is footprint / (1 + cooling/2)", () => {
     const s = newGame();
     s.ramCap = 1000;
-    s.counts = [0, 0, 0, 0, 5]; // 5 cron daemons = 80 MB
+    s.counts = [0, 0, 0, 0, 5, 0, 0]; // 5 cron daemons = 80 MB
     expect(heatEquilibrium(s)).toBe(80);
 
     s.cooling = 2; // 1 + 2 * 0.5 = 2 -> half the equilibrium
@@ -854,7 +919,7 @@ describe("heat", () => {
   it("settles at an interior equilibrium and shows a partial throttle", () => {
     const s = newGame();
     s.ramCap = 1000;
-    s.counts = [0, 0, 0, 0, 5]; // 80 MB -> equilibrium 80
+    s.counts = [0, 0, 0, 0, 5, 0, 0]; // 80 MB -> equilibrium 80
     s.sweepTimer = 1e9; // freeze the sweep so the footprint is stable
     tick(s, 600); // residual 80 * e^-12
     expect(s.heat).toBeCloseTo(80, 0);
@@ -864,7 +929,7 @@ describe("heat", () => {
   it("a large footprint approaches saturation", () => {
     const s = newGame();
     s.ramCap = 1000;
-    s.counts = [0, 0, 0, 0, 8]; // 128 MB -> equilibrium 128, above the cap
+    s.counts = [0, 0, 0, 0, 8, 0, 0]; // 128 MB -> equilibrium 128, above the cap
     s.sweepTimer = 1e9;
     tick(s, 600);
     expect(s.heat).toBe(100);
@@ -882,7 +947,7 @@ describe("heat", () => {
   it("cooling lowers the equilibrium", () => {
     const s = newGame();
     s.ramCap = 1000;
-    s.counts = [0, 0, 0, 0, 5]; // 80 MB
+    s.counts = [0, 0, 0, 0, 5, 0, 0]; // 80 MB
     s.cooling = 1; // 1 + 0.5 = 1.5 -> equilibrium 53.33
     s.sweepTimer = 1e9;
     expect(heatEquilibrium(s)).toBeCloseTo(53.33, 2);
@@ -894,7 +959,7 @@ describe("heat", () => {
   it("rises from 0 toward equilibrium", () => {
     const s = newGame();
     s.ramCap = 1000;
-    s.counts = [0, 0, 0, 0, 5]; // 80 MB -> equilibrium 80
+    s.counts = [0, 0, 0, 0, 5, 0, 0]; // 80 MB -> equilibrium 80
     s.heat = 0;
     s.sweepTimer = 1e9;
     tick(s, 10); // 80 * (1 - e^-0.2)
@@ -904,7 +969,7 @@ describe("heat", () => {
   it("clamps to [0, 100]", () => {
     const hot = newGame();
     hot.ramCap = 1000;
-    hot.counts = [0, 0, 0, 0, 10]; // 160 MB -> equilibrium above the cap
+    hot.counts = [0, 0, 0, 0, 10, 0, 0]; // 160 MB -> equilibrium above the cap
     hot.heat = 99;
     hot.sweepTimer = 1e9;
     tick(hot, 100);
@@ -971,7 +1036,7 @@ describe("prestige", () => {
     const s = newGame();
     s.totalEarned = d(2e6);
     s.ramCap = 1000;
-    s.counts = [0, 0, 0, 0, 10]; // big footprint -> heat-throttled board
+    s.counts = [0, 0, 0, 0, 10, 0, 0]; // big footprint -> heat-throttled board
     s.heat = 100;
     expect(heatMult(s)).toBeLessThan(1);
     // rate is derived from the pre-throttle, lineage-free peak, so neither heatMult
@@ -986,7 +1051,7 @@ describe("prestige", () => {
     s.totalEarned = d(1e9); // >= forkCost at forks = 2 (1e8)
     s.ramCap = 1000;
     s.forks = 2; // lineage ×1.2
-    s.counts = [0, 0, 0, 0, 10]; // childOutput 20000, +root 1 => base 20001
+    s.counts = [0, 0, 0, 0, 10, 0, 0]; // childOutput 20000, +root 1 => base 20001
     expect(doFork(s)).toBe(true);
     // 20001 * 0.1, not 20001 * 1.2 * 0.1 = 2400.12 (the double-count bug)
     expect(s.legacy[0].rate.toNumber()).toBeCloseTo(2000.1, 5);
@@ -995,11 +1060,11 @@ describe("prestige", () => {
   it("resets the working set and grants lineage plus a legacy daemon", () => {
     const s = newGame();
     s.totalEarned = d(2e6);
-    s.counts = [5, 5, 0, 0, 0];
+    s.counts = [5, 5, 0, 0, 0, 0, 0];
     expect(doFork(s)).toBe(true);
     expect(s.forks).toBe(1);
     expect(lineageMult(s).toNumber()).toBeCloseTo(1.1, 5);
-    expect(s.counts).toEqual([0, 0, 0, 0, 0]);
+    expect(s.counts).toEqual([0, 0, 0, 0, 0, 0, 0]);
     expect(s.cycles.eq(0)).toBe(true);
     expect(s.ramCap).toBe(BASE.ramCap);
     expect(s.legacy).toHaveLength(1);
@@ -1010,7 +1075,7 @@ describe("prestige", () => {
     const s = newGame();
     s.totalEarned = d(2e6);
     s.ramCap = 1000;
-    s.counts = [5, 5, 0, 0, 0];
+    s.counts = [5, 5, 0, 0, 0, 0, 0];
     s.heat = 75; // would otherwise throttle the fresh run
     s.cooling = 3;
     s.shields = 4;
@@ -1018,7 +1083,7 @@ describe("prestige", () => {
     expect(s.heat).toBe(0);
     expect(s.cooling).toBe(0);
     expect(s.shields).toBe(0);
-    expect(s.counts).toEqual([0, 0, 0, 0, 0]);
+    expect(s.counts).toEqual([0, 0, 0, 0, 0, 0, 0]);
   });
 
   it("resets sweepInterval (not just sweepTimer) on fork", () => {
@@ -1300,11 +1365,19 @@ describe("doFork with perks", () => {
   });
   it("still resets the working set", () => {
     const s = newGame();
-    s.counts = [5, 0, 0, 0, 0];
+    s.counts = [5, 0, 0, 0, 0, 0, 0];
     s.totalEarned = d(1e6);
     s.playtime = 600;
     doFork(s);
     expect(s.counts.every((n) => n === 0)).toBe(true);
+  });
+  it("keeps repeatable levels (permanent for the save, not part of the working set)", () => {
+    const s = newGame();
+    s.repeatables = { overclock: 3 };
+    s.totalEarned = d(1e6);
+    s.playtime = 600;
+    doFork(s);
+    expect(s.repeatables.overclock).toBe(3);
   });
 });
 
@@ -1556,7 +1629,7 @@ describe("achievement income hook", () => {
     for (const s of [withA, without]) {
       s.totalEarned = d(2e6);
       s.ramCap = 1000;
-      s.counts = [0, 0, 0, 0, 10];
+      s.counts = [0, 0, 0, 0, 10, 0, 0];
     }
     withA.achievementsDone["first-earnings"] = true;
     expect(doFork(withA)).toBe(true);
@@ -1578,5 +1651,77 @@ describe("achievement tick evaluation", () => {
     s.totalEarned = d(1e3);
     tick(s, 0, { offline: true });
     expect(s.achievementsDone["first-earnings"]).toBeUndefined();
+  });
+});
+
+// --- repeatables -----------------------------------------------------------
+
+describe("repeatable integration", () => {
+  it("scales perked income by incomeMult but leaves baseCyclesPerSec clean", () => {
+    const modded = newGame();
+    modded.repeatables.overclock = 4; // mag 0.2
+    expect(rawCyclesPerSec(modded).toNumber()).toBeCloseTo(
+      rawCyclesPerSec(newGame()).toNumber() * 1.2,
+      10,
+    );
+    const clean = newGame();
+    clean.repeatables.overclock = 4;
+    expect(baseCyclesPerSec(clean).eq(baseCyclesPerSec(newGame()))).toBe(true);
+  });
+
+  it("lifts the RAM cap by ramCapAdd", () => {
+    const s = newGame();
+    s.repeatables.swapfile = 4; // +8
+    expect(ramCapTotal(s)).toBe(BASE.ramCap + 8);
+  });
+
+  it("lowers heat equilibrium by heatGenMult", () => {
+    const base = newGame();
+    base.counts = [0, 0, 0, 0, 10, 0, 0];
+    const modded = newGame();
+    modded.counts = [0, 0, 0, 0, 10, 0, 0];
+    modded.repeatables.undervolt = 4; // /1.16
+    expect(heatEquilibrium(modded)).toBeCloseTo(heatEquilibrium(base) / 1.16, 8);
+  });
+
+  it("discounts tierCost by tierCostMult once bulk is owned, unchanged at level 0", () => {
+    const plain = newGame();
+    const base = tierCost(plain, 0); // no counts, no repeatables
+    expect(tierCost(plain, 0).eq(base)).toBe(true); // identity at level 0
+    const bulk = newGame();
+    bulk.repeatables.bulk = 4; // /(1 + 0.05 * 2) = /1.1
+    expect(tierCost(bulk, 0).div(base).toNumber()).toBeCloseTo(1 / 1.1, 10);
+  });
+});
+
+describe("buyRepeatable", () => {
+  it("spends cycles, levels up, and refuses unaffordable/unknown ids", () => {
+    const s = newGame();
+    s.cycles = d(1e6);
+    expect(buyRepeatable(s, "overclock")).toBe(true);
+    expect(s.repeatables.overclock).toBe(1);
+    expect(s.cycles.lt(d(1e6))).toBe(true);
+    expect(buyRepeatable(s, "nope")).toBe(false);
+    expect(buyRepeatable(newGame(), "overclock")).toBe(false);
+  });
+});
+
+describe("buy-max with the bulk discount", () => {
+  it("maxAffordable stays exact for an unlocked tier with bulk owned", () => {
+    const s = newGame();
+    s.unlocks[UNLOCK.tier5] = true;
+    s.cycles = d(1e12);
+    s.ramCap = 10_000;
+    s.repeatables.bulk = 4;
+
+    const brute = newGame();
+    brute.unlocks[UNLOCK.tier5] = true;
+    brute.cycles = d(1e12);
+    brute.ramCap = 10_000;
+    brute.repeatables.bulk = 4;
+    let n = 0;
+    while (spawn(brute, 5)) n++;
+    expect(n).toBeGreaterThan(0);
+    expect(maxAffordable(s, 5)).toBe(n);
   });
 });

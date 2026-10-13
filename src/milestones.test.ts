@@ -153,3 +153,29 @@ describe("legacy-respawn milestone", () => {
     expect(s.unlocks["legacy-respawn"]).toBe(true);
   });
 });
+
+describe("tier unlock milestones", () => {
+  it("declares tier unlock ids", () => {
+    expect(UNLOCK.tier5).toBe("tier:5");
+    expect(UNLOCK.tier6).toBe("tier:6");
+  });
+
+  it("grants tier:5 at 1e7 and tier:6 at 1e9 totalEarned", () => {
+    expect(milestoneById("tier-5")).toMatchObject({
+      metric: "totalEarned",
+      at: 1e7,
+      unlocks: [UNLOCK.tier5],
+    });
+    expect(milestoneById("tier-6")).toMatchObject({
+      metric: "totalEarned",
+      at: 1e9,
+      unlocks: [UNLOCK.tier6],
+    });
+  });
+
+  it("fires the tier-5 milestone and grants the unlock", () => {
+    const s = base({ totalEarned: d(1e7) });
+    expect(evaluateMilestones(s)).toContain("tier-5");
+    expect(hasUnlock(s, UNLOCK.tier5)).toBe(true);
+  });
+});

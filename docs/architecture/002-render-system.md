@@ -51,12 +51,20 @@ Both panels share an `ActionButton` shape:
 
 - **Spawn buttons** are built once from `TIERS`. Each shows `count · cost` and is disabled
   when `canSpawn` is false; a `⚠ ram` suffix appears when the tier would exceed the RAM cap.
+  A tier whose milestone `unlock` has not fired is rendered locked — its `.name` becomes
+  `🔒 <name> · <milestone>` (the granting milestone's name, via `unlockSource`) and the button
+  is disabled, since `canSpawn` is false while locked. The label is written once, guarded by a
+  `dataset.locked` signature, so it does not churn each frame (doc [010](./010-milestones.md)).
 - **Upgrade buttons** are registered via `addUpgrade(...)` with closures over the current
   state, so labels and affordability track live state. The panel covers `free()`, `nice`,
   `malloc`, `SIGTERM handler`, `gc`, `cooling`, `fork()`, and `nohup` (the offline-cap upgrade,
   `nohup(+4h) · offline cap Nh`, costs `offlineCost(state)`); the `cooling` button labels
   the current level, costs `coolCost(state)`, and runs `buyCooling(state)` — it is disabled
   while `state.cycles` is below the cost.
+- **Repeatable rows** follow `nohup`: one `addUpgrade(...)` per `REPEATABLES` entry, labelled
+  `<name> L<n> · <desc>`, cost `repeatableCost(state, id)`, enabled by
+  `canBuyRepeatable(state, id)`, running `buyRepeatable(state, id)` (doc
+  [012](./012-repeatables.md)). They are level-label rows like `cooling` — no new HTML or CSS.
 
 `enabled()` gates the button; `run()` performs the action; both call back into `sim.ts`.
 Cost text is tinted green (`.ok`) when affordable. The `nice` and `gc` buttons render disabled

@@ -8,6 +8,7 @@ import {
   buyMalloc,
   buyNice,
   buyPerk,
+  buyRepeatable,
   buyShield,
   canFork,
   canSpawn,
@@ -38,6 +39,7 @@ import {
   sweepVictimMult,
   tick,
   tierCost,
+  tierUnlocked,
 } from "./sim";
 import { d } from "./bignum";
 import {
@@ -58,6 +60,7 @@ import {
   UNLOCK,
   type MetricId,
 } from "./milestones";
+import { REPEATABLES, canBuyRepeatable, repeatableCost } from "./repeatables";
 import { type Alert, checkNumericHealth } from "./diagnostics";
 import { achievementProgress, orderedAchievements } from "./achievements";
 import { consoleSink, logFeedSink, makeReporter } from "./report";
@@ -267,6 +270,15 @@ addUpgrade(
   () => buyOfflineCap(state),
 );
 
+for (const r of REPEATABLES) {
+  addUpgrade(
+    () => `${r.name} L${state.repeatables[r.id] ?? 0}  ·  ${r.desc}`,
+    () => repeatableCost(state, r.id),
+    () => canBuyRepeatable(state, r.id),
+    () => buyRepeatable(state, r.id),
+  );
+}
+
 // --- render ----------------------------------------------------------------
 
 let lastLogSig = "";
@@ -325,6 +337,15 @@ function render(force = false): void {
     const ok = b.enabled();
     const ramFull = ramUsed(state) + TIERS[i].ram > ramCapTotal(state);
     b.el.disabled = !ok;
+    const locked = !tierUnlocked(state, i);
+    const nameEl = b.el.querySelector(".name") as HTMLElement;
+    const lockSig = locked ? "1" : "0";
+    if (nameEl.dataset.locked !== lockSig) {
+      nameEl.dataset.locked = lockSig;
+      nameEl.innerHTML = locked
+        ? `🔒 ${TIERS[i].name} <small>${unlockGoal(TIERS[i].unlock!)}</small>`
+        : `${TIERS[i].name} <small>${TIERS[i].desc}</small>`;
+    }
     const costEl = b.el.querySelector(".cost") as HTMLElement;
     costEl.textContent = `${state.counts[i]}  ·  ${fmt(b.cost())}${maxOn ? "  ×max" : ""}${ramFull ? "  ⚠ ram" : ""}`;
     costEl.classList.toggle("ok", ok);
@@ -402,6 +423,11 @@ const METRIC_UNIT: Partial<Record<MetricId, string>> = {
 /** Name of the milestone that grants `unlockId` (for the locked-upgrade hint). */
 function unlockSource(unlockId: string): string {
   return MILESTONES.find((m) => m.unlocks.includes(unlockId))?.name ?? "locked";
+}
+
+/** The goal text for a locked feature — the granting milestone's `desc` (e.g. "earn 10M"). */
+function unlockGoal(unlockId: string): string {
+  return MILESTONES.find((m) => m.unlocks.includes(unlockId))?.desc ?? "locked";
 }
 
 /**

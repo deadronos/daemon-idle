@@ -37,9 +37,9 @@ export interface MilestoneDef {
 ```
 
 `UNLOCK` declares the unlock ids: `nice`, `gc`, and `legacy-respawn` (granted by the starter
-set) plus the forward ids `buy-max`, `auto-nice`, `auto-malloc`, `auto-free` that #18/#19
-consume; #23's tier gates follow a `tier:<index>` convention. A feature that is not gated
-simply never calls `hasUnlock`.
+set), the forward ids `buy-max`, `auto-nice`, `auto-malloc`, `auto-free` that #18/#19 consume,
+and #23's tier gates `tier5`/`tier6` (`"tier:5"`/`"tier:6"`, following the `tier:<index>`
+convention). A feature that is not gated simply never calls `hasUnlock`.
 
 ## The starter set
 
@@ -50,12 +50,15 @@ simply never calls `hasUnlock`.
 | `bulk-buy`       | `totalEarned`    | 1e5  | `buy-max`                               |
 | `hands-off`      | `forks`          | 1    | `auto-nice`, `auto-malloc`, `auto-free` |
 | `legacy-respawn` | `forks`          | 2    | `legacy-respawn`                        |
+| `tier-5`         | `totalEarned`    | 1e7  | `tier:5`                                |
+| `tier-6`         | `totalEarned`    | 1e9  | `tier:6`                                |
 
 `nice` and `gc` are the only upgrades gated; `free()`, `malloc`, `cooling`, shields, and
 `fork()` are available from the start. `bulk-buy` gates the spawn-panel `buy max` toggle
 (bulk tier spawns — see [doc 001](./001-simulation-core.md)); `hands-off` gates the upgrades
 panel's automation group (auto-nice/malloc/free); `legacy-respawn` (name "auto-respawn") gates
-legacy auto-respawn (doc [004](./004-prestige-and-legacy.md)).
+legacy auto-respawn (doc [004](./004-prestige-and-legacy.md)); `tier-5`/`tier-6` gate the
+`k8s pod`/`bare-metal node` spawn tiers (doc [001](./001-simulation-core.md)).
 
 ## Metrics and predicate
 
@@ -84,7 +87,9 @@ No RNG is involved, so determinism holds.
 ## Gating
 
 Rules live in `sim.ts`: `buyNice`/`buyGc` return `false` while
-`!hasUnlock(s, UNLOCK.nice /* | gc */)`. The UI mirrors the lock — the buttons render
+`!hasUnlock(s, UNLOCK.nice /* | gc */)`. The two new tiers reuse the same model:
+`tierUnlocked(s, i)` reads `TIERS[i].unlock`, and `canSpawn`/`maxAffordable` refuse a locked
+tier (doc [001](./001-simulation-core.md)). The UI mirrors the lock — the buttons render
 **disabled with a `🔒 <milestone name>` hint** (not hidden), so the goal is discoverable
 (doc 002).
 
@@ -92,9 +97,8 @@ Rules live in `sim.ts`: `buyNice`/`buyGc` return `false` while
 
 Both records are plain objects (no `Decimal`), defaulted to `{}` in `newGame()`, and rebuilt
 on load: `sanitizeMilestones` keeps only ids present in `MILESTONES`; `sanitizeUnlocks` keeps
-string keys with truthy values (open-ended — later issues add ids). `SAVE_VERSION` is 7, with
-additive `if (from < 3)` / `if (from < 4)` / `if (from < 5)` / `if (from < 6)` / `if (from < 7)`
-migration steps (doc 003).
+string keys with truthy values (open-ended — later issues add ids). `SAVE_VERSION` is 8, with
+additive `if (from < 3)` … `if (from < 8)` migration steps (doc 003).
 
 ## Extending
 
