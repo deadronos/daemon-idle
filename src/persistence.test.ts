@@ -533,3 +533,55 @@ describe("save versioning — explicit table", () => {
     expect(twice.legacy[1].rate.toNumber()).toBeCloseTo(33, 5);
   });
 });
+
+describe("forward compatibility", () => {
+  it("loads a future-version save best-effort, runs no migration, and stamps down", () => {
+    const raw = JSON.stringify({
+      saveVersion: 99,
+      counts: [1, 2, 3],
+      cycles: "500",
+      legacy: [
+        { name: "legacy-1", rate: "22", crashed: false, respawn: 0 },
+        { name: "legacy-2", rate: "33", crashed: false, respawn: 0 },
+      ],
+      milestonesDone: { "first-blood": true, ghost: true },
+    });
+    const s = decode(raw);
+    expect(s.saveVersion).toBe(SAVE_VERSION);
+    expect(s.cycles.toNumber()).toBe(500);
+    expect(s.counts).toEqual([1, 2, 3, 0, 0, 0, 0]);
+    expect(s.legacy[1].rate.toNumber()).toBeCloseTo(33, 5); // no v2 division
+    expect(s.milestonesDone).toEqual({ "first-blood": true }); // unknown roster id dropped
+  });
+});
+
+describe("pre-versioning saves with missing fields", () => {
+  it("loads a sparse pre-versioning save to a playable, finite state", () => {
+    const s = decode('{"cycles":"123","legacy":[{"name":"legacy-1","rate":"22"}]}');
+    expect(s.saveVersion).toBe(SAVE_VERSION);
+    const required = [
+      s.ramCap,
+      s.leak,
+      s.heat,
+      s.sweepInterval,
+      s.sweepTimer,
+      s.playtime,
+      s.lastSave,
+      ...s.counts,
+    ];
+    for (const n of required) expect(Number.isFinite(n)).toBe(true);
+    expect(s.counts).toHaveLength(7); // TIERS.length
+    expect(s.legacy[0].rate.toNumber()).toBeCloseTo(22, 5);
+    expect(s.perks).toEqual({});
+    expect(s.repeatables).toEqual({});
+    expect(s.unlocks).toEqual({});
+  });
+});
+
+describe("counts shape drift", () => {
+  it("pads a short counts array to TIERS.length zeros", () => {
+    const s = decode('{"saveVersion":7,"counts":[1,2,3]}');
+    expect(s.counts).toHaveLength(7);
+    expect(s.counts).toEqual([1, 2, 3, 0, 0, 0, 0]);
+  });
+});
